@@ -1,0 +1,88 @@
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.cache
+*.vspscc
+*.vssscc
+.builds
+*.pidb
+*.svclog
+*.scc
+
+# Rider
+.idea/
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Azure Functions
+local.settings.json
+
+# Test Results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.trx
+TestResult.xml
+
+# Code Coverage
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage/
+
+# NCrunch
+_NCrunch_*
+.*crunch*.local.xml
+nCrunchTemp_*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.python_packages/
+
+# Azurite
+__azurite_db_*.json
+__blobstorage__/
+__queuestorage__/
+
+# Misc
+*.tmp
+*.temp
+*.log
+*.bak
+~$*
+AzuriteConfig

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
+    <AssemblyName>Microsoft.Azure.Functions.Extensions.Connector</AssemblyName>
+    <RootNamespace>Microsoft.Azure.Functions.Extensions.Connector</RootNamespace>
+    <PackageId>Microsoft.Azure.Functions.Extensions.Connector</PackageId>
+    <Version>0.1.0-preview</Version>
+    <Description>Connector extension for Azure Functions - Exposes a webhook endpoint that accepts JSON/string payloads</Description>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.WebJobs" Version="3.0.42" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+        <WarningsAsErrors></WarningsAsErrors>
+        <DefaultItemExcludes>**</DefaultItemExcludes>
+    </PropertyGroup>
+    <ItemGroup>
+        <!-- Reference the host-side extension project for local development -->
+        <ProjectReference Include="$(SrcRoot)Microsoft.Azure.Functions.Extensions.Connector\Extensions.Connector.csproj" />
+        <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="4.6.0" />
+    </ItemGroup>
+</Project>
