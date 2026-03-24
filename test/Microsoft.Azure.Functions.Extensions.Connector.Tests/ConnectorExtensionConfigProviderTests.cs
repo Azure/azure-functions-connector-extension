@@ -78,8 +78,6 @@ public class ConnectorExtensionConfigProviderTests
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        var content = await response.Content.ReadAsStringAsync();
-        Assert.Contains("too long", content);
     }
 
     [Theory]
@@ -120,7 +118,7 @@ public class ConnectorExtensionConfigProviderTests
     }
 
     [Fact]
-    public async Task ConvertAsync_ReturnsOk_WhenFunctionRegistered()
+    public async Task ConvertAsync_ReturnsAccepted_WhenFunctionRegistered()
     {
         // Arrange
         var mockExecutor = new Mock<ITriggeredFunctionExecutor>();
@@ -129,8 +127,9 @@ public class ConnectorExtensionConfigProviderTests
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FunctionResult(true));
 
-        // Register a listener
-        var listener = new ConnectorListener(mockExecutor.Object, _configProvider, "TestFunction");
+        // Register a listener using the new API
+        var registration = new ConnectorFunctionRegistration("TestFunction", mockExecutor.Object);
+        var listener = new ConnectorListener(_configProvider, registration);
 
         var request = new HttpRequestMessage(HttpMethod.Post, 
             "http://localhost/api/connector?functionName=TestFunction")
@@ -141,8 +140,8 @@ public class ConnectorExtensionConfigProviderTests
         // Act
         var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
 
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // Assert - returns 202 Accepted
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
     }
 
     [Fact]
@@ -156,7 +155,8 @@ public class ConnectorExtensionConfigProviderTests
             .ReturnsAsync(new FunctionResult(true));
 
         // Register a listener with lowercase name
-        var listener = new ConnectorListener(mockExecutor.Object, _configProvider, "testfunction");
+        var registration = new ConnectorFunctionRegistration("testfunction", mockExecutor.Object);
+        var listener = new ConnectorListener(_configProvider, registration);
 
         // Request with uppercase name
         var request = new HttpRequestMessage(HttpMethod.Post, 
@@ -169,17 +169,18 @@ public class ConnectorExtensionConfigProviderTests
         var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
 
         // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
     }
 
     [Fact]
-    public async Task AddListener_RegistersListener()
+    public async Task RegisterFunction_RegistersListener()
     {
         // Arrange
         var mockExecutor = new Mock<ITriggeredFunctionExecutor>();
 
-        // Act - constructor calls AddListener
-        var listener = new ConnectorListener(mockExecutor.Object, _configProvider, "AddedFunction");
+        // Act - constructor calls RegisterFunction internally
+        var registration = new ConnectorFunctionRegistration("AddedFunction", mockExecutor.Object);
+        var listener = new ConnectorListener(_configProvider, registration);
 
         // Assert - verify we can find the function
         var request = new HttpRequestMessage(HttpMethod.Post, 
@@ -194,25 +195,7 @@ public class ConnectorExtensionConfigProviderTests
             .ReturnsAsync(new FunctionResult(true));
 
         var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task RemoveListener_UnregistersListener()
-    {
-        // Arrange
-        var mockExecutor = new Mock<ITriggeredFunctionExecutor>();
-        var listener = new ConnectorListener(mockExecutor.Object, _configProvider, "RemovedFunction");
-
-        // Act
-        _configProvider.RemoveListener("RemovedFunction");
-
-        // Assert - function should no longer be found
-        var request = new HttpRequestMessage(HttpMethod.Post, 
-            "http://localhost/api/connector?functionName=RemovedFunction");
-
-        var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
     }
 
     [Fact]
@@ -229,7 +212,8 @@ public class ConnectorExtensionConfigProviderTests
                 It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new FunctionResult(true));
 
-            var listener = new ConnectorListener(mockExecutor.Object, _configProvider, validName);
+            var registration = new ConnectorFunctionRegistration(validName, mockExecutor.Object);
+            var listener = new ConnectorListener(_configProvider, registration);
 
             var request = new HttpRequestMessage(HttpMethod.Post, 
                 $"http://localhost/api/connector?functionName={validName}")
@@ -241,10 +225,68 @@ public class ConnectorExtensionConfigProviderTests
             var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
 
             // Assert
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-            // Cleanup
-            _configProvider.RemoveListener(validName);
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         }
+    }
+
+    [Fact]
+    public async Task ConvertAsync_ReturnsInternalServerError_WhenFunctionFails()
+    {
+        // Arrange
+        var mockExecutor = new Mock<ITriggeredFunctionExecutor>();
+        mockExecutor.Setup(e => e.TryExecuteAsync(
+            It.IsAny<TriggeredFunctionData>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FunctionResult(false, new Exception("Function failed")));
+
+        var registration = new ConnectorFunctionRegistration("FailingFunction", mockExecutor.Object);
+        var listener = new ConnectorListener(_configProvider, registration);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, 
+            "http://localhost/api/connector?functionName=FailingFunction")
+        {
+            Content = new StringContent("{}")
+        };
+
+        // Act
+        var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Function failed", content);
+    }
+
+    [Fact]
+    public async Task ConvertAsync_PassesJTokenToExecutor()
+    {
+        // Arrange
+        TriggeredFunctionData? capturedData = null;
+        var mockExecutor = new Mock<ITriggeredFunctionExecutor>();
+        mockExecutor.Setup(e => e.TryExecuteAsync(
+            It.IsAny<TriggeredFunctionData>(),
+            It.IsAny<CancellationToken>()))
+            .Callback<TriggeredFunctionData, CancellationToken>((data, ct) => capturedData = data)
+            .ReturnsAsync(new FunctionResult(true));
+
+        var registration = new ConnectorFunctionRegistration("JTokenFunction", mockExecutor.Object);
+        var listener = new ConnectorListener(_configProvider, registration);
+
+        var jsonBody = "{\"email\": \"test@example.com\", \"subject\": \"Hello\"}";
+        var request = new HttpRequestMessage(HttpMethod.Post, 
+            "http://localhost/api/connector?functionName=JTokenFunction")
+        {
+            Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json")
+        };
+
+        // Act
+        await _configProvider.ConvertAsync(request, CancellationToken.None);
+
+        // Assert - TriggerValue should be JToken (not tuple)
+        Assert.NotNull(capturedData);
+        Assert.IsAssignableFrom<Newtonsoft.Json.Linq.JToken>(capturedData.TriggerValue);
+        var jtoken = (Newtonsoft.Json.Linq.JToken)capturedData.TriggerValue;
+        Assert.Equal("test@example.com", jtoken["email"]?.ToString());
+        Assert.Equal("Hello", jtoken["subject"]?.ToString());
     }
 }

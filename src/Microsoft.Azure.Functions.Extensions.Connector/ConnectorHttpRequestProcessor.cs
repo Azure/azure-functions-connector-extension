@@ -3,25 +3,18 @@
 
 using System.Net;
 using System.Net.Http;
-using System.Web;
-using Microsoft.Azure.WebJobs.Host.Executors;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
 /// <summary>
 /// Processes incoming HTTP requests for the Connector trigger.
-/// Parses the request body, headers, and query parameters into a format
-/// suitable for function invocation.
+/// Parses body to JToken and invokes function via callback.
 /// </summary>
 internal sealed class ConnectorHttpRequestProcessor
 {
-    /// <summary>
-    /// Maximum allowed request body size (10 MB).
-    /// </summary>
-    private const long MaxBodySize = 10 * 1024 * 1024;
+    private const long MaxBodySize = 10 * 1024 * 1024; // 10 MB
 
     private readonly ILogger<ConnectorHttpRequestProcessor> _logger;
 
@@ -31,22 +24,17 @@ internal sealed class ConnectorHttpRequestProcessor
     }
 
     /// <summary>
-    /// Processes an HTTP request and returns the appropriate response.
+    /// Processes an HTTP request and invokes the callback with the parsed JToken.
     /// </summary>
-    /// <param name="request">The incoming HTTP request.</param>
-    /// <param name="functionName">The name of the function to invoke.</param>
-    /// <param name="executor">The function executor to invoke with the parsed data.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The HTTP response to return to the caller.</returns>
-    public async Task<HttpResponseMessage> ProcessAsync(
+    internal async Task<HttpResponseMessage> ProcessAsync(
         HttpRequestMessage request,
         string functionName,
-        ITriggeredFunctionExecutor executor,
+        Func<JToken, string, CancellationToken, Task<HttpResponseMessage>> executeFunc,
         CancellationToken cancellationToken)
     {
         if (request.Method != HttpMethod.Post && request.Method != HttpMethod.Put)
         {
-            _logger.LogWarning("Connector trigger received non-POST/PUT request: {Method}", request.Method);
+            _logger.LogWarning("Connector trigger received unsupported method: {Method}", request.Method);
             return new HttpResponseMessage(HttpStatusCode.MethodNotAllowed)
             {
                 Content = new StringContent("Only POST and PUT methods are supported.")
@@ -55,158 +43,53 @@ internal sealed class ConnectorHttpRequestProcessor
 
         try
         {
-            // Validate request body size
+            // Validate content length header
             if (request.Content?.Headers?.ContentLength > MaxBodySize)
             {
                 _logger.LogWarning("Request body too large: {ContentLength} bytes", 
                     request.Content.Headers.ContentLength);
-                return new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge)
-                {
-                    Content = new StringContent("Request body size exceeds maximum allowed size")
-                };
+                return new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge);
             }
 
-            // Read the request body
+            // Read request body
             string body = request.Content != null
                 ? await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
                 : string.Empty;
 
-            // Double-check actual body size after reading
+            // Validate actual body size
             if (body.Length > MaxBodySize)
             {
-                _logger.LogWarning("Request body too large after reading: {Length} bytes", body.Length);
-                return new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge)
-                {
-                    Content = new StringContent("Request body size exceeds maximum allowed size")
-                };
+                _logger.LogWarning("Request body too large: {Length} bytes", body.Length);
+                return new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge);
             }
 
-            // Parse headers
-            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var header in request.Headers)
-            {
-                headers[header.Key] = string.Join(", ", header.Value);
-            }
-            if (request.Content?.Headers != null)
-            {
-                foreach (var header in request.Content.Headers)
-                {
-                    headers[header.Key] = string.Join(", ", header.Value);
-                }
-            }
+            LogRequestInfo(request, functionName, body.Length);
 
-            // Parse query parameters
-            var query = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var queryString = HttpUtility.ParseQueryString(request.RequestUri?.Query ?? string.Empty);
-            foreach (string? key in queryString.AllKeys)
-            {
-                if (!string.IsNullOrEmpty(key))
-                {
-                    query[key] = queryString[key] ?? string.Empty;
-                }
-            }
+            // Parse body to JToken
+            JToken triggerValue = string.IsNullOrWhiteSpace(body) 
+                ? JValue.CreateNull() 
+                : JToken.Parse(body);
 
-            // Create the connector context
-            var context = new ConnectorContext
-            {
-                Body = body,
-                Headers = headers,
-                Query = query,
-                Method = request.Method.Method,
-                Url = request.RequestUri?.ToString() ?? string.Empty,
-                ContentType = request.Content?.Headers?.ContentType?.MediaType,
-                Timestamp = DateTimeOffset.UtcNow
-            };
-
-            // Parse body as JToken for type conversion support
-            JToken jsonBody;
-            try
-            {
-                jsonBody = string.IsNullOrWhiteSpace(body) 
-                    ? JValue.CreateNull() 
-                    : JToken.Parse(body);
-            }
-            catch (JsonException)
-            {
-                // Body is not valid JSON, wrap it as a string value
-                jsonBody = new JValue(body);
-            }
-
-            _logger.LogDebug("Processing connector request for function {FunctionName}, body length: {BodyLength}", 
-                functionName, body.Length);
-
-            return await ExecuteFunctionAsync(executor, context, jsonBody, functionName, cancellationToken).ConfigureAwait(false);
+            // Execute via callback
+            return await executeFunc(triggerValue, functionName, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            _logger.LogWarning("Request processing cancelled for function {FunctionName}", functionName);
-            return new HttpResponseMessage(HttpStatusCode.RequestTimeout)
-            {
-                Content = new StringContent("Request cancelled")
-            };
+            _logger.LogWarning("Request cancelled for function {FunctionName}", functionName);
+            return new HttpResponseMessage(HttpStatusCode.RequestTimeout);
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+        catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing connector request for function {FunctionName}", functionName);
-            return new HttpResponseMessage(HttpStatusCode.InternalServerError)
-            {
-                Content = new StringContent("An error occurred processing your request")
-            };
+            _logger.LogError(ex, "Error processing request for function {FunctionName}", functionName);
+            return new HttpResponseMessage(HttpStatusCode.InternalServerError);
         }
     }
 
-    /// <summary>
-    /// Executes the function with the provided context and JSON body.
-    /// </summary>
-    private async Task<HttpResponseMessage> ExecuteFunctionAsync(
-        ITriggeredFunctionExecutor executor,
-        ConnectorContext context,
-        JToken jsonBody,
-        string functionName,
-        CancellationToken cancellationToken)
+    private void LogRequestInfo(HttpRequestMessage request, string functionName, int bodyLength)
     {
-        try
-        {
-            // Create the trigger data with both context and JSON body as a tuple
-            var triggerData = new TriggeredFunctionData
-            {
-                TriggerValue = (context, jsonBody)
-            };
-
-            var result = await executor.TryExecuteAsync(triggerData, cancellationToken).ConfigureAwait(false);
-
-            if (result.Succeeded)
-            {
-                _logger.LogDebug("Connector function {FunctionName} executed successfully", functionName);
-                return new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent("Function executed successfully")
-                };
-            }
-            else
-            {
-                _logger.LogError(result.Exception, "Connector function {FunctionName} failed", functionName);
-                return new HttpResponseMessage(HttpStatusCode.InternalServerError)
-                {
-                    Content = new StringContent("Function execution failed")
-                };
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("Function execution cancelled: {FunctionName}", functionName);
-            return new HttpResponseMessage(HttpStatusCode.RequestTimeout)
-            {
-                Content = new StringContent("Request cancelled")
-            };
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
-        {
-            _logger.LogError(ex, "Error executing connector function {FunctionName}", functionName);
-            return new HttpResponseMessage(HttpStatusCode.InternalServerError)
-            {
-                Content = new StringContent("Function execution failed")
-            };
-        }
+        var headerKeys = string.Join(", ", request.Headers.Select(h => h.Key));
+        _logger.LogDebug(
+            "Processing connector request: Function={FunctionName}, BodyLength={BodyLength}, Headers=[{Headers}]",
+            functionName, bodyLength, headerKeys);
     }
 }

@@ -26,47 +26,52 @@ public class ConnectorListenerTests
     }
 
     [Fact]
-    public void Constructor_ThrowsArgumentNullException_WhenExecutorIsNull()
-    {
-        Assert.Throws<ArgumentNullException>(() => 
-            new ConnectorListener(null!, _configProvider, "TestFunction"));
-    }
-
-    [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenConfigProviderIsNull()
     {
+        var registration = new ConnectorFunctionRegistration("TestFunction", _mockExecutor.Object);
         Assert.Throws<ArgumentNullException>(() => 
-            new ConnectorListener(_mockExecutor.Object, null!, "TestFunction"));
+            new ConnectorListener(null!, registration));
     }
 
     [Fact]
-    public void Constructor_ThrowsArgumentNullException_WhenFunctionNameIsNull()
+    public void Constructor_ThrowsArgumentNullException_WhenRegistrationIsNull()
     {
         Assert.Throws<ArgumentNullException>(() => 
-            new ConnectorListener(_mockExecutor.Object, _configProvider, null!));
+            new ConnectorListener(_configProvider, null!));
     }
 
     [Fact]
-    public void Executor_ReturnsProvidedExecutor()
+    public async Task Constructor_RegistersFunctionWithConfigProvider()
     {
         // Arrange
-        var listener = new ConnectorListener(
-            _mockExecutor.Object, 
-            _configProvider, 
-            "TestFunction");
+        _mockExecutor.Setup(e => e.TryExecuteAsync(
+            It.IsAny<TriggeredFunctionData>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FunctionResult(true));
 
-        // Assert
-        Assert.Same(_mockExecutor.Object, listener.Executor);
+        var registration = new ConnectorFunctionRegistration("RegisteredFunction", _mockExecutor.Object);
+        
+        // Act - constructor should register the function
+        var listener = new ConnectorListener(_configProvider, registration);
+
+        // Assert - function should be callable via ConvertAsync
+        var request = new System.Net.Http.HttpRequestMessage(
+            System.Net.Http.HttpMethod.Post, 
+            "http://localhost/api/connector?functionName=RegisteredFunction")
+        {
+            Content = new System.Net.Http.StringContent("{}")
+        };
+
+        var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
+        Assert.Equal(System.Net.HttpStatusCode.Accepted, response.StatusCode);
     }
 
     [Fact]
     public async Task StartAsync_CompletesSuccessfully()
     {
         // Arrange
-        var listener = new ConnectorListener(
-            _mockExecutor.Object, 
-            _configProvider, 
-            "TestFunction");
+        var registration = new ConnectorFunctionRegistration("TestFunction", _mockExecutor.Object);
+        var listener = new ConnectorListener(_configProvider, registration);
 
         // Act & Assert (should not throw)
         await listener.StartAsync(CancellationToken.None);
@@ -76,10 +81,8 @@ public class ConnectorListenerTests
     public async Task StopAsync_CompletesSuccessfully()
     {
         // Arrange
-        var listener = new ConnectorListener(
-            _mockExecutor.Object, 
-            _configProvider, 
-            "TestFunction");
+        var registration = new ConnectorFunctionRegistration("TestFunction", _mockExecutor.Object);
+        var listener = new ConnectorListener(_configProvider, registration);
 
         // Act & Assert (should not throw)
         await listener.StopAsync(CancellationToken.None);
@@ -89,10 +92,8 @@ public class ConnectorListenerTests
     public void Cancel_DoesNotThrow()
     {
         // Arrange
-        var listener = new ConnectorListener(
-            _mockExecutor.Object, 
-            _configProvider, 
-            "TestFunction");
+        var registration = new ConnectorFunctionRegistration("TestFunction", _mockExecutor.Object);
+        var listener = new ConnectorListener(_configProvider, registration);
 
         // Act & Assert (should not throw)
         listener.Cancel();
@@ -102,10 +103,8 @@ public class ConnectorListenerTests
     public void Dispose_CanBeCalledMultipleTimes()
     {
         // Arrange
-        var listener = new ConnectorListener(
-            _mockExecutor.Object, 
-            _configProvider, 
-            "TestFunction");
+        var registration = new ConnectorFunctionRegistration("TestFunction", _mockExecutor.Object);
+        var listener = new ConnectorListener(_configProvider, registration);
 
         // Act & Assert (should not throw)
         listener.Dispose();

@@ -48,6 +48,8 @@ artifacts/
 
 # Azure Functions
 local.settings.json
+publish/
+deploy.zip
 
 # Test Results
 [Tt]est[Rr]esult*/

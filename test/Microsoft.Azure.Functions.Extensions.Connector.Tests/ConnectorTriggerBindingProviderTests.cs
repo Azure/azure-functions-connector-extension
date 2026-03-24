@@ -92,11 +92,11 @@ public class ConnectorTriggerBindingProviderTests
     // Test class with different function signatures
     private static class TestFunctions
     {
-        public static void FunctionWithAttribute([ConnectorTrigger] ConnectorContext ctx)
+        public static void FunctionWithAttribute([ConnectorTrigger] string body)
         {
         }
 
-        public static void FunctionWithoutAttribute(ConnectorContext ctx)
+        public static void FunctionWithoutAttribute(string body)
         {
         }
 

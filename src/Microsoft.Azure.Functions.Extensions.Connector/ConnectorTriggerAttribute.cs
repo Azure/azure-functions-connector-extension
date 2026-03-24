@@ -6,25 +6,30 @@ using Microsoft.Azure.WebJobs.Description;
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
 /// <summary>
-/// Attribute that marks a function parameter as a Connector trigger.
-/// Functions with this trigger will be invoked via HTTP POST requests to:
-/// /runtime/webhooks/connector?functionName={FunctionName}
+/// Trigger attribute for AI Gateway connector webhooks.
 /// </summary>
-/// <remarks>
-/// Supported parameter types:
-/// - <see cref="ConnectorContext"/>: Full context with body, headers, query params
-/// - <see cref="string"/>: Raw request body as string
-/// - <see cref="Newtonsoft.Json.Linq.JToken"/>: Parsed JSON body
-/// - Any POCO: Automatically deserialized from JSON body
-/// </remarks>
 [AttributeUsage(AttributeTargets.Parameter)]
 [Binding]
 public sealed class ConnectorTriggerAttribute : Attribute
 {
     /// <summary>
-    /// Creates a new ConnectorTriggerAttribute.
+    /// The connector name (e.g., "office365", "sharepointonline", "teams").
     /// </summary>
-    public ConnectorTriggerAttribute()
-    {
-    }
+    public string? Connector { get; set; }
+
+    internal string? ConnectorName => Connector;
+
+    /// <summary>
+    /// The trigger operation ID (e.g., "OnNewEmailV3", "OnNewChannelMessage").
+    /// </summary>
+    public string? Operation { get; set; }
+
+    internal string? OperationName => Operation;
+
+    /// <summary>
+    /// The AI Gateway connection name. Can use %AppSettingName% syntax.
+    /// </summary>
+    public string? Connection { get; set; }
+
+    internal string? ConnectionName => Connection;
 }

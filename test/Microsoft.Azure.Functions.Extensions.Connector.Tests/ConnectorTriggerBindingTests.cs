@@ -13,6 +13,7 @@ namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 public class ConnectorTriggerBindingTests
 {
     private readonly ConnectorExtensionConfigProvider _configProvider;
+    private readonly ConnectorTriggerAttribute _attribute;
 
     public ConnectorTriggerBindingTests()
     {
@@ -21,13 +22,14 @@ public class ConnectorTriggerBindingTests
         var httpRequestProcessor = new ConnectorHttpRequestProcessor(
             NullLogger<ConnectorHttpRequestProcessor>.Instance);
         _configProvider = new ConnectorExtensionConfigProvider(httpRequestProcessor, loggerFactory);
+        _attribute = new ConnectorTriggerAttribute();
     }
 
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenParameterIsNull()
     {
         Assert.Throws<ArgumentNullException>(() => 
-            new ConnectorTriggerBinding(null!, _configProvider));
+            new ConnectorTriggerBinding(null!, _configProvider, _attribute));
     }
 
     [Fact]
@@ -39,104 +41,66 @@ public class ConnectorTriggerBindingTests
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => 
-            new ConnectorTriggerBinding(parameter, null!));
+            new ConnectorTriggerBinding(parameter, null!, _attribute));
     }
 
     [Fact]
-    public void TriggerValueType_ReturnsTupleType()
+    public void Constructor_ThrowsArgumentNullException_WhenAttributeIsNull()
     {
         // Arrange
         var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
             .GetParameters()[0];
-        var binding = new ConnectorTriggerBinding(parameter, _configProvider);
 
-        // Assert
-        Assert.Equal(typeof((ConnectorContext, JToken)), binding.TriggerValueType);
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => 
+            new ConnectorTriggerBinding(parameter, _configProvider, null!));
     }
 
     [Fact]
-    public void BindingDataContract_ContainsExpectedKeys()
+    public void TriggerValueType_ReturnsJObjectType()
     {
         // Arrange
         var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
             .GetParameters()[0];
-        var binding = new ConnectorTriggerBinding(parameter, _configProvider);
+        var binding = new ConnectorTriggerBinding(parameter, _configProvider, _attribute);
 
-        // Assert
+        // Assert: JObject as trigger value (for isolated worker gRPC serialization)
+        Assert.Equal(typeof(JObject), binding.TriggerValueType);
+    }
+
+    [Fact]
+    public void BindingDataContract_IsEmpty()
+    {
+        // Arrange
+        var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
+            .GetParameters()[0];
+        var binding = new ConnectorTriggerBinding(parameter, _configProvider, _attribute);
+
+        // Assert: empty binding contract
         var contract = binding.BindingDataContract;
-        Assert.Contains("Body", contract.Keys);
-        Assert.Contains("Headers", contract.Keys);
-        Assert.Contains("Query", contract.Keys);
-        Assert.Contains("Method", contract.Keys);
-        Assert.Contains("Url", contract.Keys);
-        Assert.Contains("ContentType", contract.Keys);
-        Assert.Contains("Timestamp", contract.Keys);
+        Assert.Empty(contract);
     }
 
     [Fact]
-    public void BindingDataContract_HasCorrectTypes()
+    public async Task BindAsync_ReturnsTriggerDataWithEmptyBindingData()
     {
         // Arrange
         var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
             .GetParameters()[0];
-        var binding = new ConnectorTriggerBinding(parameter, _configProvider);
+        var binding = new ConnectorTriggerBinding(parameter, _configProvider, _attribute);
 
-        // Assert
-        var contract = binding.BindingDataContract;
-        Assert.Equal(typeof(string), contract["Body"]);
-        Assert.Equal(typeof(IDictionary<string, string>), contract["Headers"]);
-        Assert.Equal(typeof(IDictionary<string, string>), contract["Query"]);
-        Assert.Equal(typeof(string), contract["Method"]);
-        Assert.Equal(typeof(string), contract["Url"]);
-        Assert.Equal(typeof(string), contract["ContentType"]);
-        Assert.Equal(typeof(DateTimeOffset), contract["Timestamp"]);
-    }
-
-    [Fact]
-    public async Task BindAsync_CreatesCorrectTriggerData()
-    {
-        // Arrange
-        var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
-            .GetParameters()[0];
-        var binding = new ConnectorTriggerBinding(parameter, _configProvider);
-
-        var context = new ConnectorContext
-        {
-            Body = "{\"test\": 123}",
-            Method = "POST",
-            Url = "http://localhost/api/test"
-        };
         var jsonBody = JToken.Parse("{\"test\": 123}");
-        var triggerValue = (context, jsonBody);
 
         var mockBindingContext = new Mock<Microsoft.Azure.WebJobs.Host.Bindings.ValueBindingContext>(
             null!, CancellationToken.None);
 
         // Act
-        var result = await binding.BindAsync(triggerValue, mockBindingContext.Object);
+        var result = await binding.BindAsync(jsonBody, mockBindingContext.Object);
 
-        // Assert
+        // Assert: null ValueProvider, empty BindingData
         Assert.NotNull(result);
         Assert.NotNull(result.BindingData);
-        Assert.Equal("{\"test\": 123}", result.BindingData["Body"]);
-        Assert.Equal("POST", result.BindingData["Method"]);
-        Assert.Equal("http://localhost/api/test", result.BindingData["Url"]);
-    }
-
-    [Fact]
-    public async Task BindAsync_ThrowsForInvalidTriggerValue()
-    {
-        // Arrange
-        var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
-            .GetParameters()[0];
-        var binding = new ConnectorTriggerBinding(parameter, _configProvider);
-
-        var mockBindingContext = new Mock<Microsoft.Azure.WebJobs.Host.Bindings.ValueBindingContext>(
-            null!, CancellationToken.None);
-
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(() => 
-            binding.BindAsync("invalid value", mockBindingContext.Object));
+        Assert.Empty(result.BindingData);
     }
 
     [Fact]
@@ -145,7 +109,7 @@ public class ConnectorTriggerBindingTests
         // Arrange
         var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
             .GetParameters()[0];
-        var binding = new ConnectorTriggerBinding(parameter, _configProvider);
+        var binding = new ConnectorTriggerBinding(parameter, _configProvider, _attribute);
 
         // Act
         var descriptor = binding.ToParameterDescriptor();
@@ -161,7 +125,7 @@ public class ConnectorTriggerBindingTests
         // Arrange
         var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
             .GetParameters()[0];
-        var binding = new ConnectorTriggerBinding(parameter, _configProvider);
+        var binding = new ConnectorTriggerBinding(parameter, _configProvider, _attribute);
 
         var mockExecutor = new Mock<Microsoft.Azure.WebJobs.Host.Executors.ITriggeredFunctionExecutor>();
         
@@ -187,7 +151,7 @@ public class ConnectorTriggerBindingTests
         // Arrange
         var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
             .GetParameters()[0];
-        var binding = new ConnectorTriggerBinding(parameter, _configProvider);
+        var binding = new ConnectorTriggerBinding(parameter, _configProvider, _attribute);
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentNullException>(() => 
@@ -197,7 +161,7 @@ public class ConnectorTriggerBindingTests
     // Test class for reflection
     private static class TestFunctions
     {
-        public static void SampleFunction([ConnectorTrigger] ConnectorContext ctx)
+        public static void SampleFunction([ConnectorTrigger] string ctx)
         {
         }
     }

@@ -6,7 +6,7 @@
     <RootNamespace>Microsoft.Azure.Functions.Extensions.Connector</RootNamespace>
     <PackageId>Microsoft.Azure.Functions.Extensions.Connector</PackageId>
     <Version>0.1.0-preview</Version>
-    <Description>Connector extension for Azure Functions - Exposes a webhook endpoint that accepts JSON/string payloads</Description>
+    <Description>Connector extension for Azure Functions</Description>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>

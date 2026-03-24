@@ -30,7 +30,7 @@ internal sealed class ConnectorTriggerBindingProvider : ITriggerBindingProvider
             return Task.FromResult<ITriggerBinding?>(null);
         }
 
-        var binding = new ConnectorTriggerBinding(parameter, _configProvider);
+        var binding = new ConnectorTriggerBinding(parameter, _configProvider, attribute);
         return Task.FromResult<ITriggerBinding?>(binding);
     }
 }
