@@ -122,7 +122,7 @@ def on_new_email(payload: str, output: func.Out[str]) -> None:
 
 ## Samples
 
-- **[.NET Isolated](./samples/dotnet-isolated)** - .NET 8 isolated worker with POCO binding
+- **[.NET Isolated](./samples/dotnet-isolated)** - .NET isolated worker with POCO binding
 - **[Python](./samples/python)** - Python v2 with blob output
 
 ## Project Structure
@@ -144,6 +144,8 @@ azure-functions-connector-extension/
 ```
 
 ## Building
+
+Requires .NET SDK 10.0.100 or later (see `global.json`).
 
 ```bash
 dotnet build
