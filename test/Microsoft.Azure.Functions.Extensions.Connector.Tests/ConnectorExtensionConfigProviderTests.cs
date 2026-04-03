@@ -27,14 +27,14 @@ public class ConnectorExtensionConfigProviderTests
     public void Constructor_ThrowsArgumentNullException_WhenHttpProcessorIsNull()
     {
         var loggerFactory = NullLoggerFactory.Instance;
-        Assert.Throws<ArgumentNullException>(() => 
+        Assert.Throws<ArgumentNullException>(() =>
             new ConnectorExtensionConfigProvider(null!, loggerFactory));
     }
 
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenLoggerFactoryIsNull()
     {
-        Assert.Throws<ArgumentNullException>(() => 
+        Assert.Throws<ArgumentNullException>(() =>
             new ConnectorExtensionConfigProvider(_httpRequestProcessor, null!));
     }
 
@@ -90,7 +90,7 @@ public class ConnectorExtensionConfigProviderTests
     public async Task ConvertAsync_ReturnsBadRequest_WhenFunctionNameHasInvalidCharacters(string invalidName)
     {
         // Arrange - function names with special characters should be rejected
-        var request = new HttpRequestMessage(HttpMethod.Post, 
+        var request = new HttpRequestMessage(HttpMethod.Post,
             $"http://localhost/api/connector?functionName={Uri.EscapeDataString(invalidName)}");
 
         // Act
@@ -105,7 +105,7 @@ public class ConnectorExtensionConfigProviderTests
     public async Task ConvertAsync_ReturnsNotFound_WhenFunctionNotRegistered()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Post, 
+        var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=NonExistentFunction");
 
         // Act
@@ -131,7 +131,7 @@ public class ConnectorExtensionConfigProviderTests
         var registration = new ConnectorFunctionRegistration("TestFunction", mockExecutor.Object);
         var listener = new ConnectorListener(_configProvider, registration);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, 
+        var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=TestFunction")
         {
             Content = new StringContent("{\"test\": \"data\"}")
@@ -159,7 +159,7 @@ public class ConnectorExtensionConfigProviderTests
         var listener = new ConnectorListener(_configProvider, registration);
 
         // Request with uppercase name
-        var request = new HttpRequestMessage(HttpMethod.Post, 
+        var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=TESTFUNCTION")
         {
             Content = new StringContent("{}")
@@ -183,7 +183,7 @@ public class ConnectorExtensionConfigProviderTests
         var listener = new ConnectorListener(_configProvider, registration);
 
         // Assert - verify we can find the function
-        var request = new HttpRequestMessage(HttpMethod.Post, 
+        var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=AddedFunction")
         {
             Content = new StringContent("{}")
@@ -203,7 +203,7 @@ public class ConnectorExtensionConfigProviderTests
     {
         // Arrange
         var validNames = new[] { "MyFunction", "my_function", "my-function", "Function123", "a", "A_1-B" };
-        
+
         foreach (var validName in validNames)
         {
             var mockExecutor = new Mock<ITriggeredFunctionExecutor>();
@@ -215,7 +215,7 @@ public class ConnectorExtensionConfigProviderTests
             var registration = new ConnectorFunctionRegistration(validName, mockExecutor.Object);
             var listener = new ConnectorListener(_configProvider, registration);
 
-            var request = new HttpRequestMessage(HttpMethod.Post, 
+            var request = new HttpRequestMessage(HttpMethod.Post,
                 $"http://localhost/api/connector?functionName={validName}")
             {
                 Content = new StringContent("{}")
@@ -242,7 +242,7 @@ public class ConnectorExtensionConfigProviderTests
         var registration = new ConnectorFunctionRegistration("FailingFunction", mockExecutor.Object);
         var listener = new ConnectorListener(_configProvider, registration);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, 
+        var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=FailingFunction")
         {
             Content = new StringContent("{}")
@@ -258,7 +258,7 @@ public class ConnectorExtensionConfigProviderTests
     }
 
     [Fact]
-    public async Task ConvertAsync_PassesJTokenToExecutor()
+    public async Task ConvertAsync_PassesJsonStringToExecutor()
     {
         // Arrange
         TriggeredFunctionData? capturedData = null;
@@ -269,12 +269,12 @@ public class ConnectorExtensionConfigProviderTests
             .Callback<TriggeredFunctionData, CancellationToken>((data, ct) => capturedData = data)
             .ReturnsAsync(new FunctionResult(true));
 
-        var registration = new ConnectorFunctionRegistration("JTokenFunction", mockExecutor.Object);
+        var registration = new ConnectorFunctionRegistration("JsonFunction", mockExecutor.Object);
         var listener = new ConnectorListener(_configProvider, registration);
 
         var jsonBody = "{\"email\": \"test@example.com\", \"subject\": \"Hello\"}";
-        var request = new HttpRequestMessage(HttpMethod.Post, 
-            "http://localhost/api/connector?functionName=JTokenFunction")
+        var request = new HttpRequestMessage(HttpMethod.Post,
+            "http://localhost/api/connector?functionName=JsonFunction")
         {
             Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json")
         };
@@ -282,11 +282,11 @@ public class ConnectorExtensionConfigProviderTests
         // Act
         await _configProvider.ConvertAsync(request, CancellationToken.None);
 
-        // Assert - TriggerValue should be JToken (not tuple)
+        // Assert - TriggerValue should be raw JSON string
         Assert.NotNull(capturedData);
-        Assert.IsAssignableFrom<Newtonsoft.Json.Linq.JToken>(capturedData.TriggerValue);
-        var jtoken = (Newtonsoft.Json.Linq.JToken)capturedData.TriggerValue;
-        Assert.Equal("test@example.com", jtoken["email"]?.ToString());
-        Assert.Equal("Hello", jtoken["subject"]?.ToString());
+        Assert.IsType<string>(capturedData.TriggerValue);
+        var jsonString = (string)capturedData.TriggerValue;
+        Assert.Contains("test@example.com", jsonString);
+        Assert.Contains("Hello", jsonString);
     }
 }

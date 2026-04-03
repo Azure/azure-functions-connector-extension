@@ -26,14 +26,14 @@ public class ConnectorTriggerBindingProviderTests
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenConfigProviderIsNull()
     {
-        Assert.Throws<ArgumentNullException>(() => 
+        Assert.Throws<ArgumentNullException>(() =>
             new ConnectorTriggerBindingProvider(null!));
     }
 
     [Fact]
     public async Task TryCreateAsync_ThrowsArgumentNullException_WhenContextIsNull()
     {
-        await Assert.ThrowsAsync<ArgumentNullException>(() => 
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
             _provider.TryCreateAsync(null!));
     }
 

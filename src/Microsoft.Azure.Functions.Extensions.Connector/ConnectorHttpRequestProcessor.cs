@@ -3,14 +3,13 @@
 
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json.Linq;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
 /// <summary>
 /// Processes incoming HTTP requests for the Connector trigger.
-/// Parses body to JToken and invokes function via callback.
 /// </summary>
 internal sealed class ConnectorHttpRequestProcessor
 {
@@ -24,12 +23,12 @@ internal sealed class ConnectorHttpRequestProcessor
     }
 
     /// <summary>
-    /// Processes an HTTP request and invokes the callback with the parsed JToken.
+    /// Processes an HTTP request and invokes the callback with the raw JSON string.
     /// </summary>
     internal async Task<HttpResponseMessage> ProcessAsync(
         HttpRequestMessage request,
         string functionName,
-        Func<JToken, string, CancellationToken, Task<HttpResponseMessage>> executeFunc,
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> executeFunc,
         CancellationToken cancellationToken)
     {
         if (request.Method != HttpMethod.Post && request.Method != HttpMethod.Put)
@@ -43,20 +42,17 @@ internal sealed class ConnectorHttpRequestProcessor
 
         try
         {
-            // Validate content length header
             if (request.Content?.Headers?.ContentLength > MaxBodySize)
             {
-                _logger.LogWarning("Request body too large: {ContentLength} bytes", 
+                _logger.LogWarning("Request body too large: {ContentLength} bytes",
                     request.Content.Headers.ContentLength);
                 return new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge);
             }
 
-            // Read request body
             string body = request.Content != null
                 ? await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
                 : string.Empty;
 
-            // Validate actual body size
             if (body.Length > MaxBodySize)
             {
                 _logger.LogWarning("Request body too large: {Length} bytes", body.Length);
@@ -65,13 +61,23 @@ internal sealed class ConnectorHttpRequestProcessor
 
             LogRequestInfo(request, functionName, body.Length);
 
-            // Parse body to JToken
-            JToken triggerValue = string.IsNullOrWhiteSpace(body) 
-                ? JValue.CreateNull() 
-                : JToken.Parse(body);
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning(ex, "Invalid JSON in request body for function {FunctionName}", functionName);
+                    return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                    {
+                        Content = new StringContent("Request body must be valid JSON")
+                    };
+                }
+            }
 
-            // Execute via callback
-            return await executeFunc(triggerValue, functionName, cancellationToken).ConfigureAwait(false);
+            return await executeFunc(body, functionName, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

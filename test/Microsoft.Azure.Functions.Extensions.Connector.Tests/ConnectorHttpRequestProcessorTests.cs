@@ -3,9 +3,9 @@
 
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Newtonsoft.Json.Linq;
 using Xunit;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
@@ -32,7 +32,7 @@ public class ConnectorHttpRequestProcessorTests
     {
         // Arrange
         var request = new HttpRequestMessage(HttpMethod.Get, "http://localhost/api/connector");
-        Func<JToken, string, CancellationToken, Task<HttpResponseMessage>> callback = 
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
             (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
 
         // Act
@@ -49,7 +49,7 @@ public class ConnectorHttpRequestProcessorTests
     {
         // Arrange
         var request = new HttpRequestMessage(HttpMethod.Delete, "http://localhost/api/connector");
-        Func<JToken, string, CancellationToken, Task<HttpResponseMessage>> callback = 
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
             (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
 
         // Act
@@ -67,11 +67,11 @@ public class ConnectorHttpRequestProcessorTests
         {
             Content = new StringContent("{\"test\": \"data\"}")
         };
-        JToken? capturedToken = null;
-        Func<JToken, string, CancellationToken, Task<HttpResponseMessage>> callback = 
-            (token, _, _) => 
+        string? capturedJson = null;
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (json, _, _) =>
             {
-                capturedToken = token;
+                capturedJson = json;
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
             };
 
@@ -80,8 +80,9 @@ public class ConnectorHttpRequestProcessorTests
 
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-        Assert.NotNull(capturedToken);
-        Assert.Equal("data", capturedToken!["test"]?.ToString());
+        Assert.NotNull(capturedJson);
+        using var doc = JsonDocument.Parse(capturedJson!);
+        Assert.Equal("data", doc.RootElement.GetProperty("test").GetString());
     }
 
     [Fact]
@@ -92,7 +93,7 @@ public class ConnectorHttpRequestProcessorTests
         {
             Content = new StringContent("{\"test\": \"data\"}")
         };
-        Func<JToken, string, CancellationToken, Task<HttpResponseMessage>> callback = 
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
             (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
 
         // Act
@@ -103,7 +104,7 @@ public class ConnectorHttpRequestProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_ParsesJsonBodyToJToken()
+    public async Task ProcessAsync_PassesRawJsonString()
     {
         // Arrange
         var jsonBody = "{\"subject\": \"Test Email\", \"from\": \"test@example.com\"}";
@@ -111,11 +112,11 @@ public class ConnectorHttpRequestProcessorTests
         {
             Content = new StringContent(jsonBody)
         };
-        JToken? capturedToken = null;
-        Func<JToken, string, CancellationToken, Task<HttpResponseMessage>> callback = 
-            (token, _, _) => 
+        string? capturedJson = null;
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (json, _, _) =>
             {
-                capturedToken = token;
+                capturedJson = json;
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
             };
 
@@ -123,9 +124,10 @@ public class ConnectorHttpRequestProcessorTests
         await _processor.ProcessAsync(request, "TestFunction", callback, CancellationToken.None);
 
         // Assert
-        Assert.NotNull(capturedToken);
-        Assert.Equal("Test Email", capturedToken!["subject"]?.ToString());
-        Assert.Equal("test@example.com", capturedToken["from"]?.ToString());
+        Assert.NotNull(capturedJson);
+        using var doc = JsonDocument.Parse(capturedJson!);
+        Assert.Equal("Test Email", doc.RootElement.GetProperty("subject").GetString());
+        Assert.Equal("test@example.com", doc.RootElement.GetProperty("from").GetString());
     }
 
     [Fact]
@@ -136,11 +138,11 @@ public class ConnectorHttpRequestProcessorTests
         {
             Content = new StringContent("")
         };
-        JToken? capturedToken = null;
-        Func<JToken, string, CancellationToken, Task<HttpResponseMessage>> callback = 
-            (token, _, _) => 
+        string? capturedJson = null;
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (json, _, _) =>
             {
-                capturedToken = token;
+                capturedJson = json;
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
             };
 
@@ -149,8 +151,7 @@ public class ConnectorHttpRequestProcessorTests
 
         // Assert
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-        Assert.NotNull(capturedToken);
-        Assert.Equal(JTokenType.Null, capturedToken!.Type);
+        Assert.Equal(string.Empty, capturedJson);
     }
 
     [Fact]
@@ -162,8 +163,8 @@ public class ConnectorHttpRequestProcessorTests
             Content = new StringContent("{}")
         };
         string? capturedFunctionName = null;
-        Func<JToken, string, CancellationToken, Task<HttpResponseMessage>> callback = 
-            (_, functionName, _) => 
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, functionName, _) =>
             {
                 capturedFunctionName = functionName;
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
@@ -184,7 +185,7 @@ public class ConnectorHttpRequestProcessorTests
         {
             Content = new StringContent("{}")
         };
-        Func<JToken, string, CancellationToken, Task<HttpResponseMessage>> callback = 
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
             (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
             {
                 Content = new StringContent("Callback error")
@@ -197,5 +198,25 @@ public class ConnectorHttpRequestProcessorTests
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         var content = await response.Content.ReadAsStringAsync();
         Assert.Equal("Callback error", content);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsBadRequest_ForInvalidJson()
+    {
+        // Arrange
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new StringContent("not valid json {{{")
+        };
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", callback, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("valid JSON", content);
     }
 }

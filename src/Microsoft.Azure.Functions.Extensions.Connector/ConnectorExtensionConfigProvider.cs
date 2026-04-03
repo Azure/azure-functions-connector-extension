@@ -8,12 +8,9 @@ using System.Text.RegularExpressions;
 using System.Web;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Description;
-using Microsoft.Azure.WebJobs.Host.Bindings;
 using Microsoft.Azure.WebJobs.Host.Config;
 using Microsoft.Azure.WebJobs.Host.Executors;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
@@ -25,7 +22,7 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
     IAsyncConverter<HttpRequestMessage, HttpResponseMessage>
 {
     private static readonly Regex FunctionNamePattern = new(@"^[a-zA-Z0-9_-]{1,128}$", RegexOptions.Compiled);
-    
+
     private readonly ILogger<ConnectorExtensionConfigProvider> _logger;
     private readonly ConnectorHttpRequestProcessor _httpRequestProcessor;
     private readonly ConcurrentDictionary<string, ConnectorFunctionRegistration> _functions = new(StringComparer.OrdinalIgnoreCase);
@@ -35,7 +32,7 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         ILoggerFactory loggerFactory)
     {
         _httpRequestProcessor = httpRequestProcessor ?? throw new ArgumentNullException(nameof(httpRequestProcessor));
-        _logger = loggerFactory?.CreateLogger<ConnectorExtensionConfigProvider>() 
+        _logger = loggerFactory?.CreateLogger<ConnectorExtensionConfigProvider>()
             ?? throw new ArgumentNullException(nameof(loggerFactory));
     }
 
@@ -57,8 +54,6 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
 
         context
             .AddBindingRule<ConnectorTriggerAttribute>()
-            .AddConverter<JToken, string>(jtoken => jtoken.ToString(Formatting.Indented))
-            .AddOpenConverter<JToken, OpenType.Poco>(typeof(JTokenToPocoConverter<>))
             .BindToTrigger(new ConnectorTriggerBindingProvider(this));
     }
 
@@ -86,13 +81,13 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         }
 
         return await _httpRequestProcessor.ProcessAsync(
-            input, 
-            functionName, 
+            input,
+            functionName,
             ExecuteAsync,
             cancellationToken);
     }
 
-    private async Task<HttpResponseMessage> ExecuteAsync(JToken triggerValue, string functionName, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> ExecuteAsync(string triggerValue, string functionName, CancellationToken cancellationToken)
     {
         if (!_functions.TryGetValue(functionName, out var registration))
         {
@@ -113,10 +108,5 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         {
             Content = new StringContent(result.Exception?.Message ?? "Function execution failed")
         };
-    }
-
-    private sealed class JTokenToPocoConverter<T> : IConverter<JToken, T>
-    {
-        public T Convert(JToken input) => input.ToObject<T>()!;
     }
 }

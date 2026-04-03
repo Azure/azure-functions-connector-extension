@@ -20,7 +20,7 @@ internal sealed class ConnectorListener : IListener
     {
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _registration = registration ?? throw new ArgumentNullException(nameof(registration));
-        
+
         // Register as part of create time initialization
         _configProvider.RegisterFunction(_registration);
     }

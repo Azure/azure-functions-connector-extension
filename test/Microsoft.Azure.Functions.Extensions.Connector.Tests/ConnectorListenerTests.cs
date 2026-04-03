@@ -17,7 +17,7 @@ public class ConnectorListenerTests
     public ConnectorListenerTests()
     {
         _mockExecutor = new Mock<ITriggeredFunctionExecutor>();
-        
+
         // Create real instances since ConnectorExtensionConfigProvider is sealed
         var loggerFactory = NullLoggerFactory.Instance;
         var httpRequestProcessor = new ConnectorHttpRequestProcessor(
@@ -29,14 +29,14 @@ public class ConnectorListenerTests
     public void Constructor_ThrowsArgumentNullException_WhenConfigProviderIsNull()
     {
         var registration = new ConnectorFunctionRegistration("TestFunction", _mockExecutor.Object);
-        Assert.Throws<ArgumentNullException>(() => 
+        Assert.Throws<ArgumentNullException>(() =>
             new ConnectorListener(null!, registration));
     }
 
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenRegistrationIsNull()
     {
-        Assert.Throws<ArgumentNullException>(() => 
+        Assert.Throws<ArgumentNullException>(() =>
             new ConnectorListener(_configProvider, null!));
     }
 
@@ -50,13 +50,13 @@ public class ConnectorListenerTests
             .ReturnsAsync(new FunctionResult(true));
 
         var registration = new ConnectorFunctionRegistration("RegisteredFunction", _mockExecutor.Object);
-        
+
         // Act - constructor should register the function
         var listener = new ConnectorListener(_configProvider, registration);
 
         // Assert - function should be callable via ConvertAsync
         var request = new System.Net.Http.HttpRequestMessage(
-            System.Net.Http.HttpMethod.Post, 
+            System.Net.Http.HttpMethod.Post,
             "http://localhost/api/connector?functionName=RegisteredFunction")
         {
             Content = new System.Net.Http.StringContent("{}")

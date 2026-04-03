@@ -5,7 +5,6 @@ using System.Reflection;
 using Microsoft.Azure.WebJobs.Host.Triggers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using Newtonsoft.Json.Linq;
 using Xunit;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
@@ -28,7 +27,7 @@ public class ConnectorTriggerBindingTests
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenParameterIsNull()
     {
-        Assert.Throws<ArgumentNullException>(() => 
+        Assert.Throws<ArgumentNullException>(() =>
             new ConnectorTriggerBinding(null!, _configProvider, _attribute));
     }
 
@@ -40,7 +39,7 @@ public class ConnectorTriggerBindingTests
             .GetParameters()[0];
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => 
+        Assert.Throws<ArgumentNullException>(() =>
             new ConnectorTriggerBinding(parameter, null!, _attribute));
     }
 
@@ -52,20 +51,20 @@ public class ConnectorTriggerBindingTests
             .GetParameters()[0];
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => 
+        Assert.Throws<ArgumentNullException>(() =>
             new ConnectorTriggerBinding(parameter, _configProvider, null!));
     }
 
     [Fact]
-    public void TriggerValueType_ReturnsJObjectType()
+    public void TriggerValueType_ReturnsStringType()
     {
         // Arrange
         var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
             .GetParameters()[0];
         var binding = new ConnectorTriggerBinding(parameter, _configProvider, _attribute);
 
-        // Assert: JObject as trigger value (for isolated worker gRPC serialization)
-        Assert.Equal(typeof(JObject), binding.TriggerValueType);
+        // Assert: string as trigger value (raw JSON for worker)
+        Assert.Equal(typeof(string), binding.TriggerValueType);
     }
 
     [Fact]
@@ -89,7 +88,7 @@ public class ConnectorTriggerBindingTests
             .GetParameters()[0];
         var binding = new ConnectorTriggerBinding(parameter, _configProvider, _attribute);
 
-        var jsonBody = JToken.Parse("{\"test\": 123}");
+        var jsonBody = "{\"test\": 123}";
 
         var mockBindingContext = new Mock<Microsoft.Azure.WebJobs.Host.Bindings.ValueBindingContext>(
             null!, CancellationToken.None);
@@ -97,7 +96,7 @@ public class ConnectorTriggerBindingTests
         // Act
         var result = await binding.BindAsync(jsonBody, mockBindingContext.Object);
 
-        // Assert: null ValueProvider, empty BindingData
+        // Assert: ValueProvider returns string, empty BindingData
         Assert.NotNull(result);
         Assert.NotNull(result.BindingData);
         Assert.Empty(result.BindingData);
@@ -128,7 +127,7 @@ public class ConnectorTriggerBindingTests
         var binding = new ConnectorTriggerBinding(parameter, _configProvider, _attribute);
 
         var mockExecutor = new Mock<Microsoft.Azure.WebJobs.Host.Executors.ITriggeredFunctionExecutor>();
-        
+
         // Use a real FunctionDescriptor since ShortName is not virtual
         var descriptor = new TestFunctionDescriptor { ShortName = "TestFunction" };
 
@@ -154,7 +153,7 @@ public class ConnectorTriggerBindingTests
         var binding = new ConnectorTriggerBinding(parameter, _configProvider, _attribute);
 
         // Act & Assert
-        await Assert.ThrowsAsync<ArgumentNullException>(() => 
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
             binding.CreateListenerAsync(null!));
     }
 
