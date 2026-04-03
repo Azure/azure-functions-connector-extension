@@ -1,0 +1,39 @@
+<Project>
+
+    <!-- When the worker SDK generates the WorkerExtensions.csproj, it references the version of the
+    Microsoft.Azure.Functions.Extensions.Connector package that is defined in this project. This means
+    it will try to pull from NuGet which doesn't have our local package. This target modifies the 
+    generated WorkerExtensions.csproj to remove the PackageReference and add a ProjectReference for 
+    Extensions.Connector.csproj instead. -->
+
+    <PropertyGroup>
+        <_WorkerExtensionsPath>$(BaseIntermediateOutputPath)$(Configuration)\$(TargetFramework)\WorkerExtensions\WorkerExtensions.csproj</_WorkerExtensionsPath>
+        <_ConnectorProjectPath>$(SrcRoot)Microsoft.Azure.Functions.Extensions.Connector\Extensions.Connector.csproj</_ConnectorProjectPath>
+
+        <!-- Regex to remove the whole PackageReference block for Extensions.Connector -->
+        <_PkgBlockRegex><![CDATA[(?s)\s*<PackageReference\s+Include="Microsoft\.Azure\.Functions\.Extensions\.Connector"[\s\S]*?\/>\s*]]></_PkgBlockRegex>
+
+        <!-- Regex to find the closing </Project> -->
+        <_CloseProjRegex><![CDATA[(?m)^\s*</Project>\s*$]]></_CloseProjRegex>
+
+        <!-- xml block to inject before </Project> to add ProjectReference -->
+        <_InjectBlock>
+<![CDATA[
+    <ItemGroup>
+        <ProjectReference Include="$(_ConnectorProjectPath)" GlobalPropertiesToRemove="IsRestoring;RestoreSources;ImportDirectoryBuildProps;ImportDirectoryBuildTargets;ImportDirectoryPackagesProps;Configuration" />
+    </ItemGroup>
+</Project>]]>
+        </_InjectBlock>
+    </PropertyGroup>
+
+    <Target Name="FixWorkerExtensionsProject" BeforeTargets="_WorkerExtensionsRestore" Condition="Exists('$(_WorkerExtensionsPath)')">
+        <PropertyGroup>
+            <_Text>$([System.IO.File]::ReadAllText('$(_WorkerExtensionsPath)'))</_Text>
+            <_Text>$([System.Text.RegularExpressions.Regex]::Replace('$(_Text)', '$(_PkgBlockRegex)', ''))</_Text>
+            <_Text>$([System.Text.RegularExpressions.Regex]::Replace('$(_Text)', '$(_CloseProjRegex)', '$(_InjectBlock)'))</_Text>
+        </PropertyGroup>
+
+        <WriteLinesToFile File="$(_WorkerExtensionsPath)" Lines="$(_Text)" Overwrite="true" />
+    </Target>
+
+</Project>

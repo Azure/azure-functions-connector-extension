@@ -1,0 +1,47 @@
+<Project>
+
+  <!-- =============================================================================
+       WebJobsReference.targets - Links Worker Extension to WebJobs Extension
+       =============================================================================
+       
+       This file enables the two-package architecture used in isolated worker
+       extensions. It enables the Worker extension to automatically include metadata
+       about the corresponding WebJobs extension it depends on.
+       
+       HOW IT WORKS:
+       
+       1. The Worker extension csproj includes:
+          <WebJobsReference Include="path/to/Extensions.Connector.csproj" />
+       
+       2. When the Worker extension builds, the IncludeExtensionInformationAttribute
+          target runs and calls GetExtensionAssemblyAttribute on the WebJobs project.
+       
+       3. This generates an assembly attribute in the Worker extension:
+          [assembly: ExtensionInformation("Microsoft.Azure.Functions.Extensions.Connector", "0.1.0-preview")]
+       
+       4. At runtime, the Functions host reads this attribute from the Worker extension
+          and knows to load the corresponding WebJobs extension NuGet package.
+       ============================================================================= -->
+
+  <Target Name="GetExtensionAssemblyAttribute" Returns="@(_ExtensionAssemblyAttribute)">
+    <ItemGroup>
+      <_ExtensionAssemblyAttribute Include="Microsoft.Azure.Functions.Worker.Extensions.Abstractions.ExtensionInformationAttribute">
+        <_Parameter1>$(PackageId)</_Parameter1>
+        <_Parameter2>$(Version)</_Parameter2>
+      </_ExtensionAssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="IncludeExtensionInformationAttribute" Condition="'@(WebJobsReference)' != ''"
+    BeforeTargets="GenerateAdditionalSources">
+    
+    <MSBuild Projects="@(WebJobsReference)" Targets="GetExtensionAssemblyAttribute">
+      <Output TaskParameter="TargetOutputs" ItemName="_ExtensionAssemblyAttribute" />
+    </MSBuild>
+
+    <ItemGroup>
+      <AssemblyAttribute Include="@(_ExtensionAssemblyAttribute)" KeepMetadata="_Parameter1;_Parameter2" />
+    </ItemGroup>
+  </Target>
+
+</Project>
