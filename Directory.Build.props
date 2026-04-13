@@ -1,5 +1,10 @@
 <Project>
 
+  <!-- artifacts -->
+  <PropertyGroup>
+    <ArtifactsPath>$(MSBuildThisFileDirectory)out</ArtifactsPath>
+  </PropertyGroup>
+
   <!-- paths -->
   <PropertyGroup>
     <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
