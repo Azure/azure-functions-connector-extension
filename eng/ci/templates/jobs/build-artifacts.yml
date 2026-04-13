@@ -36,16 +36,16 @@ jobs:
           arguments: -c $(configuration)
           projects: $(project)
 
-      - bash: |
-          echo "===== dotnet --info ====="
+      - pwsh: |
+          Write-Host "===== dotnet --info ====="
           dotnet --info
 
-          echo ""
-          echo "===== Installed SDKs ====="
+          Write-Host ""
+          Write-Host "===== Installed SDKs ====="
           dotnet --list-sdks
 
-          echo ""
-          echo "===== Installed Runtimes ====="
+          Write-Host ""
+          Write-Host "===== Installed Runtimes ====="
           dotnet --list-runtimes
         displayName: 'Display .NET info'
 
