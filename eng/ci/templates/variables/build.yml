@@ -1,6 +1,6 @@
 variables:
   - name: configuration
-    value: release
+    value: Release
   - name: project
     value: Microsoft.Azure.Functions.Extensions.Connector.sln
   - name: Build.Counter

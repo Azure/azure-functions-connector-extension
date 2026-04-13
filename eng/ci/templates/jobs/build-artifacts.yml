@@ -88,7 +88,7 @@ jobs:
             inputs:
               command: custom
               custom: pack
-              arguments: --no-build -c Release -o $(packages_path)
+              arguments: --no-build -c $(configuration) -o $(packages_path)
               projects: $(project)
 
           - template: ci/sign-files.yml@eng

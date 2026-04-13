@@ -4,9 +4,6 @@ parameters:
   - name: artifactName
     type: string
     default: drop
-  - name: targetFolder
-    type: string
-    default: ''
 
 resources:
   repositories:
@@ -61,4 +58,4 @@ extends:
               ${{ if eq(parameters.publishToNugetOrg, true) }}:
                 partnerDrop:
                   serviceConnection: azure-sdk-partner-drops
-                  targetFolder: azure-functions/dotnet/connector-extension/$(Build.BuildNumber)
+                  targetFolder: azure-functions/dotnet/connector-extension/host/$(Build.BuildNumber)

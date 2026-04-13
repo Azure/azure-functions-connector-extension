@@ -4,9 +4,6 @@ parameters:
   - name: artifactName
     type: string
     default: drop
-  - name: targetFolder
-    type: string
-    default: ''
 
 resources:
   repositories:
