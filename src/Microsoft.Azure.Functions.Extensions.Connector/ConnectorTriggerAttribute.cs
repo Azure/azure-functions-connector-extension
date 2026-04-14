@@ -13,11 +13,20 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 public sealed class ConnectorTriggerAttribute : Attribute
 {
     /// <summary>
-    /// The connector name (e.g., "office365", "sharepointonline", "teams").
+    /// The AI Gateway endpoint name. Resolved from app settings using the
+    /// {name}__endpoint convention. Can use %AppSettingName% syntax.
+    /// Allows different functions to target different gateway instances.
     /// </summary>
-    public string? Connector { get; set; }
+    public string? AIGateway { get; set; }
 
-    internal string? ConnectorName => Connector;
+    internal string? GatewayName => AIGateway;
+
+    /// <summary>
+    /// The connector type name (e.g., "office365", "sharepointonline", "teams").
+    /// </summary>
+    public string? ConnectorType { get; set; }
+
+    internal string? ConnectorName => ConnectorType;
 
     /// <summary>
     /// The trigger operation ID (e.g., "OnNewEmailV3", "OnNewChannelMessage").

@@ -47,7 +47,7 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
 
         var registration = new ConnectorFunctionRegistration(functionName, context.Executor)
         {
-            Connector = _attribute.ConnectorName,
+            ConnectorType = _attribute.ConnectorName,
             Operation = _attribute.OperationName,
             Connection = _attribute.ConnectionName
         };

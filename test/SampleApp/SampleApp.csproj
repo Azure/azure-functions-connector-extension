@@ -21,7 +21,7 @@
     <ProjectReference Include="$(SrcRoot)Microsoft.Azure.Functions.Worker.Extensions.Connector\Worker.Extensions.Connector.csproj" />
     
     <!-- Connector SDK for typed payloads (local project reference for development) -->
-    <ProjectReference Include="D:\PyFx\azure-logicapps-connector-sdk\src\Microsoft.Azure.Workflows.Connectors.Sdk\Microsoft.Azure.Workflows.Connectors.Sdk.csproj" />
+    <!-- <ProjectReference Include="D:\PyFx\azure-logicapps-connector-sdk\src\Microsoft.Azure.Workflows.Connectors.Sdk\Microsoft.Azure.Workflows.Connectors.Sdk.csproj" /> -->
   </ItemGroup>
 
   <ItemGroup>
