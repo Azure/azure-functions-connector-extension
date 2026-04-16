@@ -48,7 +48,7 @@ extends:
         runSourceLanguagesInSourceAnalysis: true
 
     settings:
-      networkIsolationPolicy: CFSClean, Preferred, NuGet
+      networkIsolationPolicy: Preferred, NuGet
       # PR's from forks do not have sufficient permissions to set tags.
       skipBuildTagsForGitHubPullRequests: ${{ variables['System.PullRequest.IsFork'] }}
 
