@@ -3,6 +3,8 @@
   <!-- artifacts -->
   <PropertyGroup>
     <ArtifactsPath>$(MSBuildThisFileDirectory)out</ArtifactsPath>
+    <ArtifactsPublishOutputName>pub</ArtifactsPublishOutputName>
+    <ArtifactsPackageOutputName>pkg</ArtifactsPackageOutputName>
   </PropertyGroup>
 
   <!-- paths -->
@@ -11,11 +13,9 @@
     <SrcRoot>$(RepoRoot)src/</SrcRoot>
     <EngRoot>$(RepoRoot)eng/</EngRoot>
     <EngBuildRoot>$(EngRoot)build/</EngBuildRoot>
+    <EngResourceRoot>$(EngRoot)res/</EngResourceRoot>
   </PropertyGroup>
 
-  <!-- code quality -->
-  <PropertyGroup>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-  </PropertyGroup>
+  <Import Project="$(EngBuildRoot)Engineering.props" />
 
 </Project>
