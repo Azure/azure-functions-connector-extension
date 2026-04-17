@@ -48,9 +48,6 @@ extends:
           enabled: true
         runSourceLanguagesInSourceAnalysis: true
 
-    settings:
-      networkIsolationPolicy: CFSClean, Preferred, CFSClean2, NuGet
-
     stages:
       - stage: Build
         jobs:
