@@ -23,10 +23,7 @@ public class ConnectorFunctions
     [Function("OnNewEmail")]
     [BlobOutput("connector-messages/{rand-guid}.json", Connection = "BlobStoreConnection")]
     public string OnNewEmail(
-        [ConnectorTrigger(
-            ConnectorType = "office365",
-            Operation = "OnNewEmailV3",
-            Connection = "Office365Connection")]
+        [ConnectorTrigger]
         string payload)
     {
         _logger.LogInformation("Received connector trigger payload: {Length} bytes", payload?.Length ?? 0);
