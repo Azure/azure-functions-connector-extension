@@ -45,12 +45,7 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
         ArgumentNullException.ThrowIfNull(context);
         string functionName = context.Descriptor.ShortName.Split('.').Last();
 
-        var registration = new ConnectorFunctionRegistration(functionName, context.Executor)
-        {
-            Connector = _attribute.ConnectorName,
-            Operation = _attribute.OperationName,
-            Connection = _attribute.ConnectionName
-        };
+        var registration = new ConnectorFunctionRegistration(functionName, context.Executor);
 
         return Task.FromResult<IListener>(new ConnectorListener(_configProvider, registration));
     }

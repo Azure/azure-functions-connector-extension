@@ -15,10 +15,7 @@ app = func.FunctionApp()
 @app.function_name(name="OnNewEmail")
 @app.generic_trigger(
     arg_name="payload",
-    type="connectorTrigger",
-    connector="office365",
-    operation="OnNewEmailV3",
-    connection="Office365Connection")
+    type="connectorTrigger")
 @app.blob_output(
     arg_name="output",
     path="connector-messages/{rand-guid}.json",

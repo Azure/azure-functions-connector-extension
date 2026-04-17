@@ -7,7 +7,7 @@
     Extensions.Connector.csproj instead. -->
 
     <PropertyGroup>
-        <_WorkerExtensionsPath>$(BaseIntermediateOutputPath)$(Configuration)\$(TargetFramework)\WorkerExtensions\WorkerExtensions.csproj</_WorkerExtensionsPath>
+        <_WorkerExtensionsPath>$(BaseIntermediateOutputPath)$(Configuration)\WorkerExtensions\WorkerExtensions.csproj</_WorkerExtensionsPath>
         <_ConnectorProjectPath>$(SrcRoot)Microsoft.Azure.Functions.Extensions.Connector\Extensions.Connector.csproj</_ConnectorProjectPath>
 
         <!-- Regex to remove the whole PackageReference block for Extensions.Connector -->

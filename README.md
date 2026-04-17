@@ -1,6 +1,15 @@
 # Azure Functions Connector Extension
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Build](https://dev.azure.com/azfunc/Azure%20Functions/_apis/build/status%2FExtension-Connector%2FAzure%20Functions%20Connector%20Extension%20PR%20CI?branchName=main)](https://dev.azure.com/azfunc/Azure%20Functions/_build/latest?definitionId=303&branchName=main)
+
 An Azure Functions trigger extension for receiving webhook callbacks from AI Gateway managed connectors (Office 365, Teams, SharePoint, etc.).
+
+## NuGet Packages
+
+The following NuGet packages are available as part of this project.
+
+[![NuGet](https://img.shields.io/nuget/v/Microsoft.Azure.Functions.Extensions.Connector.svg?label=microsoft.azure.functions.worker.extensions.connector)](https://www.nuget.org/packages/Microsoft.Azure.Functions.Worker.Extensions.Connector)
 
 ## Overview
 
@@ -51,7 +60,7 @@ dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector
 
 ### Connector SDK (for typed payloads)
 
-For strongly-typed connector payloads, add the Connector SDK:
+For strongly-typed connector payloads, add the [connectors-net-sdk](https://github.com/Azure/connectors-net-sdk)K:
 
 ```xml
 <!-- Option 1: NuGet package (when available) -->
@@ -63,66 +72,15 @@ For strongly-typed connector payloads, add the Connector SDK:
 
 ## Usage
 
-### .NET Isolated Worker
-
-```csharp
-using Microsoft.Azure.Connectors.DirectClient.Office365;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Extensions.Connector;
-
-public class ConnectorFunctions
-{
-    [Function("OnNewEmail")]
-    [BlobOutput("emails/{rand-guid}.json", Connection = "BlobStoreConnection")]
-    public string OnNewEmail(
-        [ConnectorTrigger(Connector = "office365", Operation = "OnNewEmailV3", Connection = "Office365Connection")] 
-        Office365OnNewEmailV3TriggerPayload payload)
-    {
-        var emails = payload.Body?.Value ?? [];
-        // Process emails...
-        return JsonSerializer.Serialize(payload);
-    }
-}
-```
-
-### ConnectorTrigger Attribute
-
-| Property | Description |
-|----------|-------------|
-| `Connector` | Connector name (e.g., `"office365"`, `"sharepointonline"`, `"teams"`) |
-| `Operation` | Trigger operation ID (e.g., `"OnNewEmailV3"`, `"OnNewChannelMessage"`) |
-| `Connection` | Connection name from app settings |
-
 ### Supported Binding Types
 
 - `string` - raw JSON body
 - `JObject` / `JArray` - parsed JSON
 - POCO types - SDK types like `Office365OnNewEmailV3TriggerPayload`
 
-### Python
-
-```python
-import azure.functions as func
-import json
-
-app = func.FunctionApp()
-
-@app.function_name(name="OnNewEmail")
-@app.generic_trigger(
-    arg_name="payload",
-    type="connectorTrigger",
-    connector="office365",
-    operation="OnNewEmailV3",
-    connection="Office365Connection")
-@app.blob_output(arg_name="output", path="emails/{rand-guid}.json", connection="BlobStoreConnection")
-def on_new_email(payload: str, output: func.Out[str]) -> None:
-    data = json.loads(payload)
-    output.set(payload)
-```
-
 ## Samples
 
-- **[.NET Isolated](./samples/dotnet-isolated)** - .NET isolated worker with POCO binding
+- **[.NET Isolated](./test/SampleApp)** - .NET isolated worker sample
 - **[Python](./samples/python)** - Python v2 with blob output
 
 ## Project Structure
@@ -130,17 +88,25 @@ def on_new_email(payload: str, output: func.Out[str]) -> None:
 ```text
 azure-functions-connector-extension/
 ├── src/
-│   ├── Microsoft.Azure.Functions.Extensions.Connector/         # WebJobs host extension
-│   │   ├── ConnectorExtensionConfigProvider.cs                 # Extension config, HTTP routing
-│   │   ├── ConnectorHttpRequestProcessor.cs                    # Request parsing, callback
-│   │   ├── ConnectorTriggerBinding.cs                          # Trigger binding
-│   │   └── ConnectorListener.cs                                # Function registration
-│   └── Microsoft.Azure.Functions.Worker.Extensions.Connector/  # Worker extension (.NET isolated)
+│   ├── Microsoft.Azure.Functions.Extensions.Connector/          # WebJobs host extension
+│   │   ├── ConnectorExtensionConfigProvider.cs                  #   Extension config, HTTP routing
+│   │   ├── ConnectorHttpRequestProcessor.cs                     #   Request parsing, function dispatch
+│   │   ├── ConnectorTriggerAttribute.cs                         #   Trigger attribute
+│   │   ├── ConnectorTriggerBinding.cs                           #   Trigger binding
+│   │   ├── ConnectorTriggerBindingProvider.cs                   #   Binding provider
+│   │   ├── ConnectorListener.cs                                 #   Function registration
+│   │   ├── ConnectorFunctionRegistration.cs                     #   Function metadata
+│   │   ├── ConnectorStartup.cs                                  #   WebJobs startup hook
+│   │   └── ConnectorWebJobsBuilderExtensions.cs                 #   DI registration
+│   └── Microsoft.Azure.Functions.Worker.Extensions.Connector/   # Worker extension (.NET isolated)
+│       ├── ConnectorTriggerAttribute.cs                         #   Trigger attribute
+│       └── Converters/                                          #   Type converters
 ├── samples/
-│   ├── dotnet-isolated/    # .NET 8 sample with POCO binding
-│   └── python/             # Python sample with blob output
-└── test/
-    └── Microsoft.Azure.Functions.Extensions.Connector.Tests/   # Unit tests
+│   └── python/                                                  # Python sample with blob output
+├── test/
+│   ├── SampleApp/                                               # .NET isolated worker sample app
+│   └── Microsoft.Azure.Functions.Extensions.Connector.Tests/    # Unit tests
+└── eng/                                                         # Build and CI infrastructure
 ```
 
 ## Building

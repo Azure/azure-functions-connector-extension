@@ -53,4 +53,4 @@ extends:
         jobs:
           - template: /eng/ci/templates/jobs/build-artifacts.yml@self
             parameters:
-              CreateArtifacts: true
+              createArtifacts: true

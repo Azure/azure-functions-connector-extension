@@ -1,5 +1,5 @@
 parameters:
-  - name: CreateArtifacts
+  - name: createArtifacts
     type: boolean
     default: true
 
@@ -15,13 +15,16 @@ jobs:
     templateContext:
       outputParentDirectory: $(packages_path)
       outputs:
-        - ${{ if eq(parameters.CreateArtifacts, true) }}:
+        - ${{ if eq(parameters.createArtifacts, true) }}:
             - output: pipelineArtifact
               displayName: Publish artifacts
               path: $(packages_path)
               artifact: drop
 
     steps:
+      - task: NuGetAuthenticate@1
+        displayName: 'NuGet Authenticate'
+
       - task: UseDotNet@2 # The pinned SDK we use to build
         displayName: Install .NET SDK from global.json
         inputs:
@@ -56,7 +59,7 @@ jobs:
           arguments: --no-build -c $(configuration)
           projects: $(project)
 
-      - ${{ if eq(parameters.CreateArtifacts, true) }}:
+      - ${{ if eq(parameters.createArtifacts, true) }}:
           - template: ci/sign-files.yml@eng
             parameters:
               displayName: Sign worker extension assemblies
