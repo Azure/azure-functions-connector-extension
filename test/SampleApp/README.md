@@ -157,5 +157,5 @@ host.Run();
 ### csproj Reference
 
 ```xml
-<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Connector" Version="0.1.0-preview" />
+<PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Connector" Version="0.1.0-alpha" />
 ```
