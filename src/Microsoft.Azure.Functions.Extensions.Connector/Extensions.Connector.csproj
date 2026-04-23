@@ -3,9 +3,6 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>Microsoft.Azure.Functions.Extensions.Connector</AssemblyName>
-    <RootNamespace>Microsoft.Azure.Functions.Extensions.Connector</RootNamespace>
-    <PackageId>Microsoft.Azure.Functions.Extensions.Connector</PackageId>
-    <Version>0.1.0-preview</Version>
     <Description>Connector extension for Azure Functions</Description>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

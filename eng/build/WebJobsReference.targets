@@ -17,7 +17,7 @@
           target runs and calls GetExtensionAssemblyAttribute on the WebJobs project.
        
        3. This generates an assembly attribute in the Worker extension:
-          [assembly: ExtensionInformation("Microsoft.Azure.Functions.Extensions.Connector", "0.1.0-preview")]
+          [assembly: ExtensionInformation("Microsoft.Azure.Functions.Extensions.Connector", "0.1.0-alpha")]
        
        4. At runtime, the Functions host reads this attribute from the Worker extension
           and knows to load the corresponding WebJobs extension NuGet package.
