@@ -1,10 +1,12 @@
 # Python Sample App
 
-This sample demonstrates how to use the Connector Extension with Python v4 programming model.
+This sample demonstrates how to use the Connector Extension with the Python v2 programming model.
+
+When AI Gateway detects a connector event (e.g., a new Office 365 email arrives), it sends a webhook callback to your function. The function receives the JSON payload via the `connectorTrigger` binding, logs key fields, and persists the raw payload to Azure Blob Storage using a blob output binding. The blob output provides a simple way to archive every incoming event for auditing, replay, or downstream processing.
 
 ## Prerequisites
 
-- Python 3.10+
+- [Python 3.10+](https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-python#python-version)
 - Azure Functions Core Tools v4
 - Azure Storage Emulator (Azurite) or Azure Storage account
 
@@ -40,122 +42,37 @@ This sample demonstrates how to use the Connector Extension with Python v4 progr
 
 ## Available Functions
 
-| Function | Description | Example Use Case |
-| -------- | ----------- | ---------------- |
-| `OnEmail` | Microsoft Graph email notifications | O365 mailbox monitoring |
-| `OnTeamsMessage` | Teams bot messages | Chat commands, notifications |
-| `OnSharePointItem` | SharePoint list changes | Document workflows |
-| `OnGitHubPush` | GitHub webhooks | CI/CD triggers |
-| `Echo` | Simple test function | Debugging |
+| Function     | Description                             | Example Use Case        |
+| ------------ | --------------------------------------- | ----------------------- |
+| `OnNewEmail` | Office 365 email trigger via AI Gateway | O365 mailbox monitoring |
 
 ## Testing
 
-### Echo (Simple Test)
-
 ```bash
-curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=Echo" \
-     -H "Content-Type: application/json" \
-     -d '{"test": "Hello!"}'
-```
-
-### O365 Email Notification
-
-```bash
-curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnEmail" \
+curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnNewEmail" \
      -H "Content-Type: application/json" \
      -d '{
-       "value": [{
-         "changeType": "created",
-         "resourceData": {
-           "@odata.type": "#Microsoft.Graph.Message",
+       "body": {
+         "value": [{
            "subject": "URGENT: Action Required",
-           "from": {"emailAddress": {"name": "John", "address": "john@contoso.com"}}
-         }
-       }]
-     }'
-```
-
-### Teams Message
-
-```bash
-curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnTeamsMessage" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "type": "message",
-       "channelId": "msteams",
-       "from": {"name": "Jane Smith"},
-       "conversation": {"name": "Project Channel"},
-       "text": "@bot help"
-     }'
-```
-
-### SharePoint List Item
-
-```bash
-curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnSharePointItem" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "value": [{
-         "changeType": "created",
-         "siteUrl": "https://contoso.sharepoint.com",
-         "resourceData": {
-           "fields": {"Title": "New Task", "Status": "Active"}
-         }
-       }]
-     }'
-```
-
-### GitHub Push
-
-```bash
-curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnGitHubPush" \
-     -H "Content-Type: application/json" \
-     -H "X-GitHub-Event: push" \
-     -d '{
-       "ref": "refs/heads/main",
-       "repository": {"full_name": "owner/repo"},
-       "pusher": {"name": "developer"},
-       "commits": [{"message": "feat: new feature"}]
+           "from": "john@contoso.com"
+         }]
+       }
      }'
 ```
 
 ## Code Structure
 
 ```python
-@app.function_name(name="OnEmail")
-@app.generic_trigger(arg_name="context", type="connectorTrigger")
-def on_email(context: str) -> None:
-    # context is JSON-serialized ConnectorContext
-    ctx = json.loads(context)
-    
-    body = ctx.get('Body')        # Request body as string
-    headers = ctx.get('Headers')  # Dict of headers
-    query = ctx.get('Query')      # Dict of query params
-    method = ctx.get('Method')    # HTTP method
-```
-
-## Integrating with Microsoft Graph
-
-To receive real webhooks from Microsoft Graph:
-
-1. Deploy your function to Azure
-2. Create a Graph subscription pointing to your endpoint
-3. Handle the validation handshake (return `validationToken`)
-
-```python
-@app.function_name(name="OnEmail")
-@app.generic_trigger(arg_name="context", type="connectorTrigger")
-def on_email(context: str) -> None:
-    ctx = json.loads(context)
-    
-    # Graph sends validationToken during subscription creation
-    validation_token = ctx.get('Query', {}).get('validationToken')
-    if validation_token:
-        # In production, return this token with 200 OK
-        logging.info(f"Validation: {validation_token}")
-        return
-    
-    # Process actual notifications
-    notification = json.loads(ctx.get('Body', '{}'))
-    # ... handle notification
+@app.function_name(name="OnNewEmail")
+@app.generic_trigger(arg_name="payload", type="connectorTrigger")
+@app.blob_output(
+    arg_name="output",
+    path="connector-messages/{rand-guid}.json",
+    connection="BlobStoreConnection")
+def on_new_email(payload: str, output: func.Out[str]) -> None:
+    data = json.loads(payload)
+    emails = data.get("body", {}).get("value", [])
+    # ... process emails
+    output.set(payload)
 ```

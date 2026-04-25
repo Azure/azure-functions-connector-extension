@@ -4,91 +4,16 @@
 @baseUrl = http://localhost:7071/runtime/webhooks/connector
 
 ### =============================================================================
-### Echo - Simple test
+### OnNewEmail - Office 365 email trigger via AI Gateway
 ### =============================================================================
-POST {{baseUrl}}?functionName=Echo
-Content-Type: application/json
-
-{"test": "Hello, Connector!"}
-
-### =============================================================================
-### O365 OnEmail - Microsoft Graph Email Notification
-### =============================================================================
-POST {{baseUrl}}?functionName=OnEmail
+POST {{baseUrl}}?functionName=OnNewEmail
 Content-Type: application/json
 
 {
-  "value": [{
-    "subscriptionId": "sub-123",
-    "changeType": "created",
-    "resource": "Users/user@contoso.com/Messages/AAMkAG",
-    "resourceData": {
-      "@odata.type": "#Microsoft.Graph.Message",
-      "id": "AAMkAG123",
-      "subject": "URGENT: Project Update Required",
-      "from": {"emailAddress": {"name": "John Doe", "address": "john@contoso.com"}},
-      "receivedDateTime": "2026-03-17T10:30:00Z"
-    }
-  }]
-}
-
-### =============================================================================
-### Teams OnMessage - Teams Bot Activity
-### =============================================================================
-POST {{baseUrl}}?functionName=OnTeamsMessage
-Content-Type: application/json
-
-{
-  "type": "message",
-  "id": "msg-123",
-  "timestamp": "2026-03-17T10:30:00Z",
-  "channelId": "msteams",
-  "from": {"id": "user-123", "name": "Jane Smith"},
-  "conversation": {"id": "conv-456", "name": "Project Alpha"},
-  "recipient": {"id": "bot-789", "name": "ConnectorBot"},
-  "text": "@ConnectorBot help me with the project status",
-  "entities": [{"type": "mention", "mentioned": {"id": "bot-789"}}]
-}
-
-### =============================================================================
-### SharePoint OnListItemCreated - SharePoint List Change
-### =============================================================================
-POST {{baseUrl}}?functionName=OnSharePointItem
-Content-Type: application/json
-
-{
-  "value": [{
-    "subscriptionId": "sp-sub-123",
-    "changeType": "created",
-    "resource": "sites/contoso.sharepoint.com/lists/Projects/items/42",
-    "siteUrl": "https://contoso.sharepoint.com/sites/TeamSite",
-    "resourceData": {
-      "id": "42",
-      "fields": {
-        "Title": "New Project Kickoff",
-        "Status": "Planning",
-        "AssignedTo": "user@contoso.com",
-        "DueDate": "2026-04-01"
-      }
-    }
-  }]
-}
-
-### =============================================================================
-### GitHub OnPush - GitHub Webhook
-### =============================================================================
-POST {{baseUrl}}?functionName=OnGitHubPush
-Content-Type: application/json
-X-GitHub-Event: push
-X-GitHub-Delivery: abc-123-def
-
-{
-  "ref": "refs/heads/main",
-  "repository": {"full_name": "owner/repo"},
-  "pusher": {"name": "developer"},
-  "commits": [
-    {"message": "feat: add new feature"},
-    {"message": "fix: resolve bug"},
-    {"message": "docs: update README"}
-  ]
+  "body": {
+    "value": [{
+      "subject": "URGENT: Action Required",
+      "from": "john@contoso.com"
+    }]
+  }
 }
