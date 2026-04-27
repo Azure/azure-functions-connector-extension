@@ -1,0 +1,21 @@
+{
+  "name": "connector-extension-sample-nodejs",
+  "version": "1.0.0",
+  "description": "Azure Functions Connector Extension - Node.js TypeScript sample",
+  "main": "dist/functions/*.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "start": "npm run build && func start",
+    "prestart": "npm run build"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
