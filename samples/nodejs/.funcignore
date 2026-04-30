@@ -1,0 +1,10 @@
+*.js.map
+*.ts
+tsconfig.json
+src/
+node_modules/
+local.settings.json
+.vscode/
+__azurite_db_*.json
+__blobstorage__/
+__queuestorage__/

@@ -1,7 +1,7 @@
 # Azure Functions Connector Extension
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build](https://dev.azure.com/azfunc/Azure%20Functions/_apis/build/status%2FExtension-Connector%2FAzure%20Functions%20Connector%20Extension%20PR%20CI?branchName=main)](https://dev.azure.com/azfunc/Azure%20Functions/_build/latest?definitionId=303&branchName=main)
+[![Build](https://dev.azure.com/azfunc/public/_apis/build/status/1710?branchName=main)](https://dev.azure.com/azfunc/public/_build?definitionId=1710&branchName=main)
 
 An Azure Functions trigger extension for receiving webhook callbacks from AI Gateway managed connectors (Office 365, Teams, SharePoint, etc.).
 
@@ -46,6 +46,7 @@ https://<function-app>.azurewebsites.net/runtime/webhooks/connector?functionName
 - **POCO binding** - bind directly to SDK types like `Office365OnNewEmailV3TriggerPayload`
 - **String/JSON binding** - bind to raw string, `JObject`, or `JArray`
 - **.NET 8 isolated worker** - modern .NET isolated worker model
+- **Node.js support** - generic trigger binding for Node.js functions
 - **Python support** - generic trigger binding for Python functions
 
 ## Installation
@@ -81,6 +82,7 @@ For strongly-typed connector payloads, add the [connectors-net-sdk](https://gith
 ## Samples
 
 - **[.NET Isolated](./test/SampleApp)** - .NET isolated worker sample
+- **[Node.js](./samples/nodejs)** - Node.js v4 with blob output
 - **[Python](./samples/python)** - Python v2 with blob output
 
 ## Project Structure
@@ -102,6 +104,7 @@ azure-functions-connector-extension/
 │       ├── ConnectorTriggerAttribute.cs                         #   Trigger attribute
 │       └── Converters/                                          #   Type converters
 ├── samples/
+│   ├── nodejs/                                                  # Node.js sample with blob output
 │   └── python/                                                  # Python sample with blob output
 ├── test/
 │   ├── SampleApp/                                               # .NET isolated worker sample app
