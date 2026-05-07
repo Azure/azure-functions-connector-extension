@@ -19,7 +19,7 @@ An Azure Functions trigger extension for receiving webhook callbacks from AI Gat
 
 The following NuGet packages are available as part of this project.
 
-[![NuGet](https://img.shields.io/nuget/v/Microsoft.Azure.Functions.Worker.Extensions.Connector.svg?label=microsoft.azure.functions.worker.extensions.connector)](https://www.nuget.org/packages/Microsoft.Azure.Functions.Worker.Extensions.Connector)
+[![NuGet](https://img.shields.io/nuget/v/Microsoft.Azure.Functions.Worker.Extensions.Connector.svg?label=Microsoft.Azure.Functions.Worker.Extensions.Connector)](https://www.nuget.org/packages/Microsoft.Azure.Functions.Worker.Extensions.Connector)
 
 ## Extension Bundle
 
