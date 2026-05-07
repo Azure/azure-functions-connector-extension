@@ -15,7 +15,7 @@
 
 An Azure Functions trigger extension for receiving webhook callbacks from AI Gateway managed connectors (Office 365, Teams, SharePoint, etc.).
 
-> **Preview:** This extension is currently in preview. See the [Roadmap](#roadmap) for planned work before GA.
+> **Preview:** This extension is currently in preview.
 
 ## NuGet Packages
 
