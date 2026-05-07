@@ -1,15 +1,41 @@
-# Azure Functions Connector Extension
+# Azure Functions Connector Extension (Preview)
+
+> **⚠️ Preview Extension Notice**
+>
+> This extension is in preview and may contain breaking changes without prior notice. It includes features that are still under development and not yet ready for production use. Users should be aware that:
+>
+> - Trigger behavior and binding contracts may change between versions
+> - Performance characteristics and stability may vary across releases
+> - Security updates may require version upgrades
+>
+> Testing in non-production environments is strongly recommended before GA.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://dev.azure.com/azfunc/public/_apis/build/status/1710?branchName=main)](https://dev.azure.com/azfunc/public/_build?definitionId=1710&branchName=main)
 
 An Azure Functions trigger extension for receiving webhook callbacks from AI Gateway managed connectors (Office 365, Teams, SharePoint, etc.).
 
+> **Preview:** This extension is currently in preview. See the [Roadmap](#roadmap) for planned work before GA.
+
 ## NuGet Packages
 
 The following NuGet packages are available as part of this project.
 
 [![NuGet](https://img.shields.io/nuget/v/Microsoft.Azure.Functions.Extensions.Connector.svg?label=microsoft.azure.functions.worker.extensions.connector)](https://www.nuget.org/packages/Microsoft.Azure.Functions.Worker.Extensions.Connector)
+
+## Extension Bundle
+
+For non-.NET languages (Node.js, Python, etc.), use the **experimental extension bundle** version 4.6.0 or greater. Add the following to your `host.json`:
+
+```json
+{
+    "version": "2.0",
+    "extensionBundle": {
+        "id": "Microsoft.Azure.Functions.ExtensionBundle.Experimental",
+        "version": "[4.6.0, 5.0.0)"
+    }
+}
+```
 
 ## Overview
 
