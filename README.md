@@ -8,7 +8,7 @@
 > - Performance characteristics and stability may vary across releases
 > - Security updates may require version upgrades
 >
-> Testing in non-production environments is strongly recommended before GA.
+> This feature preview has no SLA provided during the preview. DO NOT use the preview features in any production or critical environments.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://dev.azure.com/azfunc/public/_apis/build/status/1710?branchName=main)](https://dev.azure.com/azfunc/public/_build?definitionId=1710&branchName=main)
