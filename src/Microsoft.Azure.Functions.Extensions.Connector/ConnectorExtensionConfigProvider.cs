@@ -84,27 +84,22 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
             input,
             functionName,
             registration,
-            ExecuteAsync,
+            (triggerValue, _, ct) => ExecuteAsync(triggerValue, registration, ct),
             cancellationToken);
     }
 
-    private async Task<HttpResponseMessage> ExecuteAsync(string triggerValue, string functionName, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> ExecuteAsync(string triggerValue, ConnectorFunctionRegistration registration, CancellationToken cancellationToken)
     {
-        if (!_functions.TryGetValue(functionName, out var registration))
-        {
-            return new HttpResponseMessage(HttpStatusCode.NotFound);
-        }
-
         var triggerData = new TriggeredFunctionData { TriggerValue = triggerValue };
         var result = await registration.Executor.TryExecuteAsync(triggerData, cancellationToken).ConfigureAwait(false);
 
         if (result.Succeeded)
         {
-            _logger.LogDebug("Function {FunctionName} executed successfully", functionName);
+            _logger.LogDebug("Function {FunctionName} executed successfully", registration.FunctionName);
             return new HttpResponseMessage(HttpStatusCode.Accepted);
         }
 
-        _logger.LogError(result.Exception, "Function {FunctionName} failed", functionName);
+        _logger.LogError(result.Exception, "Function {FunctionName} failed", registration.FunctionName);
         return new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
             Content = new StringContent(result.Exception?.Message ?? "Function execution failed")

@@ -35,6 +35,11 @@ internal sealed class ConnectorHttpRequestProcessor
         Func<string, string, CancellationToken, Task<HttpResponseMessage>> executeFunc,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(registration);
+        ArgumentNullException.ThrowIfNull(executeFunc);
+        ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
+
         if (request.Method != HttpMethod.Post && request.Method != HttpMethod.Put)
         {
             _logger.LogWarning("Connector trigger received unsupported method: {Method}", request.Method);
