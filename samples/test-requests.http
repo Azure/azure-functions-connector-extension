@@ -4,10 +4,12 @@
 @baseUrl = http://localhost:7071/runtime/webhooks/connector
 
 ### =============================================================================
-### OnNewEmail - Office 365 email trigger via AI Gateway
+### OnNewEmail - Office 365 email trigger via Connector Namespace
 ### =============================================================================
 POST {{baseUrl}}?functionName=OnNewEmail
 Content-Type: application/json
+x-ms-trigger-name: email-newemail-trigger
+x-ms-gateway-resource-name: my-connector-namespace
 
 {
   "body": {

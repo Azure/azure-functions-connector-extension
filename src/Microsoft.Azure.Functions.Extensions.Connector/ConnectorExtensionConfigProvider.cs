@@ -83,6 +83,7 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         return await _httpRequestProcessor.ProcessAsync(
             input,
             functionName,
+            registration,
             ExecuteAsync,
             cancellationToken);
     }

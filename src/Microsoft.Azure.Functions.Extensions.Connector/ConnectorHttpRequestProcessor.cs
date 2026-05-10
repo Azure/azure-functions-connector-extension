@@ -10,10 +10,13 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 
 /// <summary>
 /// Processes incoming HTTP requests for the Connector trigger.
+/// Validates Content-Type, gateway headers, and JSON body before invoking the function.
 /// </summary>
 internal sealed class ConnectorHttpRequestProcessor
 {
     private const long MaxBodySize = 10 * 1024 * 1024; // 10 MB
+    private const string TriggerNameHeader = "x-ms-trigger-name";
+    private const string GatewayResourceNameHeader = "x-ms-gateway-resource-name";
 
     private readonly ILogger<ConnectorHttpRequestProcessor> _logger;
 
@@ -28,6 +31,7 @@ internal sealed class ConnectorHttpRequestProcessor
     internal async Task<HttpResponseMessage> ProcessAsync(
         HttpRequestMessage request,
         string functionName,
+        ConnectorFunctionRegistration registration,
         Func<string, string, CancellationToken, Task<HttpResponseMessage>> executeFunc,
         CancellationToken cancellationToken)
     {
@@ -38,6 +42,24 @@ internal sealed class ConnectorHttpRequestProcessor
             {
                 Content = new StringContent("Only POST and PUT methods are supported.")
             };
+        }
+
+        // Validate Content-Type
+        var contentType = request.Content?.Headers?.ContentType?.MediaType;
+        if (contentType != null && !string.Equals(contentType, "application/json", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Connector trigger received unsupported Content-Type: {ContentType}", contentType);
+            return new HttpResponseMessage(HttpStatusCode.UnsupportedMediaType)
+            {
+                Content = new StringContent("Content-Type must be application/json")
+            };
+        }
+
+        // Validate x-ms-trigger-name header
+        var headerValidationResult = ValidateHeaders(request, registration);
+        if (headerValidationResult != null)
+        {
+            return headerValidationResult;
         }
 
         try
@@ -93,9 +115,63 @@ internal sealed class ConnectorHttpRequestProcessor
 
     private void LogRequestInfo(HttpRequestMessage request, string functionName, int bodyLength)
     {
-        var headerKeys = string.Join(", ", request.Headers.Select(h => h.Key));
+        var triggerName = request.Headers.TryGetValues(TriggerNameHeader, out var tn) ? tn.First() : "(not set)";
+        var gatewayName = request.Headers.TryGetValues(GatewayResourceNameHeader, out var gn) ? gn.First() : "(not set)";
         _logger.LogDebug(
-            "Processing connector request: Function={FunctionName}, BodyLength={BodyLength}, Headers=[{Headers}]",
-            functionName, bodyLength, headerKeys);
+            "Processing connector request: Function={FunctionName}, TriggerName={TriggerName}, Gateway={Gateway}, BodyLength={BodyLength}",
+            functionName, triggerName, gatewayName, bodyLength);
+    }
+
+    private HttpResponseMessage? ValidateHeaders(HttpRequestMessage request, ConnectorFunctionRegistration registration)
+    {
+        // Validate x-ms-trigger-name
+        if (!string.IsNullOrEmpty(registration.TriggerName))
+        {
+            if (!request.Headers.TryGetValues(TriggerNameHeader, out var triggerValues))
+            {
+                _logger.LogWarning("Missing required header {Header} for function {FunctionName}", TriggerNameHeader, registration.FunctionName);
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent($"Missing required header: {TriggerNameHeader}")
+                };
+            }
+
+            var triggerName = triggerValues.First();
+            if (!string.Equals(triggerName, registration.TriggerName, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Trigger name mismatch for function {FunctionName}: expected '{Expected}', received '{Received}'",
+                    registration.FunctionName, registration.TriggerName, triggerName);
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("Trigger name mismatch")
+                };
+            }
+        }
+
+        // Validate x-ms-gateway-resource-name
+        if (!string.IsNullOrEmpty(registration.ConnectorNamespace))
+        {
+            if (!request.Headers.TryGetValues(GatewayResourceNameHeader, out var gatewayValues))
+            {
+                _logger.LogWarning("Missing required header {Header} for function {FunctionName}", GatewayResourceNameHeader, registration.FunctionName);
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent($"Missing required header: {GatewayResourceNameHeader}")
+                };
+            }
+
+            var gatewayName = gatewayValues.First();
+            if (!string.Equals(gatewayName, registration.ConnectorNamespace, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Gateway resource mismatch for function {FunctionName}: expected '{Expected}', received '{Received}'",
+                    registration.FunctionName, registration.ConnectorNamespace, gatewayName);
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("Gateway resource mismatch")
+                };
+            }
+        }
+
+        return null; // validation passed
     }
 }

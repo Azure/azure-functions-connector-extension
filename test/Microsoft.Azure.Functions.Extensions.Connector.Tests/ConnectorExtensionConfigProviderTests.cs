@@ -134,7 +134,7 @@ public class ConnectorExtensionConfigProviderTests
         var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=TestFunction")
         {
-            Content = new StringContent("{\"test\": \"data\"}")
+            Content = new StringContent("{\"test\": \"data\"}", System.Text.Encoding.UTF8, "application/json")
         };
 
         // Act
@@ -162,7 +162,7 @@ public class ConnectorExtensionConfigProviderTests
         var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=TESTFUNCTION")
         {
-            Content = new StringContent("{}")
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
         };
 
         // Act
@@ -186,7 +186,7 @@ public class ConnectorExtensionConfigProviderTests
         var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=AddedFunction")
         {
-            Content = new StringContent("{}")
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
         };
 
         mockExecutor.Setup(e => e.TryExecuteAsync(
@@ -218,7 +218,7 @@ public class ConnectorExtensionConfigProviderTests
             var request = new HttpRequestMessage(HttpMethod.Post,
                 $"http://localhost/api/connector?functionName={validName}")
             {
-                Content = new StringContent("{}")
+                Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
             };
 
             // Act
@@ -245,7 +245,7 @@ public class ConnectorExtensionConfigProviderTests
         var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=FailingFunction")
         {
-            Content = new StringContent("{}")
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
         };
 
         // Act

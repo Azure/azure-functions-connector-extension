@@ -6,7 +6,7 @@ namespace SampleApp;
 
 /// <summary>
 /// Sample Azure Function using the Connector trigger extension.
-/// Receives trigger callbacks from AI Gateway managed connectors.
+/// Receives trigger callbacks from Connector Namespace managed connectors.
 /// </summary>
 public class ConnectorFunctions
 {
@@ -21,9 +21,9 @@ public class ConnectorFunctions
     /// Receives Office 365 email trigger callbacks and saves to blob storage.
     /// </summary>
     [Function("OnNewEmail")]
-    [BlobOutput("connector-messages/{rand-guid}.json", Connection = "BlobStoreConnection")]
+    [BlobOutput("connector-messages/{rand-guid}.json", Connection = "AzureWebJobsStorage")]
     public string OnNewEmail(
-        [ConnectorTrigger]
+        [ConnectorTrigger("my-connector-namespace", "email-newemail-trigger")]
         string payload)
     {
         _logger.LogInformation("Received connector trigger payload: {Length} bytes", payload?.Length ?? 0);

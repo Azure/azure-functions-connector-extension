@@ -92,7 +92,7 @@ public class ConnectorTriggerBindingProviderTests
     // Test class with different function signatures
     private static class TestFunctions
     {
-        public static void FunctionWithAttribute([ConnectorTrigger] string body)
+        public static void FunctionWithAttribute([ConnectorTrigger("my-namespace", "my-trigger")] string body)
         {
         }
 

@@ -15,4 +15,6 @@ internal sealed class ConnectorFunctionRegistration
 
     public string FunctionName { get; }
     public ITriggeredFunctionExecutor Executor { get; }
+    public string? ConnectorNamespace { get; init; }
+    public string? TriggerName { get; init; }
 }
