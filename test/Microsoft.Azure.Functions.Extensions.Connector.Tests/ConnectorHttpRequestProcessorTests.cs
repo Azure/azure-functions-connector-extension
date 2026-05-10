@@ -20,12 +20,7 @@ public class ConnectorHttpRequestProcessorTests
     {
         _logger = NullLogger<ConnectorHttpRequestProcessor>.Instance;
         _processor = new ConnectorHttpRequestProcessor(_logger);
-        _defaultRegistration = new ConnectorFunctionRegistration(
-            "TestFunction", new Moq.Mock<Microsoft.Azure.WebJobs.Host.Executors.ITriggeredFunctionExecutor>().Object)
-        {
-            ConnectorNamespace = "test-namespace",
-            TriggerName = "test-trigger"
-        };
+        _defaultRegistration = new ConnectorFunctionRegistration("TestFunction", new Moq.Mock<Microsoft.Azure.WebJobs.Host.Executors.ITriggeredFunctionExecutor>().Object, "test-namespace", "test-trigger");
     }
 
     private static void AddGatewayHeaders(HttpRequestMessage request, string triggerName = "test-trigger", string namespaceName = "test-namespace")
@@ -238,5 +233,155 @@ public class ConnectorHttpRequestProcessorTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("valid JSON", content);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsUnsupportedMediaType_ForNonJsonContentType()
+    {
+        // Arrange
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new StringContent("<xml/>", System.Text.Encoding.UTF8, "application/xml")
+        };
+        AddGatewayHeaders(request);
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", _defaultRegistration, callback, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("application/json", content);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsUnsupportedMediaType_WhenContentTypeIsNull()
+    {
+        // Arrange - Content with no explicit Content-Type (null media type)
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new StringContent("{}")
+        };
+        request.Content.Headers.ContentType = null;
+        AddGatewayHeaders(request);
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", _defaultRegistration, callback, CancellationToken.None);
+
+        // Assert - missing Content-Type should be rejected
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsBadRequest_WhenTriggerNameHeaderMissing()
+    {
+        // Arrange
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
+        };
+        // Only add gateway header, not trigger name
+        request.Headers.Add("x-ms-gateway-resource-name", "test-namespace");
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", _defaultRegistration, callback, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("x-ms-trigger-name", content);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsBadRequest_WhenTriggerNameHeaderMismatch()
+    {
+        // Arrange
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("x-ms-trigger-name", "wrong-trigger");
+        request.Headers.Add("x-ms-gateway-resource-name", "test-namespace");
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", _defaultRegistration, callback, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Trigger name mismatch", content);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsBadRequest_WhenConnectorNamespaceHeaderMissing()
+    {
+        // Arrange
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
+        };
+        // Only add trigger name, not gateway
+        request.Headers.Add("x-ms-trigger-name", "test-trigger");
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", _defaultRegistration, callback, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("x-ms-gateway-resource-name", content);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsBadRequest_WhenConnectorNamespaceHeaderMismatch()
+    {
+        // Arrange
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("x-ms-trigger-name", "test-trigger");
+        request.Headers.Add("x-ms-gateway-resource-name", "wrong-namespace");
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", _defaultRegistration, callback, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Gateway resource mismatch", content);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_HeaderMatchingIsCaseInsensitive()
+    {
+        // Arrange
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
+        };
+        // Use different casing than registration
+        request.Headers.Add("x-ms-trigger-name", "TEST-TRIGGER");
+        request.Headers.Add("x-ms-gateway-resource-name", "TEST-NAMESPACE");
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", _defaultRegistration, callback, CancellationToken.None);
+
+        // Assert - case-insensitive match should pass
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
     }
 }

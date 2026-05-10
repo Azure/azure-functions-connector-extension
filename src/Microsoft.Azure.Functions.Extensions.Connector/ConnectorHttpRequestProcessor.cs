@@ -16,7 +16,7 @@ internal sealed class ConnectorHttpRequestProcessor
 {
     private const long MaxBodySize = 10 * 1024 * 1024; // 10 MB
     private const string TriggerNameHeader = "x-ms-trigger-name";
-    private const string GatewayResourceNameHeader = "x-ms-gateway-resource-name";
+    private const string ConnectorNamespaceHeader = "x-ms-gateway-resource-name";
 
     private readonly ILogger<ConnectorHttpRequestProcessor> _logger;
 
@@ -46,7 +46,7 @@ internal sealed class ConnectorHttpRequestProcessor
 
         // Validate Content-Type
         var contentType = request.Content?.Headers?.ContentType?.MediaType;
-        if (contentType != null && !string.Equals(contentType, "application/json", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(contentType, "application/json", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning("Connector trigger received unsupported Content-Type: {ContentType}", contentType);
             return new HttpResponseMessage(HttpStatusCode.UnsupportedMediaType)
@@ -116,7 +116,7 @@ internal sealed class ConnectorHttpRequestProcessor
     private void LogRequestInfo(HttpRequestMessage request, string functionName, int bodyLength)
     {
         var triggerName = request.Headers.TryGetValues(TriggerNameHeader, out var tn) ? tn.First() : "(not set)";
-        var gatewayName = request.Headers.TryGetValues(GatewayResourceNameHeader, out var gn) ? gn.First() : "(not set)";
+        var gatewayName = request.Headers.TryGetValues(ConnectorNamespaceHeader, out var gn) ? gn.First() : "(not set)";
         _logger.LogDebug(
             "Processing connector request: Function={FunctionName}, TriggerName={TriggerName}, Gateway={Gateway}, BodyLength={BodyLength}",
             functionName, triggerName, gatewayName, bodyLength);
@@ -125,51 +125,45 @@ internal sealed class ConnectorHttpRequestProcessor
     private HttpResponseMessage? ValidateHeaders(HttpRequestMessage request, ConnectorFunctionRegistration registration)
     {
         // Validate x-ms-trigger-name
-        if (!string.IsNullOrEmpty(registration.TriggerName))
+        if (!request.Headers.TryGetValues(TriggerNameHeader, out var triggerValues))
         {
-            if (!request.Headers.TryGetValues(TriggerNameHeader, out var triggerValues))
+            _logger.LogWarning("Missing required header {Header} for function {FunctionName}", TriggerNameHeader, registration.FunctionName);
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
             {
-                _logger.LogWarning("Missing required header {Header} for function {FunctionName}", TriggerNameHeader, registration.FunctionName);
-                return new HttpResponseMessage(HttpStatusCode.BadRequest)
-                {
-                    Content = new StringContent($"Missing required header: {TriggerNameHeader}")
-                };
-            }
+                Content = new StringContent($"Missing required header: {TriggerNameHeader}")
+            };
+        }
 
-            var triggerName = triggerValues.First();
-            if (!string.Equals(triggerName, registration.TriggerName, StringComparison.OrdinalIgnoreCase))
+        var triggerName = triggerValues.First();
+        if (!string.Equals(triggerName, registration.TriggerName, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Trigger name mismatch for function {FunctionName}: expected '{Expected}', received '{Received}'",
+                registration.FunctionName, registration.TriggerName, triggerName);
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
             {
-                _logger.LogWarning("Trigger name mismatch for function {FunctionName}: expected '{Expected}', received '{Received}'",
-                    registration.FunctionName, registration.TriggerName, triggerName);
-                return new HttpResponseMessage(HttpStatusCode.BadRequest)
-                {
-                    Content = new StringContent("Trigger name mismatch")
-                };
-            }
+                Content = new StringContent("Trigger name mismatch")
+            };
         }
 
         // Validate x-ms-gateway-resource-name
-        if (!string.IsNullOrEmpty(registration.ConnectorNamespace))
+        if (!request.Headers.TryGetValues(ConnectorNamespaceHeader, out var gatewayValues))
         {
-            if (!request.Headers.TryGetValues(GatewayResourceNameHeader, out var gatewayValues))
+            _logger.LogWarning("Missing required header {Header} for function {FunctionName}", ConnectorNamespaceHeader, registration.FunctionName);
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
             {
-                _logger.LogWarning("Missing required header {Header} for function {FunctionName}", GatewayResourceNameHeader, registration.FunctionName);
-                return new HttpResponseMessage(HttpStatusCode.BadRequest)
-                {
-                    Content = new StringContent($"Missing required header: {GatewayResourceNameHeader}")
-                };
-            }
+                Content = new StringContent($"Missing required header: {ConnectorNamespaceHeader}")
+            };
+        }
 
-            var gatewayName = gatewayValues.First();
-            if (!string.Equals(gatewayName, registration.ConnectorNamespace, StringComparison.OrdinalIgnoreCase))
+        var gatewayName = gatewayValues.First();
+        if (!string.Equals(gatewayName, registration.ConnectorNamespace, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Gateway resource mismatch for function {FunctionName}: expected '{Expected}', received '{Received}'",
+                registration.FunctionName, registration.ConnectorNamespace, gatewayName);
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
             {
-                _logger.LogWarning("Gateway resource mismatch for function {FunctionName}: expected '{Expected}', received '{Received}'",
-                    registration.FunctionName, registration.ConnectorNamespace, gatewayName);
-                return new HttpResponseMessage(HttpStatusCode.BadRequest)
-                {
-                    Content = new StringContent("Gateway resource mismatch")
-                };
-            }
+                Content = new StringContent("Gateway resource mismatch")
+            };
         }
 
         return null; // validation passed

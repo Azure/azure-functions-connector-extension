@@ -19,8 +19,10 @@ public sealed class ConnectorTriggerAttribute : Attribute
     /// <param name="triggerName">The TriggerConfig resource name.</param>
     public ConnectorTriggerAttribute(string connectorNamespace, string triggerName)
     {
-        ConnectorNamespace = connectorNamespace ?? throw new ArgumentNullException(nameof(connectorNamespace));
-        TriggerName = triggerName ?? throw new ArgumentNullException(nameof(triggerName));
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectorNamespace);
+        ArgumentException.ThrowIfNullOrWhiteSpace(triggerName);
+        ConnectorNamespace = connectorNamespace;
+        TriggerName = triggerName;
     }
 
     /// <summary>

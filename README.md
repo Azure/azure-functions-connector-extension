@@ -144,12 +144,6 @@ dotnet build
 dotnet test
 ```
 
-## Security
-
-The connector webhook endpoint is protected by a **system key** (`connector_extension`) in the `?code=` query parameter. This is the same auth model used by Event Grid and MCP extensions.
-
-The extension also validates `x-ms-trigger-name` and `x-ms-gateway-resource-name` headers on each callback to ensure events are routed to the correct function.
-
 ## Roadmap
 
 The following features are planned for future releases:

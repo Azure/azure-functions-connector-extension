@@ -7,14 +7,20 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 
 internal sealed class ConnectorFunctionRegistration
 {
-    public ConnectorFunctionRegistration(string functionName, ITriggeredFunctionExecutor executor)
+    public ConnectorFunctionRegistration(string functionName, ITriggeredFunctionExecutor executor, string connectorNamespace, string triggerName)
     {
-        FunctionName = functionName ?? throw new ArgumentNullException(nameof(functionName));
-        Executor = executor ?? throw new ArgumentNullException(nameof(executor));
+        ArgumentNullException.ThrowIfNull(executor);
+        ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectorNamespace);
+        ArgumentException.ThrowIfNullOrWhiteSpace(triggerName);
+        FunctionName = functionName;
+        Executor = executor;
+        ConnectorNamespace = connectorNamespace;
+        TriggerName = triggerName;
     }
 
     public string FunctionName { get; }
     public ITriggeredFunctionExecutor Executor { get; }
-    public string? ConnectorNamespace { get; init; }
-    public string? TriggerName { get; init; }
+    public string ConnectorNamespace { get; }
+    public string TriggerName { get; }
 }

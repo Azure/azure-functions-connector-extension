@@ -23,6 +23,12 @@ public class ConnectorExtensionConfigProviderTests
         _configProvider = new ConnectorExtensionConfigProvider(_httpRequestProcessor, loggerFactory);
     }
 
+    private static void AddGatewayHeaders(HttpRequestMessage request)
+    {
+        request.Headers.Add("x-ms-trigger-name", "test-trigger");
+        request.Headers.Add("x-ms-gateway-resource-name", "test-namespace");
+    }
+
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenHttpProcessorIsNull()
     {
@@ -128,7 +134,7 @@ public class ConnectorExtensionConfigProviderTests
             .ReturnsAsync(new FunctionResult(true));
 
         // Register a listener using the new API
-        var registration = new ConnectorFunctionRegistration("TestFunction", mockExecutor.Object);
+        var registration = new ConnectorFunctionRegistration("TestFunction", mockExecutor.Object, "test-namespace", "test-trigger");
         var listener = new ConnectorListener(_configProvider, registration);
 
         var request = new HttpRequestMessage(HttpMethod.Post,
@@ -136,8 +142,7 @@ public class ConnectorExtensionConfigProviderTests
         {
             Content = new StringContent("{\"test\": \"data\"}", System.Text.Encoding.UTF8, "application/json")
         };
-
-        // Act
+        AddGatewayHeaders(request);
         var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
 
         // Assert - returns 202 Accepted
@@ -155,7 +160,7 @@ public class ConnectorExtensionConfigProviderTests
             .ReturnsAsync(new FunctionResult(true));
 
         // Register a listener with lowercase name
-        var registration = new ConnectorFunctionRegistration("testfunction", mockExecutor.Object);
+        var registration = new ConnectorFunctionRegistration("testfunction", mockExecutor.Object, "test-namespace", "test-trigger");
         var listener = new ConnectorListener(_configProvider, registration);
 
         // Request with uppercase name
@@ -164,8 +169,7 @@ public class ConnectorExtensionConfigProviderTests
         {
             Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
         };
-
-        // Act
+        AddGatewayHeaders(request);
         var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
 
         // Assert
@@ -179,7 +183,7 @@ public class ConnectorExtensionConfigProviderTests
         var mockExecutor = new Mock<ITriggeredFunctionExecutor>();
 
         // Act - constructor calls RegisterFunction internally
-        var registration = new ConnectorFunctionRegistration("AddedFunction", mockExecutor.Object);
+        var registration = new ConnectorFunctionRegistration("AddedFunction", mockExecutor.Object, "test-namespace", "test-trigger");
         var listener = new ConnectorListener(_configProvider, registration);
 
         // Assert - verify we can find the function
@@ -188,6 +192,7 @@ public class ConnectorExtensionConfigProviderTests
         {
             Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
         };
+        AddGatewayHeaders(request);
 
         mockExecutor.Setup(e => e.TryExecuteAsync(
             It.IsAny<TriggeredFunctionData>(),
@@ -212,7 +217,7 @@ public class ConnectorExtensionConfigProviderTests
                 It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new FunctionResult(true));
 
-            var registration = new ConnectorFunctionRegistration(validName, mockExecutor.Object);
+            var registration = new ConnectorFunctionRegistration(validName, mockExecutor.Object, "test-namespace", "test-trigger");
             var listener = new ConnectorListener(_configProvider, registration);
 
             var request = new HttpRequestMessage(HttpMethod.Post,
@@ -220,8 +225,7 @@ public class ConnectorExtensionConfigProviderTests
             {
                 Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
             };
-
-            // Act
+            AddGatewayHeaders(request);
             var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
 
             // Assert
@@ -239,7 +243,7 @@ public class ConnectorExtensionConfigProviderTests
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FunctionResult(false, new Exception("Function failed")));
 
-        var registration = new ConnectorFunctionRegistration("FailingFunction", mockExecutor.Object);
+        var registration = new ConnectorFunctionRegistration("FailingFunction", mockExecutor.Object, "test-namespace", "test-trigger");
         var listener = new ConnectorListener(_configProvider, registration);
 
         var request = new HttpRequestMessage(HttpMethod.Post,
@@ -247,8 +251,7 @@ public class ConnectorExtensionConfigProviderTests
         {
             Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
         };
-
-        // Act
+        AddGatewayHeaders(request);
         var response = await _configProvider.ConvertAsync(request, CancellationToken.None);
 
         // Assert
@@ -269,7 +272,7 @@ public class ConnectorExtensionConfigProviderTests
             .Callback<TriggeredFunctionData, CancellationToken>((data, ct) => capturedData = data)
             .ReturnsAsync(new FunctionResult(true));
 
-        var registration = new ConnectorFunctionRegistration("JsonFunction", mockExecutor.Object);
+        var registration = new ConnectorFunctionRegistration("JsonFunction", mockExecutor.Object, "test-namespace", "test-trigger");
         var listener = new ConnectorListener(_configProvider, registration);
 
         var jsonBody = "{\"email\": \"test@example.com\", \"subject\": \"Hello\"}";
@@ -278,6 +281,7 @@ public class ConnectorExtensionConfigProviderTests
         {
             Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json")
         };
+        AddGatewayHeaders(request);
 
         // Act
         await _configProvider.ConvertAsync(request, CancellationToken.None);

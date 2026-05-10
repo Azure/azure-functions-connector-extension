@@ -26,10 +26,38 @@ public class ConnectorTriggerAttributeTests
     }
 
     [Fact]
+    public void Constructor_ThrowsArgumentException_WhenConnectorNamespaceIsEmpty()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new ConnectorTriggerAttribute("", "my-trigger"));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentException_WhenConnectorNamespaceIsWhitespace()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new ConnectorTriggerAttribute("  ", "my-trigger"));
+    }
+
+    [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenTriggerNameIsNull()
     {
         Assert.Throws<ArgumentNullException>(() =>
             new ConnectorTriggerAttribute("my-namespace", null!));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentException_WhenTriggerNameIsEmpty()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new ConnectorTriggerAttribute("my-namespace", ""));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentException_WhenTriggerNameIsWhitespace()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new ConnectorTriggerAttribute("my-namespace", "  "));
     }
 
     [Fact]
