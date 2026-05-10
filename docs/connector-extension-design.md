@@ -2,8 +2,8 @@
 
 ## Overview
 
-The Connector Extension enables Azure Functions to receive event-driven triggers from external services (Office 365, Teams, SharePoint, etc.) through the **AI Gateway**.
-Instead of each function managing its own connection to an external service, the AI Gateway centralizes connection management, authentication, and event delivery. Functions simply declare what connector and operation they want to listen to via a `[ConnectorTrigger]` attribute.
+The Connector Extension enables Azure Functions to receive event-driven triggers from external services (Office 365, Teams, SharePoint, etc.) through the **Connector Namespace**.
+Instead of each function managing its own connection to an external service, the Connector Namespace centralizes connection management, authentication, and event delivery. Functions simply declare what connector and operation they want to listen to via a `[ConnectorTrigger]` attribute.
 
 ### What Problem Does This Solve?
 
@@ -14,16 +14,14 @@ Today, to react to an external service event (e.g., "new email in O365"), develo
 3. Handle token refresh, retry, and connection lifecycle
 4. Deal with per-service API differences
 
-AI gateway abstracts and manages these operations. A function becomes:
+Connector Namespace abstracts and manages these operations. A function becomes:
 
 ```csharp
 [Function("OnNewEmail")]
 public void Run(
     [ConnectorTrigger(
-        AIGateway = "HRGateway",
-        ConnectorType = "Office365",
-        Operation = "OnNewEmailV3",
-        Connection = "MyO365Connector")]
+        ConnectorNamespace = "my-connector-namespace",
+        TriggerName = "email-newemail-trigger")]
     Office365OnNewEmailV3TriggerPayload payload)
 {
     // Just handle the event - no auth, no polling, no webhook management
@@ -39,7 +37,7 @@ public void Run(
 ```mermaid
 sequenceDiagram
     participant ExtSvc as External Service<br/>(O365, Teams, etc.)
-    participant GW as AI Gateway
+    participant GW as Connector Namespace
     participant FE as App Service Front End
     participant Host as Functions Host
     participant Fn as User Function
@@ -78,7 +76,7 @@ graph TB
     end
 
     subgraph "External"
-        Gateway["AI Gateway"]
+        Gateway["Connector Namespace"]
         ExtServices["O365 / Teams / SharePoint / Kusto"]
     end
 
@@ -103,10 +101,9 @@ graph TB
 
 ## Package Structure
 
-The extension ships as **two NuGet packages**, following the standard Azure Functions
-extension pattern:
+The extension ships as **two NuGet packages**, following the standard Azure Functions extension pattern:
 
-```
+```text
 azure-functions-connector-extension/
 ├── src/
 │   ├── Microsoft.Azure.Functions.Extensions.Connector/     # Host-side (WebJobs)
@@ -134,7 +131,7 @@ azure-functions-connector-extension/
 ```
 
 | Package | Ships To | Purpose |
-|---------|----------|---------|
+| --------- | ---------- | --------- |
 | `Microsoft.Azure.Functions.Extensions.Connector` | Functions Host process | Webhook endpoint, trigger binding, request routing |
 | `Microsoft.Azure.Functions.Worker.Extensions.Connector` | Worker process (isolated) | Attribute definition, payload deserialization |
 
@@ -142,17 +139,16 @@ azure-functions-connector-extension/
 
 ## Trigger Attribute
 
-The `[ConnectorTrigger]` attribute is the developer-facing API. It appears on the trigger
-parameter and declares which connector type, operation, and AI gateway to use.
+The `[ConnectorTrigger]` attribute is the developer-facing API. It appears on the trigger parameter and declares which trigger config and Connector Namespace the function expects events from. Properties support `%AppSetting%` syntax for externalized config.
 
 ### Properties
 
-| Property | Type | Required | Description |
-|----------|------|----------|-------------|
-| `AIGateway` | `string` | Yes | AI Gateway endpoint name. Resolved from app settings via `{name}__endpoint` convention. |
-| `ConnectorType` | `string` | Yes | Connector type name (e.g., `"office365"`, `"teams"`, `"sharepointonline"`) |
-| `Operation` | `string` | Yes | Trigger operation ID (e.g., `"OnNewEmailV3"`, `"OnNewChannelMessage"`) |
-| `Connection` | `string` | Yes | Logical name of the connector instance inside the AI Gateway |
+The attribute only needs two properties because the extension uses URL-based routing, not header-based routing. The `?functionName=` query parameter in the callback URL routes requests to the correct function. The two properties exist solely for **header validation** - matching incoming `x-ms-trigger-name` and `x-ms-gateway-resource-name` headers against expected values to verify correctness. Other metadata (connector type, operation, connection) is configured in the TriggerConfig ARM resource, not in the attribute.
+
+| Property | Type | Required | Supports %AppSetting% | Description |
+| ---------- | ------ | :---: | :---: | ----------- |
+| `ConnectorNamespace` | `string` | Yes | Yes | Name of the Connector Namespace resource (e.g., `"my-connector-namespace"`) |
+| `TriggerName` | `string` | Yes | Yes | Name of the TriggerConfig resource in the Connector Namespace (e.g., `"email-newemail-trigger"`) |
 
 ### Example - C# Isolated Worker
 
@@ -161,10 +157,8 @@ parameter and declares which connector type, operation, and AI gateway to use.
 [BlobOutput("emails/{rand-guid}.json", Connection = "BlobStoreConnection")]
 public string OnNewEmail(
     [ConnectorTrigger(
-        AIGateway = "HRGateway",
-        ConnectorType = "office365",
-        Operation = "OnNewEmailV3",
-        Connection = "HRMailboxConnector")]
+        ConnectorNamespace = "my-connector-namespace",
+        TriggerName = "email-newemail-trigger")]
     Office365OnNewEmailV3TriggerPayload payload)
 {
     _logger.LogInformation("Subject: {Subject}", payload.Body?.Value?.First()?.Subject);
@@ -178,10 +172,8 @@ public string OnNewEmail(
 @app.generic_trigger(
     arg_name="payload",
     type="connectorTrigger",
-    aiGateway="HRGateway",
-    connectorType="Office365",
-    operation="OnNewEmailV3",
-    connection="HRMailboxConnector")
+    connectorNamespace="my-connector-namespace",
+    triggerName="email-newemail-trigger")
 def on_new_email(payload: str) -> None:
     data = json.loads(payload)
     logging.info(f"Subject: {data['body']['value'][0]['subject']}")
@@ -229,7 +221,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A["AI Gateway sends POST<br/>/runtime/webhooks/connector?functionName=OnNewEmail"] --> B["ConfigProvider.ConvertAsync()"]
+    A["Connector Namespace sends POST<br/>/runtime/webhooks/connector?functionName=OnNewEmail"] --> B["ConfigProvider.ConvertAsync()"]
     B --> C{"functionName<br/>valid?"}
     C -->|No| D["400 Bad Request"]
     C -->|Yes| E{"Function<br/>registered?"}
@@ -258,7 +250,7 @@ The central component - serves two roles:
 
 1. **Extension initialization** - registers the binding rule and webhook handler
 2. **HTTP request handler** - implements `IAsyncConverter<HttpRequestMessage, HttpResponseMessage>`
-   to handle incoming webhook callbacks from the AI Gateway
+   to handle incoming webhook callbacks from the Connector Namespace
 
 Key design decisions:
 
@@ -271,17 +263,16 @@ Key design decisions:
 
 Creates the bridge between the webhook payload and the function parameter:
 
-- **Trigger value type**: `string` - the raw JSON string from the AI Gateway
+- **Trigger value type**: `string` - the raw JSON string from the Connector Namespace
 - **IValueProvider**: `StringValueProvider` passes the raw JSON string directly
 - No Newtonsoft.Json dependency - the host extension is JSON-library-agnostic
 
 ### ConnectorListener
 
-Manages function lifecycle registration. Currently registers the function with the config
-provider at construction time.
+Manages function lifecycle registration. Currently registers the function with the config provider at construction time.
 
 **Planned enhancement**: `StartAsync()` will register the webhook callback URL with the
-AI Gateway, eliminating the manual webhook setup step. See
+Connector Namespace, eliminating the manual webhook setup step. See
 [webhook-auto-registration-design.md](webhook-auto-registration-design.md).
 
 ### ConnectorHttpRequestProcessor
@@ -320,7 +311,7 @@ Supports:
 ```mermaid
 flowchart LR
     subgraph "Host Process"
-        A["AI Gateway POST<br/>(JSON body)"] --> B["ConfigProvider<br/>reads body as string"]
+        A["Connector Namespace POST<br/>(JSON body)"] --> B["ConfigProvider<br/>reads body as string"]
         B --> C["HttpRequestProcessor<br/>validates JSON syntax"]
         C --> D["TriggerBinding.BindAsync()<br/>string → StringValueProvider"]
         D --> E["gRPC: sends JSON string<br/>to worker process"]
@@ -347,13 +338,12 @@ https://{app}.azurewebsites.net/runtime/webhooks/connector?functionName={name}
 ```
 
 This is a **data-plane endpoint** secured by the Functions host's webhook key mechanism
-(the key is in the `host.json` `extensions.connector` section, managed by the Functions
-runtime).
+(the key is in the `host.json` `extensions.connector` section, managed by the Functions runtime).
 
 ### URL Format
 
 | Component | Value |
-|-----------|-------|
+| ----------- | ------- |
 | Base | `https://{app}.azurewebsites.net` |
 | Path | `/runtime/webhooks/connector` |
 | Query | `?functionName={functionName}` |
@@ -362,15 +352,14 @@ runtime).
 ### Routing
 
 One webhook endpoint serves all connector-triggered functions in the app. The `functionName`
-query parameter selects which function to invoke. This avoids needing a separate URL per
-function.
+query parameter selects which function to invoke. This avoids needing a separate URL per function.
 
 ---
 
 ## Language Support
 
 | Language | Model | Trigger Surface | Typed Payload | Status |
-|----------|-------|----------------|:-------------:|--------|
+| ---------- | ------- | ---------------- | :-------------: | -------- |
 | **C# (isolated worker)** | Worker extension NuGet | `[ConnectorTrigger]` attribute | Yes - `ConnectorTriggerConverter` deserializes to POCO | Implemented |
 | **Python** | Extension bundle + generic trigger | `@app.generic_trigger(type="connectorTrigger", ...)` | No - payload as `str`, developer parses | Tested (generic trigger) |
 | **Node.js** | Extension bundle + generic trigger | `generic` binding in `function.json` | No - payload as `string` | Not tested |
@@ -380,8 +369,7 @@ function.
 ### What Works Today
 
 C# isolated worker has a dedicated trigger attribute and typed payload converter.
-Python has been tested using the generic trigger model. Node.js, Java, and
-PowerShell should work via the generic binding model (the host extension handles everything),
+Python has been tested using the generic trigger model. Node.js, Java, and PowerShell should work via the generic binding model (the host extension handles everything),
 but have **not been tested** yet.
 
 ### Language-Specific Enhancements (to be done)
@@ -402,43 +390,48 @@ IntelliSense), language-specific libraries need to be built.
 
 ### App Settings
 
+No special app settings are required by the extension. The `ConnectorNamespace` and `TriggerName` attribute properties can optionally reference app settings via `%AppSetting%` syntax:
+
 ```json
 {
     "Values": {
         "AzureWebJobsStorage": "UseDevelopmentStorage=true",
         "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-        "HRGateway__endpoint": "https://gateway-hr.contoso.net",
-        "FinanceGateway__endpoint": "https://gateway-finance.contoso.net"
+        "MyNamespace": "my-connector-namespace",
+        "EmailTrigger": "email-newemail-trigger"
     }
 }
 ```
 
+```csharp
+[ConnectorTrigger(
+    ConnectorNamespace = "%MyNamespace%",
+    TriggerName = "%EmailTrigger%")]
+```
+
 ### host.json
 
-No custom `host.json` configuration required. The extension uses the default webhook
-key management from the Functions runtime.
+No custom `host.json` configuration required. The extension uses the default webhook key management from the Functions runtime.
 
 ---
 
 ## Planned Enhancements
 
 | Feature | Status | Design Doc |
-|---------|--------|-----------|
+| --------- | -------- | ----------- |
 | **Extension bundle integration** | Upcoming | N/A |
 | **Webhook auto-registration** | Designed | [webhook-auto-registration-design.md](webhook-auto-registration-design.md) |
 | **Local dev experience** | In-Progress | [local-dev-tunnel-design.md](local-dev-tunnel-design.md) |
 | **Header validation** | In-Progress | [header-validation-design.md](header-validation-design.md) |
 | **Connection handshake** | In-Progress | [connection-handshake-design.md](connection-handshake-design.md) |
-| **Polling AI Gateway** | In-Progress | [connection-handshake-design.md](connection-handshake-design.md) |
+| **Polling Connector Namespace** | In-Progress | [connection-handshake-design.md](connection-handshake-design.md) |
 | **Distributed tracing** | In-Progress | [distributed-tracing-design.md](distributed-tracing-design.md) |
 | **Batch dispatch** | In-Progress | [batch-dispatch-design.md](batch-dispatch-design.md) |
 | **Input/output bindings** | Future | - |
 
 ### Webhook Auto-Registration (next)
 
-The `ConnectorListener.StartAsync()` will automatically register the webhook callback URL
-with the AI Gateway after function deployment. This eliminates the manual step of creating
-the trigger subscription in the gateway and then updating it with the function's URL.
+The `ConnectorListener.StartAsync()` will automatically register the webhook callback URL with the Connector Namespace after function deployment. This eliminates the manual step of creating the trigger subscription in the gateway and then updating it with the function's URL.
 See [webhook-auto-registration-design.md](webhook-auto-registration-design.md) for full design.
 
 ---
@@ -446,7 +439,7 @@ See [webhook-auto-registration-design.md](webhook-auto-registration-design.md) f
 ## Security
 
 | Concern | Mitigation |
-|---------|-----------|
+| --------- | ----------- |
 | **Webhook endpoint auth** | Protected by Functions runtime webhook key |
 | **Function name validation** | Regex-validated: `^[a-zA-Z0-9_-]{1,128}$` |
 | **Body size limit** | 10 MB max, checked at header and body level |
@@ -461,16 +454,15 @@ See [webhook-auto-registration-design.md](webhook-auto-registration-design.md) f
 ### Host-Side Extension
 
 | Dependency | Version | Purpose |
-|-----------|---------|---------|
+| ----------- | --------- | --------- |
 | `Microsoft.Azure.WebJobs` | 3.0.42 | WebJobs SDK - binding framework |
 
-No `Newtonsoft.Json` dependency - the host extension passes raw JSON strings
-through the pipeline without deserialization.
+No `Newtonsoft.Json` dependency - the host extension passes raw JSON strings through the pipeline without deserialization.
 
 ### Worker-Side Extension
 
 | Dependency | Version | Purpose |
-|-----------|---------|---------|
+| ----------- | --------- | --------- |
 | `Microsoft.Azure.Functions.Worker.Extensions.Abstractions` | 1.3.0 | `TriggerBindingAttribute` base class |
 | `Microsoft.Azure.Functions.Worker.Core` | 2.51.0 | `IInputConverter` for payload deserialization |
 
@@ -481,7 +473,7 @@ through the pipeline without deserialization.
 ### Unit Tests
 
 | Test Class | Covers |
-|-----------|--------|
+| ----------- | -------- |
 | `ConnectorTriggerAttributeTests` | Attribute property binding |
 | `ConnectorTriggerBindingProviderTests` | Binding creation from attribute |
 | `ConnectorTriggerBindingTests` | Trigger data binding, listener creation |
