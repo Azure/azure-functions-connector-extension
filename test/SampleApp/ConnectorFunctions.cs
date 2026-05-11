@@ -4,6 +4,7 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Connector;
 using Microsoft.Extensions.Logging;
+using Azure.Connectors.Sdk.Office365.Models;
 
 namespace SampleApp;
 
@@ -27,10 +28,10 @@ public class ConnectorFunctions
     [BlobOutput("connector-messages/{rand-guid}.json", Connection = "AzureWebJobsStorage")]
     public string OnNewEmail(
         [ConnectorTrigger("my-connector-namespace", "email-newemail-trigger")]
-        string payload)
+        Office365OnNewEmailTriggerPayload payload)
     {
-        _logger.LogInformation("Received connector trigger payload: {Length} bytes", payload?.Length ?? 0);
+        _logger.LogInformation("Received connector trigger payload");
 
-        return payload ?? "{}";
+        return System.Text.Json.JsonSerializer.Serialize(payload);
     }
 }
