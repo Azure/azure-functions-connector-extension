@@ -2,7 +2,7 @@
 
 > **⚠️ Preview Extension Notice**
 >
-> This extension is in preview and may contain breaking changes without prior notice. It includes features that are still under development and not yet ready for production use. Users should be aware that:
+> This extension is in early preview and may contain breaking changes without prior notice. It includes features that are still under development and not yet ready for production use. Users should be aware that:
 >
 > - Trigger behavior and binding contracts may change between versions
 > - Performance characteristics and stability may vary across releases
@@ -61,13 +61,13 @@ az functionapp keys list -g <resource-group> -n <function-app> --query "systemKe
 The full callback URL for Connector Namespace:
 
 ```text
-https://<function-app>.azurewebsites.net/runtime/webhooks/connector?functionName=OnNewEmail&code=<connector_extension_key>
+https://<function-app-domain>/runtime/webhooks/connector?functionName=OnNewEmail&code=<connector_extension_key>
 ```
 
 ## Features
 
 - **Connector trigger binding** - receive callbacks from Connector Namespace managed connectors
-- **POCO binding** - bind directly to SDK types like `Office365OnNewEmailV3TriggerPayload`
+- **POCO binding** - bind directly to SDK types like `Office365OnNewEmailTriggerPayload`
 - **String/JSON binding** - bind to raw JSON string
 - **.NET isolated worker** - modern .NET isolated worker model
 - **Node.js support** - generic trigger binding for Node.js functions
@@ -80,19 +80,20 @@ https://<function-app>.azurewebsites.net/runtime/webhooks/connector?functionName
 Add the worker extension NuGet package or project reference:
 
 ```bash
-dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector
+dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector --prerelease
 ```
 
 ### Connector SDK (for typed payloads)
 
-For strongly-typed connector payloads, add the [connectors-net-sdk](https://github.com/Azure/connectors-net-sdk)K:
+For strongly-typed connector payloads, add the [Azure.Connectors.Sdk](https://www.nuget.org/packages/Azure.Connectors.Sdk):
+
+```bash
+dotnet add package Azure.Connectors.Sdk --prerelease
+```
 
 ```xml
-<!-- Option 1: NuGet package (when available) -->
-<PackageReference Include="Microsoft.Azure.Workflows.Connectors.Sdk" Version="1.0.0" />
-
-<!-- Option 2: Local project reference (for development) -->
-<ProjectReference Include="path/to/azure-logicapps-connector-sdk/src/Microsoft.Azure.Workflows.Connectors.Sdk/Microsoft.Azure.Workflows.Connectors.Sdk.csproj" />
+<!-- Use latest NuGet available -->
+<PackageReference Include="Azure.Connectors.Sdk" Version="0.10.0-preview.1" />
 ```
 
 ## Usage
@@ -100,9 +101,11 @@ For strongly-typed connector payloads, add the [connectors-net-sdk](https://gith
 ### Supported Binding Types
 
 - `string` - raw JSON body
-- POCO types - SDK types like `Office365OnNewEmailV3TriggerPayload`
+- POCO types - SDK types like `Office365OnNewEmailTriggerPayload`
 
-## Samples
+## Test Samples
+
+These samples build and reference local extension code and are meant for extension testing:
 
 - **[.NET Isolated](./test/SampleApp)** - .NET isolated worker sample
 - **[Node.js](./samples/nodejs)** - Node.js v4 with blob output

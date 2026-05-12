@@ -24,7 +24,8 @@ app = func.FunctionApp()
     connection="AzureWebJobsStorage")
 def on_new_email(payload: str, output: func.Out[str]) -> None:
     """
-    Receives Office 365 email trigger callbacks and saves to blob storage.
+    Receives Office 365 email trigger callbacks from Connector Namespace managed connectors
+    and saves to blob storage.
     """
     logging.info("OnNewEmail trigger received")
 
