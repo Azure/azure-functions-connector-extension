@@ -1,7 +1,7 @@
 """
 Azure Functions Connector Extension - Python Sample
 
-Receives trigger callbacks from AI Gateway managed connectors
+Receives trigger callbacks from Connector Namespace managed connectors
 and saves the payload to blob storage.
 """
 
@@ -19,10 +19,11 @@ app = func.FunctionApp()
 @app.blob_output(
     arg_name="output",
     path="connector-messages/{rand-guid}.json",
-    connection="BlobStoreConnection")
+    connection="AzureWebJobsStorage")
 def on_new_email(payload: str, output: func.Out[str]) -> None:
     """
-    Receives Office 365 email trigger callbacks and saves to blob storage.
+    Receives Office 365 email trigger callbacks from Connector Namespace managed connectors
+    and saves to blob storage.
     """
     logging.info("OnNewEmail trigger received")
 

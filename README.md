@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://dev.azure.com/azfunc/public/_apis/build/status/1710?branchName=main)](https://dev.azure.com/azfunc/public/_build?definitionId=1710&branchName=main)
 
-An Azure Functions trigger extension for receiving webhook callbacks from AI Gateway managed connectors (Office 365, Teams, SharePoint, etc.).
+An Azure Functions trigger extension for receiving webhook callbacks from Connector Namespace managed connectors (Office 365, Teams, SharePoint, etc.).
 
 ## NuGet Packages
 
@@ -37,7 +37,7 @@ For non-.NET languages (Node.js, Python, etc.), use the **experimental extension
 
 ## Overview
 
-This extension enables Azure Functions to receive trigger callbacks from AI Gateway managed connectors. When a connector event occurs (e.g., new email arrives), AI Gateway sends a webhook callback to your function.
+This extension enables Azure Functions to receive trigger callbacks from Connector Namespace managed connectors. When a connector event occurs (e.g., new email arrives), Connector Namespace sends a webhook callback to your function.
 
 **Endpoint Pattern:**
 
@@ -58,7 +58,7 @@ az functionapp keys list -g <resource-group> -n <function-app> --query "systemKe
 # Or find it in Azure Portal: Function App > App keys > System keys > connector_extension
 ```
 
-The full callback URL for AI Gateway:
+The full callback URL for Connector Namespace:
 
 ```text
 https://<function-app>.azurewebsites.net/runtime/webhooks/connector?functionName=OnNewEmail&code=<connector_extension_key>
@@ -66,10 +66,10 @@ https://<function-app>.azurewebsites.net/runtime/webhooks/connector?functionName
 
 ## Features
 
-- **Connector trigger binding** - receive callbacks from AI Gateway managed connectors
+- **Connector trigger binding** - receive callbacks from Connector Namespace managed connectors
 - **POCO binding** - bind directly to SDK types like `Office365OnNewEmailV3TriggerPayload`
-- **String/JSON binding** - bind to raw string, `JObject`, or `JArray`
-- **.NET 8 isolated worker** - modern .NET isolated worker model
+- **String/JSON binding** - bind to raw JSON string
+- **.NET isolated worker** - modern .NET isolated worker model
 - **Node.js support** - generic trigger binding for Node.js functions
 - **Python support** - generic trigger binding for Python functions
 
@@ -100,7 +100,6 @@ For strongly-typed connector payloads, add the [connectors-net-sdk](https://gith
 ### Supported Binding Types
 
 - `string` - raw JSON body
-- `JObject` / `JArray` - parsed JSON
 - POCO types - SDK types like `Office365OnNewEmailV3TriggerPayload`
 
 ## Samples
@@ -149,13 +148,9 @@ dotnet test
 
 The following features are planned for future releases:
 
-- [ ] **Header validation** - Validate AI Gateway-specific headers (e.g., `x-ms-connector-name`, `x-ms-operation-id`) once spec is finalized
-- [ ] **Connection handshake** - Support webhook connection validation, including:
-  - Trigger validation (verify connector/operation matches registered function)
-  - Connection validation (verify connection name is authorized)
-- [ ] **Batch dispatch** - Support array parameter binding for batch processing
+- [ ] **Webhook auto-registration** - Automatically register trigger configs with the Connector Namespace on function deployment
+- [ ] **Batch dispatch** - Support array parameter binding for per-item processing
 - [ ] **Distributed tracing** - Add DiagnosticScope for Application Insights integration
-- [ ] **Binding expressions** - Consider adding `BindingDataContract` for output binding expressions (e.g., `{body.id}`). Currently skipped because AI Gateway's nested array structure (`body.value[]`) doesn't map cleanly to binding expressions.
 
 ## Contributing
 
