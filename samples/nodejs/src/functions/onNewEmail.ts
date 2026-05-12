@@ -1,7 +1,7 @@
 /**
  * Azure Functions Connector Extension - Node.js Sample
  *
- * Receives trigger callbacks from AI Gateway managed connectors
+ * Receives trigger callbacks from Connector Namespace managed connectors
  * and saves the payload to blob storage.
  */
 
@@ -9,7 +9,7 @@ import { app, InvocationContext, output } from "@azure/functions";
 
 const blobOutput = output.storageBlob({
   path: "connector-messages/{rand-guid}.json",
-  connection: "BlobStoreConnection",
+  connection: "AzureWebJobsStorage",
 });
 
 app.generic("OnNewEmail", {
