@@ -1,15 +1,9 @@
 ## What's Changed
 
-<!-- Please add your release notes in the following format:
-- My change description (#PR/#issue)
--->
+### Microsoft.Azure.Functions.Extensions.Connector 0.2.0-alpha
 
-### Microsoft.Azure.Functions.Extensions.Connector <version>
+- Added Content-Type validation — returns 415 if request is not `application/json`
 
-- Initial release of the Connector extension for Azure Functions
-- Support for connector triggers (e.g., Office 365, SharePoint, Teams)
+### Microsoft.Azure.Functions.Worker.Extensions.Connector 0.2.0-alpha
 
-### Microsoft.Azure.Functions.Worker.Extensions.Connector <version>
-
-- Initial release of the Worker extension for isolated process functions
-- Type conversion support for connector trigger payloads
+- Bumped `Microsoft.Azure.Functions.Worker` dependency to 2.52.0

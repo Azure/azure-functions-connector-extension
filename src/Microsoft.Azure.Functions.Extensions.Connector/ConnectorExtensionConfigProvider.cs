@@ -24,6 +24,7 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
     private static readonly Regex FunctionNamePattern = new(@"^[a-zA-Z0-9_-]{1,128}$", RegexOptions.Compiled);
 
     private readonly ILogger<ConnectorExtensionConfigProvider> _logger;
+    private readonly ILogger _consoleLogger;
     private readonly ConnectorHttpRequestProcessor _httpRequestProcessor;
     private readonly ConcurrentDictionary<string, ConnectorFunctionRegistration> _functions = new(StringComparer.OrdinalIgnoreCase);
 
@@ -33,6 +34,8 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
     {
         _httpRequestProcessor = httpRequestProcessor ?? throw new ArgumentNullException(nameof(httpRequestProcessor));
         _logger = loggerFactory?.CreateLogger<ConnectorExtensionConfigProvider>()
+            ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _consoleLogger = loggerFactory?.CreateLogger("Host.Function.Console")
             ?? throw new ArgumentNullException(nameof(loggerFactory));
     }
 
@@ -50,7 +53,8 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         var webhookUrl = context.GetWebhookHandler();
 #pragma warning restore 618
 
-        _logger.LogInformation("Connector endpoint: {Endpoint}", webhookUrl?.GetLeftPart(UriPartial.Path));
+        var extensionUri = webhookUrl?.GetLeftPart(UriPartial.Path) ?? string.Empty;
+        _consoleLogger.LogInformation("Connector endpoint: {uri}", extensionUri);
 
         context
             .AddBindingRule<ConnectorTriggerAttribute>()
