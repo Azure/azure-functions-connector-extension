@@ -110,12 +110,12 @@ npm install @azure/connectors
 
 ### Connector SDKs
 
-The underlying Connector SDKs provide typed models and can also be used independently outside of Azure Functions:
+The underlying Connector SDKs provide typed models:
 
 | Language | Package | Repository |
 | ---------- | --------- | ------------ |
 | .NET | [Azure.Connectors.Sdk](https://www.nuget.org/packages/Azure.Connectors.Sdk) | [Connectors-NET-SDK](https://github.com/Azure/Connectors-NET-SDK) |
-| Python | [azure-connectors](https://pypi.org/project/azure-connectors) | [connectors-python-sdk](https://github.com/Azure/Connectors-python-sdk) |
+| Python | [azurefunctions-extensions-connectors](https://pypi.org/project/azurefunctions-extensions-connectors) | [connectors-python-sdk](https://github.com/Azure/Connectors-python-sdk) |
 | Node.js | [@azure/connectors](https://www.npmjs.com/package/@azure/connectors) | [Connectors-NodeJS-SDK](https://github.com/Azure/Connectors-nodejs-sdk) |
 
 ## Usage
