@@ -6,7 +6,7 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
 
 ## Prerequisites
 
-- [Python 3.10+](https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-python#python-version)
+- [Python 3.13+](https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-python#python-version)
 - Azure Functions Core Tools v4
 - Azure Storage Emulator (Azurite) or Azure Storage account
 
@@ -65,14 +65,14 @@ curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnNe
 
 ```python
 @app.function_name(name="OnNewEmail")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
-@app.blob_output(
-    arg_name="output",
-    path="connector-messages/{rand-guid}.json",
-    connection="BlobStoreConnection")
-def on_new_email(payload: str, output: func.Out[str]) -> None:
-    data = json.loads(payload)
-    emails = data.get("body", {}).get("value", [])
-    # ... process emails
-    output.set(payload)
+@app.connector_trigger(arg_name="email")
+def on_new_email(email: office365.ClientReceiveMessage) -> None:
+    """
+    Receives Office 365 email trigger callbacks from Connector Namespace managed connectors
+    and saves to blob storage.
+    """
+    logging.info("OnNewEmail trigger received. Payload: %s", email)
+
+    logging.info(f"Subject: {email.subject}")
+    logging.info(f"From: {email.from_}")
 ```
