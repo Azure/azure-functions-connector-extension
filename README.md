@@ -2,7 +2,7 @@
 
 > **⚠️ Preview Extension Notice**
 >
-> This extension is in preview and may contain breaking changes without prior notice. It includes features that are still under development and not yet ready for production use. Users should be aware that:
+> This extension is in early preview and may contain breaking changes without prior notice. It includes features that are still under development and not yet ready for production use. Users should be aware that:
 >
 > - Trigger behavior and binding contracts may change between versions
 > - Performance characteristics and stability may vary across releases
@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://dev.azure.com/azfunc/public/_apis/build/status/1710?branchName=main)](https://dev.azure.com/azfunc/public/_build?definitionId=1710&branchName=main)
 
-An Azure Functions trigger extension for receiving webhook callbacks from AI Gateway managed connectors (Office 365, Teams, SharePoint, etc.).
+An Azure Functions trigger extension for receiving webhook callbacks from Connector Namespace managed connectors (Office 365, Teams, SharePoint, etc.).
 
 ## NuGet Packages
 
@@ -37,7 +37,7 @@ For non-.NET languages (Node.js, Python, etc.), use the **experimental extension
 
 ## Overview
 
-This extension enables Azure Functions to receive trigger callbacks from AI Gateway managed connectors. When a connector event occurs (e.g., new email arrives), AI Gateway sends a webhook callback to your function.
+This extension enables Azure Functions to receive trigger callbacks from Connector Namespace managed connectors. When a connector event occurs (e.g., new email arrives), Connector Namespace sends a webhook callback to your function.
 
 **Endpoint Pattern:**
 
@@ -58,18 +58,18 @@ az functionapp keys list -g <resource-group> -n <function-app> --query "systemKe
 # Or find it in Azure Portal: Function App > App keys > System keys > connector_extension
 ```
 
-The full callback URL for AI Gateway:
+The full callback URL for Connector Namespace:
 
 ```text
-https://<function-app>.azurewebsites.net/runtime/webhooks/connector?functionName=OnNewEmail&code=<connector_extension_key>
+https://<function-app-domain>/runtime/webhooks/connector?functionName=OnNewEmail&code=<connector_extension_key>
 ```
 
 ## Features
 
-- **Connector trigger binding** - receive callbacks from AI Gateway managed connectors
-- **POCO binding** - bind directly to SDK types like `Office365OnNewEmailV3TriggerPayload`
-- **String/JSON binding** - bind to raw string, `JObject`, or `JArray`
-- **.NET 8 isolated worker** - modern .NET isolated worker model
+- **Connector trigger binding** - receive callbacks from Connector Namespace managed connectors
+- **POCO binding** - bind directly to SDK types like `Office365OnNewEmailTriggerPayload`
+- **String/JSON binding** - bind to raw JSON string
+- **.NET isolated worker** - modern .NET isolated worker model
 - **Node.js support** - generic trigger binding for Node.js functions
 - **Python support** - generic trigger binding for Python functions
 
@@ -80,30 +80,54 @@ https://<function-app>.azurewebsites.net/runtime/webhooks/connector?functionName
 Add the worker extension NuGet package or project reference:
 
 ```bash
-dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector
+dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector --prerelease
 ```
 
-### Connector SDK (for typed payloads)
+### Strongly-typed Payloads
 
-For strongly-typed connector payloads, add the [connectors-net-sdk](https://github.com/Azure/connectors-net-sdk)K:
+For strongly-typed trigger payloads, add the SDK or extension package for your language:
 
-```xml
-<!-- Option 1: NuGet package (when available) -->
-<PackageReference Include="Microsoft.Azure.Workflows.Connectors.Sdk" Version="1.0.0" />
+#### .NET
 
-<!-- Option 2: Local project reference (for development) -->
-<ProjectReference Include="path/to/azure-logicapps-connector-sdk/src/Microsoft.Azure.Workflows.Connectors.Sdk/Microsoft.Azure.Workflows.Connectors.Sdk.csproj" />
+```bash
+dotnet add package Azure.Connectors.Sdk --prerelease
 ```
+
+#### Python
+
+The Python extension package (`azurefunctions-extensions-connectors`) integrates the [Connector SDK](https://github.com/Azure/Connectors-python-sdk) with the Functions runtime for typed bindings:
+
+```bash
+pip install azure-functions>=2.2.0b3
+pip install azurefunctions-extensions-connectors
+```
+
+#### Node.js
+
+```bash
+npm install @azure/connectors
+```
+
+### Connector SDKs
+
+The underlying Connector SDKs provide typed models:
+
+| Language | Package | Repository |
+| ---------- | --------- | ------------ |
+| .NET | [Azure.Connectors.Sdk](https://www.nuget.org/packages/Azure.Connectors.Sdk) | [Connectors-NET-SDK](https://github.com/Azure/Connectors-NET-SDK) |
+| Python | [azurefunctions-extensions-connectors](https://pypi.org/project/azurefunctions-extensions-connectors) | [connectors-python-sdk](https://github.com/Azure/Connectors-python-sdk) |
+| Node.js | [@azure/connectors](https://www.npmjs.com/package/@azure/connectors) | [Connectors-NodeJS-SDK](https://github.com/Azure/Connectors-nodejs-sdk) |
 
 ## Usage
 
 ### Supported Binding Types
 
 - `string` - raw JSON body
-- `JObject` / `JArray` - parsed JSON
-- POCO types - SDK types like `Office365OnNewEmailV3TriggerPayload`
+- POCO/model types - strongly-typed SDK models (see individual SDK docs for available types)
 
-## Samples
+## Test Samples
+
+These samples build and reference local extension code and are meant for extension testing:
 
 - **[.NET Isolated](./test/SampleApp)** - .NET isolated worker sample
 - **[Node.js](./samples/nodejs)** - Node.js v4 with blob output
@@ -149,32 +173,26 @@ dotnet test
 
 The following features are planned for future releases:
 
-- [ ] **Header validation** - Validate AI Gateway-specific headers (e.g., `x-ms-connector-name`, `x-ms-operation-id`) once spec is finalized
-- [ ] **Connection handshake** - Support webhook connection validation, including:
-  - Trigger validation (verify connector/operation matches registered function)
-  - Connection validation (verify connection name is authorized)
-- [ ] **Batch dispatch** - Support array parameter binding for batch processing
+- [ ] **Webhook auto-registration** - Automatically register trigger configs with the Connector Namespace on function deployment
+- [ ] **Batch dispatch** - Support array parameter binding for per-item processing
 - [ ] **Distributed tracing** - Add DiagnosticScope for Application Insights integration
-- [ ] **Binding expressions** - Consider adding `BindingDataContract` for output binding expressions (e.g., `{body.id}`). Currently skipped because AI Gateway's nested array structure (`body.value[]`) doesn't map cleanly to binding expressions.
+
+## Data Collection
+
+The Azure Functions Connector Extension collects telemetry data, including exceptions, warnings, and informational logs generated by the extension while running in the managed Azure Functions environment, and sends this telemetry to Microsoft. Microsoft uses this telemetry to diagnose issues, improve reliability, and enhance the product experience. This telemetry collection cannot be disabled.
+
+The telemetry collected by the extension does not include personal information, customer application payload contents, or application logs, exceptions, failures, warnings, or informational messages generated by customer Function App code.
+
+You must comply with applicable law, including providing appropriate notices to users of your applications together with a copy of Microsoft’s privacy statement. Our privacy statement is located at https://go.microsoft.com/fwlink/?LinkID=824704. You can learn more about data collection and use in the help documentation and our privacy statement. Your use of the Azure Functions Connector Extension extension operates as your consent to these practices.
 
 ## Contributing
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit [https://cla.opensource.microsoft.com](https://cla.opensource.microsoft.com.).
+This project welcomes contributions and suggestions.  Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us the rights to use your contribution. For details, visit [https://cla.opensource.microsoft.com](https://cla.opensource.microsoft.com.).
 
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+When you submit a pull request, a CLA bot will automatically determine whether you need to provide a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions provided by the bot. You will only need to do this once across all repos using our CLA.
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
 ## Trademarks
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
-trademarks or logos is subject to and must follow
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general). Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party's policies.

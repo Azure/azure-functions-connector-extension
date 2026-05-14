@@ -7,7 +7,7 @@ using Microsoft.Azure.Functions.Worker.Extensions.Abstractions;
 namespace Microsoft.Azure.Functions.Worker.Extensions.Connector;
 
 /// <summary>
-/// Trigger attribute for AI Gateway connector webhooks.
+/// Trigger attribute for Connector Namespace webhooks.
 /// </summary>
 [InputConverter(typeof(ConnectorTriggerConverter))]
 public sealed class ConnectorTriggerAttribute : TriggerBindingAttribute
