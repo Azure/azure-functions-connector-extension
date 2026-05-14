@@ -3,6 +3,8 @@
 
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -21,10 +23,70 @@ public class ConnectorHttpRequestProcessorTests
         _processor = new ConnectorHttpRequestProcessor(_logger);
     }
 
+    private static StringContent JsonContent(string json) =>
+        new(json, Encoding.UTF8, "application/json");
+
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenLoggerIsNull()
     {
         Assert.Throws<ArgumentNullException>(() => new ConnectorHttpRequestProcessor(null!));
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsUnsupportedMediaType_WhenContentTypeIsNotJson()
+    {
+        // Arrange
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new StringContent("some text", Encoding.UTF8, "text/plain")
+        };
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", callback, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("application/json", content);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsUnsupportedMediaType_WhenContentTypeIsMissing()
+    {
+        // Arrange
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes("{}"))
+        };
+        request.Content.Headers.ContentType = null;
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", callback, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_AcceptsApplicationJsonContentType()
+    {
+        // Arrange
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = JsonContent("{\"test\": true}")
+        };
+        Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+
+        // Act
+        var response = await _processor.ProcessAsync(request, "TestFunction", callback, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
     }
 
     [Fact]
@@ -65,7 +127,7 @@ public class ConnectorHttpRequestProcessorTests
         // Arrange
         var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
         {
-            Content = new StringContent("{\"test\": \"data\"}")
+            Content = JsonContent("{\"test\": \"data\"}")
         };
         string? capturedJson = null;
         Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
@@ -91,7 +153,7 @@ public class ConnectorHttpRequestProcessorTests
         // Arrange
         var request = new HttpRequestMessage(HttpMethod.Put, "http://localhost/api/connector")
         {
-            Content = new StringContent("{\"test\": \"data\"}")
+            Content = JsonContent("{\"test\": \"data\"}")
         };
         Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
             (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
@@ -110,7 +172,7 @@ public class ConnectorHttpRequestProcessorTests
         var jsonBody = "{\"subject\": \"Test Email\", \"from\": \"test@example.com\"}";
         var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
         {
-            Content = new StringContent(jsonBody)
+            Content = JsonContent(jsonBody)
         };
         string? capturedJson = null;
         Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
@@ -136,7 +198,7 @@ public class ConnectorHttpRequestProcessorTests
         // Arrange
         var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
         {
-            Content = new StringContent("")
+            Content = JsonContent("")
         };
         string? capturedJson = null;
         Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
@@ -160,7 +222,7 @@ public class ConnectorHttpRequestProcessorTests
         // Arrange
         var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
         {
-            Content = new StringContent("{}")
+            Content = JsonContent("{}")
         };
         string? capturedFunctionName = null;
         Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
@@ -183,7 +245,7 @@ public class ConnectorHttpRequestProcessorTests
         // Arrange
         var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
         {
-            Content = new StringContent("{}")
+            Content = JsonContent("{}")
         };
         Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
             (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
@@ -206,7 +268,7 @@ public class ConnectorHttpRequestProcessorTests
         // Arrange
         var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
         {
-            Content = new StringContent("not valid json {{{")
+            Content = JsonContent("not valid json {{{")
         };
         Func<string, string, CancellationToken, Task<HttpResponseMessage>> callback =
             (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));

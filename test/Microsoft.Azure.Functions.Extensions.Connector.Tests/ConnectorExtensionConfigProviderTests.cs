@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using Microsoft.Azure.WebJobs.Host.Executors;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -134,7 +135,7 @@ public class ConnectorExtensionConfigProviderTests
         var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=TestFunction")
         {
-            Content = new StringContent("{\"test\": \"data\"}")
+            Content = new StringContent("{\"test\": \"data\"}", Encoding.UTF8, "application/json")
         };
 
         // Act
@@ -162,7 +163,7 @@ public class ConnectorExtensionConfigProviderTests
         var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=TESTFUNCTION")
         {
-            Content = new StringContent("{}")
+            Content = new StringContent("{}", Encoding.UTF8, "application/json")
         };
 
         // Act
@@ -186,7 +187,7 @@ public class ConnectorExtensionConfigProviderTests
         var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=AddedFunction")
         {
-            Content = new StringContent("{}")
+            Content = new StringContent("{}", Encoding.UTF8, "application/json")
         };
 
         mockExecutor.Setup(e => e.TryExecuteAsync(
@@ -218,7 +219,7 @@ public class ConnectorExtensionConfigProviderTests
             var request = new HttpRequestMessage(HttpMethod.Post,
                 $"http://localhost/api/connector?functionName={validName}")
             {
-                Content = new StringContent("{}")
+                Content = new StringContent("{}", Encoding.UTF8, "application/json")
             };
 
             // Act
@@ -245,7 +246,7 @@ public class ConnectorExtensionConfigProviderTests
         var request = new HttpRequestMessage(HttpMethod.Post,
             "http://localhost/api/connector?functionName=FailingFunction")
         {
-            Content = new StringContent("{}")
+            Content = new StringContent("{}", Encoding.UTF8, "application/json")
         };
 
         // Act
