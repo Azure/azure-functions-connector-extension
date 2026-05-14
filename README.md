@@ -83,15 +83,9 @@ Add the worker extension NuGet package or project reference:
 dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector --prerelease
 ```
 
-### Connector SDKs (for strongly-typed payloads)
+### Strongly-typed Payloads
 
-Connector SDKs provide strongly-typed models for trigger payloads. Add the SDK package for your language:
-
-| Language | Package | Repository |
-| ---------- | --------- | ------------ |
-| .NET | [Azure.Connectors.Sdk](https://www.nuget.org/packages/Azure.Connectors.Sdk) | [connectors-net-sdk](https://github.com/Azure/Connectors-NET-SDK) |
-| Python | [azure-connectors](https://pypi.org/project/azure-connectors) | [connectors-python-sdk](https://github.com/Azure/Connectors-python-sdk) |
-| Node.js | [@azure/connectors](https://www.npmjs.com/package/@azure/connectors) | [connectors-nodejs-sdk](https://github.com/Azure/Connectors-nodejs-sdk) |
+For strongly-typed trigger payloads, add the SDK or extension package for your language:
 
 #### .NET
 
@@ -101,8 +95,11 @@ dotnet add package Azure.Connectors.Sdk --prerelease
 
 #### Python
 
+The Python extension package (`azurefunctions-extensions-connectors`) integrates the [Connector SDK](https://github.com/Azure/Connectors-python-sdk) with the Functions runtime for typed bindings:
+
 ```bash
-pip install azure-connectors
+pip install azure-functions>=2.2.0b3
+pip install azurefunctions-extensions-connectors
 ```
 
 #### Node.js
@@ -110,6 +107,16 @@ pip install azure-connectors
 ```bash
 npm install @azure/connectors
 ```
+
+### Connector SDKs
+
+The underlying Connector SDKs provide typed models and can also be used independently outside of Azure Functions:
+
+| Language | Package | Repository |
+| ---------- | --------- | ------------ |
+| .NET | [Azure.Connectors.Sdk](https://www.nuget.org/packages/Azure.Connectors.Sdk) | [Connectors-NET-SDK](https://github.com/Azure/Connectors-NET-SDK) |
+| Python | [azure-connectors](https://pypi.org/project/azure-connectors) | [connectors-python-sdk](https://github.com/Azure/Connectors-python-sdk) |
+| Node.js | [@azure/connectors](https://www.npmjs.com/package/@azure/connectors) | [Connectors-NodeJS-SDK](https://github.com/Azure/Connectors-nodejs-sdk) |
 
 ## Usage
 

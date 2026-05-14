@@ -73,6 +73,17 @@ azd init -t functions-quickstart-typescript-azd
 azd init -t functions-quickstart-javascript-azd
 ```
 
+> **Note:** The `azd init` templates create a `host.json` file. For non-.NET languages (Node.js, Python, etc.), update `host.json` to use the **experimental extension bundle** version 4.6.0 or greater:
+> ```json
+> {
+>     "version": "2.0",
+>     "extensionBundle": {
+>         "id": "Microsoft.Azure.Functions.ExtensionBundle.Experimental",
+>         "version": "[4.6.0, 5.0.0)"
+>     }
+> }
+> ```
+
 ### 2. Replace the HTTP trigger with a ConnectorTrigger function
 
 Delete any sample HTTP functions and add the connector extension and SDK packages:
@@ -91,8 +102,8 @@ dotnet add package Azure.Connectors.Sdk --prerelease
 Add to `requirements.txt`:
 
 ```text
-azure-functions
-azure-connectors
+azure-functions>=2.2.0b3
+azurefunctions-extensions-connectors
 ```
 
 #### TypeScript / JavaScript
@@ -125,12 +136,21 @@ public void OnNewEmail(
 #### Python
 
 ```python
+import azure.functions as func
+import azurefunctions.extensions.connectors.office365 as office365
+import logging
+from typing import List
+
+app = func.FunctionApp()
+
 @app.function_name(name="OnNewEmail")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
-def on_new_email(payload: str) -> None:
-    data = json.loads(payload)
-    for email in data.get("body", {}).get("value", []):
-        logging.info(f"From: {email.get('from')}, Subject: {email.get('subject')}")
+@app.connector_trigger(arg_name="emails")
+def on_new_email(emails: List[office365.ClientReceiveMessage]) -> None:
+    logging.info("OnNewEmail trigger received")
+
+    for email in emails:
+        logging.info(f"Subject: {email.subject}")
+        logging.info(f"From: {email.from_}")
 ```
 
 #### TypeScript
