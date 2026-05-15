@@ -25,7 +25,7 @@ Registers polling trigger configs on a Connector Namespace so that connector eve
 
 ### Extension Webhook Endpoint
 
-The `Microsoft.Azure.Functions.Extensions.Connector` extension registers a webhook route on the Function App:
+The connector extension (`Microsoft.Azure.Functions.Worker.Extensions.Connector` for isolated worker — recommended; `Microsoft.Azure.Functions.Extensions.Connector` for in-process) registers a webhook route on the Function App:
 
 ```text
 POST /runtime/webhooks/connector?functionName={FunctionName}&code={connector_extension_key}
@@ -93,13 +93,14 @@ Add the connector extension and SDK packages:
 Install the latest pre-release NuGet packages:
 
 ```bash
-# Connector runtime extension (provides ConnectorTrigger binding)
-dotnet add package Microsoft.Azure.Functions.Extensions.Connector --prerelease
+# Connector trigger binding for the isolated worker (recommended)
 dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector --prerelease
 
 # Connector SDK (typed payloads and action clients)
 dotnet add package Azure.Connectors.Sdk --prerelease
 ```
+
+> **In-proc customers only:** if you are still on the .NET in-process model, replace `Microsoft.Azure.Functions.Worker.Extensions.Connector` with `Microsoft.Azure.Functions.Extensions.Connector`. The isolated worker (above) is the recommended path for new projects.
 
 #### Python
 
