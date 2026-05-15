@@ -59,7 +59,7 @@ public class ConnectorListenerTests
             System.Net.Http.HttpMethod.Post,
             "http://localhost/api/connector?functionName=RegisteredFunction")
         {
-            Content = new System.Net.Http.StringContent("{}")
+            Content = new System.Net.Http.StringContent("{}", System.Text.Encoding.UTF8, "application/json")
         };
 
         var response = await _configProvider.ConvertAsync(request, CancellationToken.None);

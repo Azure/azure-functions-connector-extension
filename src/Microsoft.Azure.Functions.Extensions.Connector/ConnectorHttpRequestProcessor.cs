@@ -10,10 +10,12 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 
 /// <summary>
 /// Processes incoming HTTP requests for the Connector trigger.
+/// Validates Content-Type and JSON body before invoking the function.
 /// </summary>
 internal sealed class ConnectorHttpRequestProcessor
 {
     private const long MaxBodySize = 10 * 1024 * 1024; // 10 MB
+    private const string ExpectedContentType = "application/json";
 
     private readonly ILogger<ConnectorHttpRequestProcessor> _logger;
 
@@ -40,15 +42,27 @@ internal sealed class ConnectorHttpRequestProcessor
             };
         }
 
+        // Validate Content-Type
+        var contentType = request.Content?.Headers?.ContentType?.MediaType;
+        if (!string.Equals(contentType, ExpectedContentType, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Connector trigger received unsupported Content-Type: {ContentType}", contentType ?? "(none)");
+            return new HttpResponseMessage(HttpStatusCode.UnsupportedMediaType)
+            {
+                Content = new StringContent($"Content-Type must be {ExpectedContentType}")
+            };
+        }
+
+        // Validate Content-Length header (pre-read check)
+        if (request.Content?.Headers?.ContentLength > MaxBodySize)
+        {
+            _logger.LogWarning("Request body too large: {ContentLength} bytes",
+                request.Content.Headers.ContentLength);
+            return new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge);
+        }
+
         try
         {
-            if (request.Content?.Headers?.ContentLength > MaxBodySize)
-            {
-                _logger.LogWarning("Request body too large: {ContentLength} bytes",
-                    request.Content.Headers.ContentLength);
-                return new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge);
-            }
-
             string body = request.Content != null
                 ? await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
                 : string.Empty;

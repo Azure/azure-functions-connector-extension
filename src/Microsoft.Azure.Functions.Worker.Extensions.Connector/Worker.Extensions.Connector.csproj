@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Abstractions" Version="1.3.0" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.Core" Version="2.51.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Core" Version="2.52.0" />
   </ItemGroup>
 
   <!-- Link to the WebJobs (host-side) extension for extension discovery -->

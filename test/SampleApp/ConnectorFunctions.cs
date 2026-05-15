@@ -1,12 +1,16 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Connector;
 using Microsoft.Extensions.Logging;
+using Azure.Connectors.Sdk.Office365.Models;
 
 namespace SampleApp;
 
 /// <summary>
 /// Sample Azure Function using the Connector trigger extension.
-/// Receives trigger callbacks from AI Gateway managed connectors.
+/// Receives trigger callbacks from Connector Namespace managed connectors.
 /// </summary>
 public class ConnectorFunctions
 {
@@ -21,13 +25,13 @@ public class ConnectorFunctions
     /// Receives Office 365 email trigger callbacks and saves to blob storage.
     /// </summary>
     [Function("OnNewEmail")]
-    [BlobOutput("connector-messages/{rand-guid}.json", Connection = "BlobStoreConnection")]
+    [BlobOutput("connector-messages/{rand-guid}.json", Connection = "AzureWebJobsStorage")]
     public string OnNewEmail(
         [ConnectorTrigger]
-        string payload)
+        Office365OnNewEmailTriggerPayload payload)
     {
-        _logger.LogInformation("Received connector trigger payload: {Length} bytes", payload?.Length ?? 0);
+        _logger.LogInformation("Received connector trigger payload");
 
-        return payload ?? "{}";
+        return System.Text.Json.JsonSerializer.Serialize(payload);
     }
 }

@@ -6,7 +6,7 @@ import { connectors, EmailTriggerContext } from '@azure/functions-extensions-con
 
 const blobOutput = output.storageBlob({
     path: 'connector-messages/{rand-guid}.json',
-    connection: 'BlobStoreConnection',
+    connection: 'AzureWebJobsStorage',
 });
 
 connectors.office365.onNewEmail('OnNewEmail', {

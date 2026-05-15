@@ -6,7 +6,7 @@ using Microsoft.Azure.WebJobs.Description;
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
 /// <summary>
-/// Trigger attribute for AI Gateway connector webhooks.
+/// Trigger attribute for Connector Namespace webhooks.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter)]
 [Binding]
