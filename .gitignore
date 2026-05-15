@@ -18,6 +18,7 @@ bld/
 *.sln.docstates
 *.suo
 *.cache
+*.lscache
 *.vspscc
 *.vssscc
 .builds

@@ -19,7 +19,7 @@ Registers polling trigger configs on a Connector Namespace so that connector eve
 - Azure CLI installed and authenticated (`az login`)
 - Connector Namespace with a connected connector (see `connection-setup` skill)
 - The Connector Namespace must have a **system-assigned managed identity** enabled
-- **Supported regions** for Connector Namespace: `brazilsouth`, `centraluseuap`, `eastus2euap`, `centralusstage`, `eastusstage`
+- **Supported regions** for Connector Namespace: `westcentralus`
 
 ## Key Concepts
 
@@ -86,7 +86,7 @@ azd init -t functions-quickstart-javascript-azd
 
 ### 2. Install connector packages
 
-Delete any sample HTTP functions and add the connector extension and SDK packages:
+Add the connector extension and SDK packages:
 
 #### .NET
 
@@ -244,19 +244,13 @@ Connector endpoint: http://localhost:7071/runtime/webhooks/connector
 
 To test triggers locally, you need to expose your local Function App so the Connector Namespace can reach it.
 
-### Step 1: Start the Function App locally
-
-```bash
-func start
-```
-
 Confirm the app is running on `http://localhost:7071`.
 
 > **🔔 Confirm:** Is the Function App running? (Yes / No)
 
-### Step 2: Create a dev tunnel
+### Create a dev tunnel
 
-> ⚠️ **Security Warning:** The following steps expose your local Function App to the public internet. Only proceed if you understand the implications.
+> ⚠️ **Security Warning:** The following steps expose your local Function App to the public internet. Only proceed for local testing and if you understand the implications.
 
 > 💡 Prefer the CLI over VS Code UI? Use the `devtunnel` CLI instead — see [Dev Tunnels CLI quickstart](https://learn.microsoft.com/azure/developer/dev-tunnels/get-started).
 > ```bash
@@ -286,15 +280,6 @@ Confirm the app is running on `http://localhost:7071`.
 4. Change the visibility by right-clicking on the port and selecting **Port Visibility** → **Public**. Public ports don't require sign in
 
 > **🔔 Confirm:** Is the port forwarded with Public visibility and do you see the tunnel URL in the Ports panel? (Yes / No)
-
-### Step 4: Clean up after testing
-
-When done testing, **always** revoke public access:
-
-1. In the **Ports** panel, right-click the forwarded port
-2. Select **Stop Forwarding Port** (or set visibility back to **Private**)
-
-> ⚠️ Do not leave your local Function App publicly exposed longer than necessary.
 
 ## Registering a Trigger Config
 
@@ -430,11 +415,22 @@ To point an existing trigger config to a different callback (e.g., after redeplo
 ### Step 6: List All Trigger Configs
 
 ```powershell
-az rest --method GET `
-    --uri "https://management.azure.com${nsId}/triggerConfigs?api-version=2026-05-01-preview" `
-    --query "value[].{name:name, operation:properties.operationName, state:properties.state}" `
-    -o table
+   az connector-namespace trigger-config list \
+       --namespace-name $namespaceName \
+       --resource-group $resourceGroup \
+       --name $triggerName \
+       -o table
 ```
+
+### Step 7: Clean up after testing
+
+When done testing, **always** revoke public access:
+
+1. In the **Ports** panel, right-click the forwarded port
+2. Select **Stop Forwarding Port** (or set visibility back to **Private**)
+
+> ⚠️ Do not leave your local Function App publicly exposed longer than necessary.
+
 
 ## Troubleshooting
 
