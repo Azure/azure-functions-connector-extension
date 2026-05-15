@@ -19,13 +19,13 @@ Registers polling trigger configs on a Connector Namespace so that connector eve
 - Azure CLI installed and authenticated (`az login`)
 - Connector Namespace with a connected connector (see `connection-setup` skill)
 - The Connector Namespace must have a **system-assigned managed identity** enabled
-- **Supported regions** for Connector Namespace: `brazilsouth`, `centraluseuap`, `eastus2euap`, `centralusstage`, `eastusstage`
+- **Supported regions** for Connector Namespace: `westcentralus`
 
 ## Key Concepts
 
 ### Extension Webhook Endpoint
 
-The `Microsoft.Azure.Functions.Extensions.Connector` extension registers a webhook route on the Function App:
+The connector extension (`Microsoft.Azure.Functions.Worker.Extensions.Connector` for isolated worker — recommended; `Microsoft.Azure.Functions.Extensions.Connector` for in-process) registers a webhook route on the Function App:
 
 ```text
 POST /runtime/webhooks/connector?functionName={FunctionName}&code={connector_extension_key}
@@ -84,18 +84,23 @@ azd init -t functions-quickstart-javascript-azd
 > }
 > ```
 
-### 2. Replace the HTTP trigger with a ConnectorTrigger function
+### 2. Install connector packages
 
-Delete any sample HTTP functions and add the connector extension and SDK packages:
+Add the connector extension and SDK packages:
 
 #### .NET
 
 Install the latest pre-release NuGet packages:
 
 ```bash
+# Connector trigger binding for the isolated worker (recommended)
 dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector --prerelease
+
+# Connector SDK (typed payloads and action clients)
 dotnet add package Azure.Connectors.Sdk --prerelease
 ```
+
+> **In-proc customers only:** if you are still on the .NET in-process model, replace `Microsoft.Azure.Functions.Worker.Extensions.Connector` with `Microsoft.Azure.Functions.Extensions.Connector`. The isolated worker (above) is the recommended path for new projects.
 
 #### Python
 
@@ -169,7 +174,57 @@ app.generic("OnNewEmail", {
 });
 ```
 
+**OneDrive for Business example (OnNewFile trigger):**
+
+```typescript
+import { app, InvocationContext } from "@azure/functions";
+
+app.generic("OnNewFile", {
+  trigger: { type: "connectorTrigger", name: "payload" },
+  handler: async (payload: unknown, context: InvocationContext) => {
+    const data = typeof payload === "string" ? JSON.parse(payload) : payload;
+    for (const file of data?.body?.value ?? []) {
+      context.log(`File: ${file.name}, Path: ${file.path}`);
+    }
+  },
+});
+```
+
 ### 4. Run locally
+
+Before starting the Function App, ensure **Azurite** (local Azure Storage emulator) is running. The Functions runtime requires `AzureWebJobsStorage` for local development.
+
+#### Start Azurite (required for local development)
+
+Choose one option:
+
+**Option 1: VS Code Extension (simplest)**
+1. Install the [Azurite extension](https://marketplace.visualstudio.com/items?itemName=Azurite.azurite) from VS Code Marketplace
+2. Open Command Palette (`Ctrl+Shift+P`) and run "Azurite: Start"
+
+**Option 2: npm global install**
+```bash
+npm install -g azurite
+azurite
+```
+
+**Option 3: npx (no installation)**
+```bash
+npx azurite
+```
+
+Verify `local.settings.json` includes:
+```json
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
+  }
+}
+```
+
+#### Start the Function App
 
 ```shell
 func start
@@ -180,23 +235,23 @@ The extension logs the webhook endpoint at startup:
 Connector endpoint: http://localhost:7071/runtime/webhooks/connector
 ```
 
+> **⚠️ Troubleshooting:** If `func start` fails with `AzureWebJobsStorage` or storage connection error:
+> - Verify **Azurite is running** in a separate terminal
+> - Confirm `local.settings.json` has `"AzureWebJobsStorage": "UseDevelopmentStorage=true"`
+> - Check that **no other process is using port 10000** (Azurite's default port)
+> - Clear identity cache if switching between cloud/local storage: `%LOCALAPPDATA%\.IdentityService\cache` (Windows) or `~/.IdentityService/cache` (Mac/Linux)
+
 ## Local Development with Port Forwarding
 
 To test triggers locally, you need to expose your local Function App so the Connector Namespace can reach it.
-
-### Step 1: Start the Function App locally
-
-```bash
-func start
-```
 
 Confirm the app is running on `http://localhost:7071`.
 
 > **🔔 Confirm:** Is the Function App running? (Yes / No)
 
-### Step 2: Create a dev tunnel
+### Create a dev tunnel
 
-> ⚠️ **Security Warning:** The following steps expose your local Function App to the public internet. Only proceed if you understand the implications.
+> ⚠️ **Security Warning:** The following steps expose your local Function App to the public internet. Only proceed for local testing and if you understand the implications.
 
 > 💡 Prefer the CLI over VS Code UI? Use the `devtunnel` CLI instead — see [Dev Tunnels CLI quickstart](https://learn.microsoft.com/azure/developer/dev-tunnels/get-started).
 > ```bash
@@ -204,6 +259,18 @@ Confirm the app is running on `http://localhost:7071`.
 > devtunnel create <your-tunnel-id> -a  # custom tunnel id for a persistent, reusable URL
 > devtunnel port create <your-tunnel-id> -p 7071
 > devtunnel host <your-tunnel-id> --allow-anonymous
+> ```
+
+> **🍎 Mac note:** If `devtunnel host` returns `Tunnel service error: Request not permitted. Unauthorized tunnel creation access: Anonymous does not have 'create' access scope`, your login didn't actually stick. On macOS, `devtunnel user login` without a provider flag silently leaves you as Anonymous. Fix:
+> ```bash
+> devtunnel user login -g     # GitHub (or -m Microsoft, -e Entra)
+> devtunnel user show         # confirm — should NOT print "Anonymous"
+> devtunnel host -p 7071 --allow-anonymous
+> ```
+> If your corp tenant blocks `--allow-anonymous` on the default tunnel domain, drop the flag and grant per-port anon access instead:
+> ```bash
+> devtunnel host -p 7071
+> devtunnel access create -p 7071 --anonymous   # in a separate terminal
 > ```
 
 #### VS Code port forwarding
@@ -214,15 +281,6 @@ Confirm the app is running on `http://localhost:7071`.
 4. Change the visibility by right-clicking on the port and selecting **Port Visibility** → **Public**. Public ports don't require sign in
 
 > **🔔 Confirm:** Is the port forwarded with Public visibility and do you see the tunnel URL in the Ports panel? (Yes / No)
-
-### Step 4: Clean up after testing
-
-When done testing, **always** revoke public access:
-
-1. In the **Ports** panel, right-click the forwarded port
-2. Select **Stop Forwarding Port** (or set visibility back to **Private**)
-
-> ⚠️ Do not leave your local Function App publicly exposed longer than necessary.
 
 ## Registering a Trigger Config
 
@@ -262,7 +320,7 @@ $nsId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/
 $triggerName = "<trigger-config-name>"   # e.g., "onnewemail-trigger"
 $connectionName = "<connection-name>"    # e.g., "office365-conn"
 $connectorName = "<connector-name>"      # e.g., "office365"
-$operationName = "<operation-name>"      # e.g., "OnNewEmail"
+$operationName = "<operation-name>"      # e.g., "OnNewEmail" or "OnNewFile"
 
 $token = az account get-access-token `
     --resource "https://management.core.windows.net/" `
@@ -280,8 +338,12 @@ $body = @{
             httpMethod = "Post"
         }
         parameters = @(
-            # Add connector-specific parameters here, e.g.:
-            # @{ name = "folderId"; value = "Inbox" }
+            # Add connector-specific parameters here
+            # Office 365 OnNewEmailV3 example:
+            # @{ name = "folderPath"; value = "Inbox" }
+            
+            # OneDrive for Business OnNewFile example:
+            # @{ name = "folderId"; value = "root" }
         )
     }
 } | ConvertTo-Json -Depth 4
@@ -298,6 +360,13 @@ try {
 }
 ```
 
+**Common trigger parameters:**
+- **Office 365 `OnNewEmailV3`**: Requires `folderPath` (e.g., `"Inbox"`)
+- **OneDrive for Business `OnNewFile`**: Requires `folderId` (e.g., `"root"` for the root folder)
+- **SharePoint `OnNewFile`**: Requires `dataset` (site URL) and `table` (library or list ID)
+
+> **Note:** Trigger parameters are connector-specific. Use `az connector-namespace connection operation list --operation-type trigger` to discover available triggers and their required parameters.
+
 ### Step 3: Verify Trigger Config
 
 ```powershell
@@ -309,7 +378,34 @@ az rest --method GET `
 
 Expected: `state = Enabled`.
 
-### Step 4: Update Callback URL
+### Step 4: Test the Trigger
+
+Trigger the connector event (e.g., send an email to the Office 365 inbox, upload a file to OneDrive root folder, etc.). Watch the Function App logs for execution:
+
+**Expected success output:**
+
+```
+Executing 'Functions.OnNewEmail' (Reason='', Id=9c4e2415-bc91-430c-bda4-d8953725a432)
+Received Microsoft 365 OnNewEmail trigger
+Email received from: user@contoso.com
+Email subject: Test Email
+Executed 'Functions.OnNewEmail' (Succeeded, Id=9c4e2415-bc91-430c-bda4-d8953725a432, Duration=123ms)
+```
+
+If no logs appear:
+1. Verify the trigger config `state = Enabled` (Step 3)
+2. Check that the callback URL is correct and publicly accessible (for local dev tunnels, verify `--allow-anonymous` or per-port anonymous access)
+3. Review [Troubleshooting](#troubleshooting) section below
+4. Query trigger run history:
+   ```powershell
+   az connector-namespace trigger-config run list \
+       --namespace-name $namespaceName \
+       --resource-group $resourceGroup \
+       --name $triggerName \
+       -o table
+   ```
+
+### Step 5: Update Callback URL
 
 To point an existing trigger config to a different callback (e.g., after redeploying or switching tunnels):
 
@@ -317,14 +413,25 @@ To point an existing trigger config to a different callback (e.g., after redeplo
 # Re-run the PUT from Step 2 with the updated callbackUrl
 ```
 
-### Step 5: List All Trigger Configs
+### Step 6: List All Trigger Configs
 
 ```powershell
-az rest --method GET `
-    --uri "https://management.azure.com${nsId}/triggerConfigs?api-version=2026-05-01-preview" `
-    --query "value[].{name:name, operation:properties.operationName, state:properties.state}" `
-    -o table
+   az connector-namespace trigger-config list \
+       --namespace-name $namespaceName \
+       --resource-group $resourceGroup \
+       --name $triggerName \
+       -o table
 ```
+
+### Step 7: Clean up after testing
+
+When done testing, **always** revoke public access:
+
+1. In the **Ports** panel, right-click the forwarded port
+2. Select **Stop Forwarding Port** (or set visibility back to **Private**)
+
+> ⚠️ Do not leave your local Function App publicly exposed longer than necessary.
+
 
 ## Troubleshooting
 
