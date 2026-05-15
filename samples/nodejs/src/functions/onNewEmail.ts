@@ -1,34 +1,30 @@
-/**
- * Azure Functions Connector Extension - Node.js Sample
- *
- * Receives trigger callbacks from AI Gateway managed connectors
- * and saves the payload to blob storage.
- */
+// Copyright (c) .NET Foundation. All rights reserved.
+// Licensed under the MIT License.
 
-import { app, InvocationContext, output } from "@azure/functions";
+import { InvocationContext, output } from '@azure/functions';
+import { connectors, EmailTriggerContext } from '@azure/functions-extensions-connectors';
 
 const blobOutput = output.storageBlob({
-  path: "connector-messages/{rand-guid}.json",
-  connection: "BlobStoreConnection",
+    path: 'connector-messages/{rand-guid}.json',
+    connection: 'BlobStoreConnection',
 });
 
-app.generic("OnNewEmail", {
-  trigger: {
-    type: "connectorTrigger",
-    name: "payload",
-  },
-  extraOutputs: [blobOutput],
-  handler: async (payload: unknown, context: InvocationContext) => {
-    context.log("OnNewEmail trigger received");
+connectors.office365.onNewEmail('OnNewEmail', {
+    extraOutputs: [blobOutput],
+    handler: async (context: EmailTriggerContext, invocationContext: InvocationContext) => {
+        invocationContext.log('OnNewEmail trigger received.');
 
-    const data = typeof payload === "string" ? JSON.parse(payload) : payload;
-    const emails: Record<string, unknown>[] = data?.body?.value ?? [];
+        // context.emails is typed as GraphClientReceiveMessage[] — full IntelliSense
+        for (const email of context.emails) {
+            invocationContext.log(`Subject: '${email.subject}'.`);
+            invocationContext.log(`From: '${email.from}'.`);
+            invocationContext.log(`Importance: '${email.importance}'.`);
+            invocationContext.log(`Has attachments: '${email.hasAttachments}'.`);
+        }
 
-    for (const email of emails) {
-      context.log(`Subject: ${email.subject}`);
-      context.log(`From: ${email.from}`);
-    }
+        invocationContext.log(`Batch contains '${context.items.length}' item(s).`);
 
-    context.extraOutputs.set(blobOutput, JSON.stringify(data));
-  },
+        // Persist the raw payload to blob storage for auditing/replay
+        invocationContext.extraOutputs.set(blobOutput, context.toJSON());
+    },
 });

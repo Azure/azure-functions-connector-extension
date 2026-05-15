@@ -1,8 +1,8 @@
 # Node.js Sample App
 
-This sample demonstrates how to use the Connector Extension with the Node.js v4 programming model (TypeScript).
+This sample demonstrates how to use the Connector Extension with the Node.js v4 programming model (TypeScript) using `@azure/functions-extensions-connectors`.
 
-When AI Gateway detects a connector event (e.g., a new Office 365 email arrives), it sends a webhook callback to your function. The function receives the JSON payload via the `connectorTrigger` binding, logs key fields, and persists the raw payload to Azure Blob Storage using a blob output binding. The blob output provides a simple way to archive every incoming event for auditing, replay, or downstream processing.
+When AI Gateway detects a connector event (e.g., a new Office 365 email arrives), it sends a webhook callback to your function. The extension package automatically normalizes the payload into a strongly-typed context. The function logs key fields and persists the raw payload to Azure Blob Storage using a blob output binding.
 
 ## Prerequisites
 
@@ -12,32 +12,26 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
 
 ## Setup
 
-1. **Build the extension** (from repo root):
+1. **Install dependencies:**
 
    ```bash
    cd samples/nodejs
-   dotnet build extensions.csproj
-   ```
-
-2. **Install dependencies:**
-
-   ```bash
    npm install
    ```
 
-3. **Build TypeScript:**
+2. **Build TypeScript:**
 
    ```bash
    npm run build
    ```
 
-4. **Start Azurite** (in another terminal):
+3. **Start Azurite** (in another terminal):
 
    ```bash
    azurite --silent
    ```
 
-5. **Run the function app:**
+4. **Run the function app:**
 
    ```bash
    npm start
@@ -45,9 +39,10 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
 
 ## Available Functions
 
-| Function     | Description                          | Example Use Case       |
-| ------------ | ------------------------------------ | ---------------------- |
-| `OnNewEmail` | Office 365 email trigger via AI Gateway | O365 mailbox monitoring |
+| Function | Approach | Description |
+|----------|----------|-------------|
+| `OnNewEmail` | `connectors.office365.onNewEmail()` | Typed email trigger with `EmailTriggerContext` and blob output |
+| `OnNewEmailDirect` | `app.connectorTrigger()` | Raw trigger with manual payload parsing and blob output |
 
 ## Testing
 
@@ -58,7 +53,9 @@ curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnNe
        "body": {
          "value": [{
            "subject": "URGENT: Action Required",
-           "from": "john@contoso.com"
+           "from": "john@contoso.com",
+           "importance": "high",
+           "hasAttachments": false
          }]
        }
      }'
@@ -66,24 +63,47 @@ curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnNe
 
 ## Code Structure
 
+### Using `@azure/functions-extensions-connectors` (recommended)
+
 ```typescript
-import { app, InvocationContext, output } from "@azure/functions";
+import { InvocationContext, output } from '@azure/functions';
+import { connectors, EmailTriggerContext } from '@azure/functions-extensions-connectors';
 
 const blobOutput = output.storageBlob({
-  path: "connector-messages/{rand-guid}.json",
-  connection: "BlobStoreConnection",
+    path: 'connector-messages/{rand-guid}.json',
+    connection: 'BlobStoreConnection',
 });
 
-app.generic("OnNewEmail", {
-  trigger: {
-    type: "connectorTrigger",
-    name: "payload",
-  },
-  extraOutputs: [blobOutput],
-  handler: async (payload: unknown, context: InvocationContext) => {
-    const data = typeof payload === "string" ? JSON.parse(payload) : payload;
-    // ... process emails
-    context.extraOutputs.set(blobOutput, JSON.stringify(data));
-  },
+connectors.office365.onNewEmail('OnNewEmail', {
+    extraOutputs: [blobOutput],
+    handler: async (context: EmailTriggerContext, invocationContext: InvocationContext) => {
+        // context.emails is GraphClientReceiveMessage[] — full IntelliSense
+        for (const email of context.emails) {
+            invocationContext.log(`Subject: '${email.subject}'.`);
+        }
+
+        invocationContext.extraOutputs.set(blobOutput, context.toJSON());
+    },
+});
+```
+
+### Using `app.connectorTrigger()` directly (for comparison)
+
+```typescript
+import { app, InvocationContext, output } from '@azure/functions';
+
+const blobOutput = output.storageBlob({
+    path: 'connector-messages/{rand-guid}.json',
+    connection: 'BlobStoreConnection',
+});
+
+app.connectorTrigger('OnNewEmailDirect', {
+    extraOutputs: [blobOutput],
+    handler: async (triggerInput: unknown, invocationContext: InvocationContext) => {
+        const parsed = typeof triggerInput === 'string'
+            ? JSON.parse(triggerInput) : (triggerInput ?? {});
+
+        invocationContext.extraOutputs.set(blobOutput, JSON.stringify(parsed));
+    },
 });
 ```

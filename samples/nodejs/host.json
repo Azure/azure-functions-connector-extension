@@ -4,5 +4,9 @@
     "logLevel": {
       "Microsoft.Azure.Functions.Extensions.Connector": "Information"
     }
-  }
+  },
+  "extensionBundle": {
+        "id": "Microsoft.Azure.Functions.ExtensionBundle.Experimental",
+        "version": "[4.6.*, 5.0.0)"
+    }
 }
