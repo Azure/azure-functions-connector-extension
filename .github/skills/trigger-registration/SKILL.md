@@ -104,17 +104,24 @@ dotnet add package Azure.Connectors.Sdk --prerelease
 
 #### Python
 
-Add to `requirements.txt`:
+Add to `requirements.txt` (include packages based on your approach):
 
 ```text
-azure-functions>=2.2.0b3
+# >=2.2.0b4 required for @app.connector_trigger decorator (Python 3.13+ only), no pinning required for generic trigger approaches
+azure-functions>=2.2.0b4
+
+# Currently only supports Office 365 OnNewEmail operation
 azurefunctions-extensions-connectors
+
+# Required for @app.generic_trigger with typed SDK models or str payloads, don't include if using azurefunctions-extensions-connectors 
+azure-connectors
 ```
 
 #### TypeScript / JavaScript
 
 ```bash
-npm install @azure/functions@^4.0.0
+npm install @azure/functions@4.15.1-preview
+npm install @azure/functions-extensions-connectors@0.0.1-preview
 npm install @azure/connectors
 ```
 
@@ -448,4 +455,8 @@ When done testing, **always** revoke public access:
 ### Polling Interval
 
 The Connector Namespace polls the connector every 1-5 minutes. After polling detects new content, it POSTs the payload to your callback URL.
+
+## Reference
+
+For a complete mapping of trigger operations to function signatures across .NET, Python, and TypeScript (including which typed payload to use and how to specify the function), see [Operations to Functions Signature Match](https://github.com/Azure/azure-functions-connector-extension/blob/main/docs/operations-functions-match.md).
 
