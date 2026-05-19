@@ -2,10 +2,21 @@
 
 This document maps connector trigger operation names to their corresponding Azure Functions signatures across .NET, Python, and TypeScript SDKs.
 
-> **Note:** In Python, the typed `@app.connector_trigger` decorator currently only supports the Office 365 `OnNewEmail` operation. For other connectors with typed Python SDK models (shown in the Python Type column), use `@app.generic_trigger` with the typed class. For all other connectors, use `@app.generic_trigger` with `str` to receive the raw JSON payload.
-
+> **Note — Python package and decorator decision logic:**
+>
+> 1. **Choose decorator by Python version:**
+>    - Python 3.13 → `@app.connector_trigger` (requires `azure-functions>=2.2.0b4`)
+>    - Python < 3.13 → `@app.generic_trigger(type="connectorTrigger")` (regular `azure-functions` is sufficient)
+>
+> 2. **Choose packages by trigger operation:**
+>    - Office 365 `OnNewEmail` → add `azurefunctions-extensions-connectors` (imports `azure-connectors` automatically). Support for more trigger operations is coming.
+>    - Any other connector with a typed SDK model (shown in the Python Type column) → add `azure-connectors`, use typed class as parameter type
+>    - No typed model available → use `str` as parameter type, no extra package needed beyond `azure-functions`
+>
+> 3. **Base package:** `azure-functions` — only pin to `>=2.2.0b4` when using `@app.connector_trigger`
+>
 > **Typed Payloads:** Where columns show `string` (raw JSON) for .NET, `str` (raw JSON) for Python, or `unknown` (raw JSON) for TypeScript, typed SDK models are in development. Use the respective type to receive the raw JSON payload and parse it manually in your function.
-
+>
 > **Trigger Types:** Operations are classified as `batch` (returns multiple items) or `single` (returns one item). The SDKs always return a list — for `single` triggers, the list will contain only one element.
 
 ## Table of Contents
