@@ -9,6 +9,7 @@
 > - Security updates may require version upgrades
 >
 > This feature preview has no SLA provided during the preview. DO NOT use the preview features in any production or critical environments.
+> We welcome feedback and contributions — please [open an issue](https://github.com/Azure/azure-functions-connector-extension/issues) with questions, suggestions, or bug reports.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://dev.azure.com/azfunc/public/_apis/build/status/1710?branchName=main)](https://dev.azure.com/azfunc/public/_build?definitionId=1710&branchName=main)
@@ -124,6 +125,10 @@ The underlying Connector SDKs provide typed models:
 
 - `string` - raw JSON body
 - POCO/model types - strongly-typed SDK models (see individual SDK docs for available types)
+
+## Documentation
+
+- **[Operations to Functions Signature Mapping](./docs/operations-functions-match.md)** - Complete reference of all connector trigger operations and their Azure Functions signatures across .NET, Python, and TypeScript SDKs
 
 ## Test Samples
 

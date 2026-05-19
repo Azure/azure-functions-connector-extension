@@ -6,7 +6,7 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
 
 ## Prerequisites
 
-- [Node.js 20+](https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-node#supported-versions)
+- [Node.js 22+](https://learn.microsoft.com/azure/azure-functions/supported-languages?pivots=programming-language-typescript#languages-by-runtime-version)
 - Azure Functions Core Tools v4
 - Azure Storage Emulator (Azurite) or Azure Storage account
 
@@ -25,7 +25,7 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
    npm run build
    ```
 
-3. **Start Azurite** (in another terminal):
+3. **Start Azurite** (in another terminal) if not already not running:
 
    ```bash
    azurite --silent
@@ -40,7 +40,7 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
 ## Available Functions
 
 | Function | Approach | Description |
-|----------|----------|-------------|
+| ---------- | ---------- | ------------- |
 | `OnNewEmail` | `connectors.office365.onNewEmail()` | Typed email trigger with `EmailTriggerContext` and blob output |
 | `OnNewEmailDirect` | `app.connectorTrigger()` | Raw trigger with manual payload parsing and blob output |
 
