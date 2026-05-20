@@ -252,9 +252,17 @@ Connector endpoint: http://localhost:7071/runtime/webhooks/connector
 
 To test triggers locally, you need to expose your local Function App so the Connector Namespace can reach it.
 
+Start the Function App with `--enableAuth` to secure the endpoint behind a system key:
+
+```powershell
+func start --enableAuth
+```
+
+> **⚠️ Important:** Always use `--enableAuth` when exposing your app via a dev tunnel. Without it, your function endpoint is completely unauthenticated on the public internet.
+
 Confirm the app is running on `http://localhost:7071`.
 
-> **🔔 Confirm:** Is the Function App running? (Yes / No)
+> **🔔 Confirm:** Is the Function App running with `--enableAuth`? (Yes / No)
 
 ### Create a dev tunnel
 
@@ -306,15 +314,40 @@ $callbackUrl = "https://$functionAppName.azurewebsites.net/runtime/webhooks/conn
 
 #### Local development (with dev tunnel)
 
-Use the tunnel URL from the **Local Development with Port Forwarding** section above:
+Use the tunnel URL from the **Local Development with Port Forwarding** section above.
+
+> **Important:** Always start your Function App with `--enableAuth` when using a dev tunnel.
+> Without it, your function endpoint is completely unauthenticated on the public internet.
+> ```powershell
+> func start --enableAuth
+> ```
+
+Retrieve the `connector_extension` system key from local Azurite storage:
+
+```powershell
+# Use the well-known Azurite connection string
+# See: https://learn.microsoft.com/azure/storage/common/storage-use-emulator#authorize-with-shared-key-credentials
+$connStr = "<azurite-connection-string>"
+
+# Find the most recent host.json blob
+$blobs = az storage blob list --container-name azure-webjobs-secrets --connection-string $connStr -o json | ConvertFrom-Json
+$blobName = ($blobs | Sort-Object { $_.properties.lastModified } | Select-Object -Last 1).name
+
+# Download and parse
+az storage blob download --container-name azure-webjobs-secrets --name $blobName --connection-string $connStr --file host-keys.json --no-progress
+$keys = Get-Content host-keys.json | ConvertFrom-Json
+$connectorKey = ($keys.systemKeys | Where-Object { $_.name -eq "connector_extension" }).value
+```
+
+Build the callback URL:
 
 ```powershell
 $tunnelUrl = "<your-tunnel-url>"  # from VS Code Ports panel, e.g., https://<id>-7071.uks1.devtunnels.ms
 $functionName = "<function-name>"
-$callbackUrl = "$tunnelUrl/runtime/webhooks/connector?functionName=$functionName"
+$callbackUrl = "$tunnelUrl/runtime/webhooks/connector?functionName=$functionName&code=$connectorKey"
 ```
 
-> **Note:** For local testing, the tunnel must have **Public** visibility (anonymous access). The Connector Namespace cannot authenticate to private tunnels. Functions CLI does not enforce system key authentication locally.
+> **Note:** The tunnel must have **Public** visibility (anonymous access). The Connector Namespace cannot authenticate to private tunnels. We use connector extension keys for auth instead of the tunnel's built-in auth.
 
 ### Step 2: Create Trigger Config
 

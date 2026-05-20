@@ -2,22 +2,28 @@
 
 This document maps connector trigger operation names to their corresponding Azure Functions signatures across .NET, Python, and TypeScript SDKs.
 
-> **Note — Python package and decorator decision logic:**
+> [!CAUTION]
+> **Python SDK temporary limitation:** Until [Handle dual shaped payload (#28)](https://github.com/Azure/connectors-python-sdk/issues/28) is resolved, use `@app.generic_trigger(type="connectorTrigger")` with `str` as the parameter type. The typed SDK models are not yet reliable or single type of payload.
+
+## Python: Choosing a Decorator
+
+| Python Version | Decorator | Package Requirement |
+| --- | --- | --- |
+| 3.13+ | `@app.connector_trigger` | `azure-functions>=2.2.0b4` |
+| < 3.13 | `@app.generic_trigger(type="connectorTrigger")` | `azure-functions` |
+
+## Python: Choosing Packages by Trigger Operation
+
+| Scenario | Extra Package(s) | Parameter Type |
+| --- | --- | --- |
+| Office 365 `OnNewEmail` | `azurefunctions-extensions-connectors` (pulls in `azure-connectors`) | Typed class (e.g. `ClientReceiveMessage`) |
+| Other connector with a typed SDK model (see Python Type column) | `azure-connectors` | Typed class |
+| No typed model available | None beyond `azure-functions` | `str` |
+
+> [!NOTE]
+> **Typed Payloads:** Where columns show `string` / `str` / `unknown` (raw JSON), typed SDK models are in development. Use the raw type and parse JSON manually in your function.
 >
-> 1. **Choose decorator by Python version:**
->    - Python 3.13 → `@app.connector_trigger` (requires `azure-functions>=2.2.0b4`)
->    - Python < 3.13 → `@app.generic_trigger(type="connectorTrigger")` (regular `azure-functions` is sufficient)
->
-> 2. **Choose packages by trigger operation:**
->    - Office 365 `OnNewEmail` → add `azurefunctions-extensions-connectors` (imports `azure-connectors` automatically). Support for more trigger operations is coming.
->    - Any other connector with a typed SDK model (shown in the Python Type column) → add `azure-connectors`, use typed class as parameter type
->    - No typed model available → use `str` as parameter type, no extra package needed beyond `azure-functions`
->
-> 3. **Base package:** `azure-functions` — only pin to `>=2.2.0b4` when using `@app.connector_trigger`
->
-> **Typed Payloads:** Where columns show `string` (raw JSON) for .NET, `str` (raw JSON) for Python, or `unknown` (raw JSON) for TypeScript, typed SDK models are in development. Use the respective type to receive the raw JSON payload and parse it manually in your function.
->
-> **Trigger Types:** Operations are classified as `batch` (returns multiple items) or `single` (returns one item). The SDKs always return a list — for `single` triggers, the list will contain only one element.
+> **Trigger Types:** Operations are classified as `batch` (returns multiple items) or `single` (returns one item). The SDKs always return a list — for `single` triggers, the list contains one element.
 
 ## Table of Contents
 
