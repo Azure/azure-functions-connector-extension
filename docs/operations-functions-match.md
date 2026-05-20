@@ -2,11 +2,28 @@
 
 This document maps connector trigger operation names to their corresponding Azure Functions signatures across .NET, Python, and TypeScript SDKs.
 
-> **Note:** In Python, the typed `@app.connector_trigger` decorator currently only supports the Office 365 `OnNewEmail` operation. For other connectors with typed Python SDK models (shown in the Python Type column), use `@app.generic_trigger` with the typed class. For all other connectors, use `@app.generic_trigger` with `str` to receive the raw JSON payload.
+> [!CAUTION]
+> **Python SDK temporary limitation:** Until [Handle dual shaped payload (#28)](https://github.com/Azure/connectors-python-sdk/issues/28) is resolved, use `@app.generic_trigger(type="connectorTrigger")` with `str` as the parameter type. The typed SDK models are not yet reliable or single type of payload.
 
-> **Typed Payloads:** Where columns show `string` (raw JSON) for .NET, `str` (raw JSON) for Python, or `unknown` (raw JSON) for TypeScript, typed SDK models are in development. Use the respective type to receive the raw JSON payload and parse it manually in your function.
+## Python: Choosing a Decorator
 
-> **Trigger Types:** Operations are classified as `batch` (returns multiple items) or `single` (returns one item). The SDKs always return a list — for `single` triggers, the list will contain only one element.
+| Python Version | Decorator | Package Requirement |
+| --- | --- | --- |
+| 3.13+ | `@app.connector_trigger` | `azure-functions>=2.2.0b4` |
+| < 3.13 | `@app.generic_trigger(type="connectorTrigger")` | `azure-functions` |
+
+## Python: Choosing Packages by Trigger Operation
+
+| Scenario | Extra Package(s) | Parameter Type |
+| --- | --- | --- |
+| Office 365 `OnNewEmail` | `azurefunctions-extensions-connectors` (pulls in `azure-connectors`) | Typed class (e.g. `ClientReceiveMessage`) |
+| Other connector with a typed SDK model (see Python Type column) | `azure-connectors` | Typed class |
+| No typed model available | None beyond `azure-functions` | `str` |
+
+> [!NOTE]
+> **Typed Payloads:** Where columns show `string` / `str` / `unknown` (raw JSON), typed SDK models are in development. Use the raw type and parse JSON manually in your function.
+>
+> **Trigger Types:** Operations are classified as `batch` (returns multiple items) or `single` (returns one item). The SDKs always return a list — for `single` triggers, the list contains one element.
 
 ## Table of Contents
 
