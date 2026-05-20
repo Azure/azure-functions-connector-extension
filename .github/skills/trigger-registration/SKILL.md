@@ -107,7 +107,7 @@ dotnet add package Azure.Connectors.Sdk --prerelease
 Add to `requirements.txt` (include packages based on your approach):
 
 ```text
-# >=2.2.0b4 only required for @app.connector_trigger decorator (Python 3.13 only), regular azure-functions is enough for generic_trigger
+# >=2.2.0b4 only required for @app.connector_trigger decorator (Python 3.13+ only), regular azure-functions is enough for generic_trigger
 azure-functions>=2.2.0b4
 
 # Currently only supports Office 365 OnNewEmail operation
