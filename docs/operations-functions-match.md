@@ -3,7 +3,7 @@
 This document maps connector trigger operation names to their corresponding Azure Functions signatures across .NET, Python, and TypeScript SDKs.
 
 > [!CAUTION]
-> **Python SDK temporary limitation:** Until [Handle dual shaped payload (#28)](https://github.com/Azure/connectors-python-sdk/issues/28) is resolved, use `@app.generic_trigger(type="connectorTrigger")` with `str` as the parameter type. The typed SDK models are not yet reliable or single type of payload.
+> **Python SDK temporary limitation:** Until [Handle dual shaped payload (#28)](https://github.com/Azure/connectors-python-sdk/issues/28) is resolved, use `@app.generic_trigger(type="connectorTrigger")` with `str` as the parameter type. The typed SDK models are not yet reliable for single type payload.
 
 ## Python: Choosing a Decorator
 
