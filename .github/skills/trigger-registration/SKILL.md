@@ -73,13 +73,13 @@ azd init -t functions-quickstart-typescript-azd
 azd init -t functions-quickstart-javascript-azd
 ```
 
-> **Note:** The `azd init` templates create a `host.json` file. For non-.NET languages (Node.js, Python, etc.), update `host.json` to use the **experimental extension bundle** version 4.6.0 or greater:
+> **Note:** The `azd init` templates create a `host.json` file. For non-.NET languages (Node.js, Python, etc.), update `host.json` to use the **preview extension bundle** version 4.42.0 or greater:
 > ```json
 > {
 >     "version": "2.0",
 >     "extensionBundle": {
->         "id": "Microsoft.Azure.Functions.ExtensionBundle.Experimental",
->         "version": "[4.6.0, 5.0.0)"
+>         "id": "Microsoft.Azure.Functions.ExtensionBundle.Preview",
+>         "version": "[4.42.0, 5.0.0)"
 >     }
 > }
 > ```

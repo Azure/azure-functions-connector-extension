@@ -28,7 +28,7 @@ What actually happened instead.
 ## Environment
 
 - **Extension version**: [e.g., 0.2.0-alpha]
-- **Extension Bundle Id and Version**: [e.g., Microsoft.Azure.Functions.ExtensionBundle.Experimental 4.6.0]
+- **Extension Bundle Id and Version**: [e.g., Microsoft.Azure.Functions.ExtensionBundle.Preview 4.42.0]
 - **Functions runtime version**: [e.g., 4.1049.100]
 - **Language/SDK**: [e.g., .NET 10, Python 3.11, Node.js 20]
 - **Connector SDK version** (if applicable): [e.g., Azure.Connectors.Sdk 0.9.0-preview.1]

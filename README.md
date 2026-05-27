@@ -24,14 +24,14 @@ The following NuGet packages are available as part of this project.
 
 ## Extension Bundle
 
-For non-.NET languages (Node.js, Python, etc.), use the **experimental extension bundle** version 4.6.0 or greater. Add the following to your `host.json`:
+For non-.NET languages (Node.js, Python, etc.), use the **preview extension bundle** version 4.42.0 or greater. Add the following to your `host.json`:
 
 ```json
 {
     "version": "2.0",
     "extensionBundle": {
-        "id": "Microsoft.Azure.Functions.ExtensionBundle.Experimental",
-        "version": "[4.6.0, 5.0.0)"
+        "id": "Microsoft.Azure.Functions.ExtensionBundle.Preview",
+        "version": "[4.42.0, 5.0.0)"
     }
 }
 ```
