@@ -3,20 +3,20 @@
 This document maps connector trigger operation names to their corresponding Azure Functions signatures across .NET, Python, and TypeScript SDKs.
 
 > [!CAUTION]
-> **Python SDK temporary limitation:** Until [Handle dual shaped payload (#28)](https://github.com/Azure/connectors-python-sdk/issues/28) is resolved, use `@app.generic_trigger(type="connectorTrigger")` with `str` as the parameter type. The typed SDK models are not yet reliable for single type payload.
+> **Python Connectors Extension Package temporary limitation:** Until [Handle dual shaped payload (#28)](https://github.com/Azure/connectors-python-sdk/issues/28) is resolved, use `str` as the parameter type. The typed SDK models are not yet reliable for single type payload.
 
 ## Python: Choosing a Decorator
 
 | Python Version | Decorator | Package Requirement |
 | --- | --- | --- |
 | 3.13+ | `@app.connector_trigger` | `azure-functions>=2.2.0b4` |
-| < 3.13 | `@app.generic_trigger(type="connectorTrigger")` | `azure-functions` |
+| < 3.13 | `@app.generic_trigger(type="connectorTrigger", arg_name="payload")` | `azure-functions` |
 
 ## Python: Choosing Packages by Trigger Operation
 
 | Scenario | Extra Package(s) | Parameter Type |
 | --- | --- | --- |
-| Office 365 `OnNewEmail` | `azurefunctions-extensions-connectors` (pulls in `azure-connectors`) | Typed class (e.g. `ClientReceiveMessage`) |
+| Office 365 `OnNewEmail` | `azurefunctions-extensions-connectors` (pulls in `azure-connectors`) | Typed class (`ClientReceiveMessage`) |
 | Other connector with a typed SDK model (see Python Type column) | `azure-connectors` | Typed class |
 | No typed model available | None beyond `azure-functions` | `str` |
 
@@ -123,7 +123,7 @@ import logging
 
 app = func.FunctionApp()
 
-# OnNewEmailV3 — Uses typed connector_trigger decorator
+# OnNewEmailV3 — Uses typed ClientReceiveMessage payload
 @app.function_name(name="OnNewEmail")
 @app.connector_trigger(arg_name="emails")
 def on_new_email(emails: List[office365.ClientReceiveMessage]) -> None:
@@ -131,7 +131,7 @@ def on_new_email(emails: List[office365.ClientReceiveMessage]) -> None:
         logging.info(f"Subject: {email.subject}, From: {email.from_}")
 ```
 
-For all other O365 triggers (or when typed decorator is not available), use generic trigger with `string` payload:
+For all other O365 triggers (or when typed payload is not available), use connector trigger with `string` payload:
 
 ```python
 import azure.functions as func
@@ -140,9 +140,9 @@ import logging
 
 app = func.FunctionApp()
 
-# OnFlaggedEmailV4 — Generic trigger with string payload
+# OnFlaggedEmailV4 — string payload
 @app.function_name(name="OnFlaggedEmail")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
+@app.connector_trigger(arg_name="payload")
 def on_flagged_email(payload: str) -> None:
     logging.info("OnFlaggedEmail trigger received")
     data = json.loads(payload)
@@ -251,7 +251,7 @@ import logging
 app = func.FunctionApp()
 
 @app.function_name(name="OnNewSharePointItem")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
+@app.connector_trigger(arg_name="payload")
 def on_new_sharepoint_item(payload: str) -> None:
     logging.info("OnNewSharePointItem trigger received")
     data = json.loads(payload)
@@ -330,7 +330,7 @@ import logging
 app = func.FunctionApp()
 
 @app.function_name(name="OnNewChannelMessage")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
+@app.connector_trigger(arg_name="payload")
 def on_new_channel_message(payload: str) -> None:
     logging.info("OnNewChannelMessage trigger received")
     data = json.loads(payload)
@@ -395,7 +395,7 @@ import logging
 app = func.FunctionApp()
 
 @app.function_name(name="OnNewOneDriveFile")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
+@app.connector_trigger(arg_name="payload")
 def on_new_onedrive_file(payload: str) -> None:
     logging.info("OnNewOneDriveFile trigger received")
     data = json.loads(payload)
@@ -457,7 +457,7 @@ import logging
 app = func.FunctionApp()
 
 @app.function_name(name="OnBlobUpdated")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
+@app.connector_trigger(arg_name="payload")
 def on_blob_updated(payload: str) -> None:
     logging.info("OnBlobUpdated trigger received")
     data = json.loads(payload)
@@ -519,7 +519,7 @@ import logging
 app = func.FunctionApp()
 
 @app.function_name(name="OnNewEvents")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
+@app.connector_trigger(arg_name="payload")
 def on_new_events(payload: str) -> None:
     logging.info("OnNewEvents trigger received")
     data = json.loads(payload)
@@ -606,7 +606,7 @@ import logging
 app = func.FunctionApp()
 
 @app.function_name(name="OnQueueMessages")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
+@app.connector_trigger(arg_name="payload")
 def on_queue_messages(payload: str) -> None:
     logging.info("OnQueueMessages trigger received")
     data = json.loads(payload)
@@ -679,7 +679,7 @@ import logging
 app = func.FunctionApp()
 
 @app.function_name(name="OnNewOutlookEmail")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
+@app.connector_trigger(arg_name="payload")
 def on_new_outlook_email(payload: str) -> None:
     logging.info("OnNewOutlookEmail trigger received")
     data = json.loads(payload)
@@ -749,7 +749,7 @@ import logging
 app = func.FunctionApp()
 
 @app.function_name(name="OnNewSqlItem")
-@app.generic_trigger(arg_name="payload", type="connectorTrigger")
+@app.connector_trigger(arg_name="payload")
 def on_new_sql_item(payload: str) -> None:
     logging.info("OnNewSqlItem trigger received")
     data = json.loads(payload)
