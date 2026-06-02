@@ -21,7 +21,7 @@ public class ConnectorTriggerBindingTests
         var httpRequestProcessor = new ConnectorHttpRequestProcessor(
             NullLogger<ConnectorHttpRequestProcessor>.Instance);
         _configProvider = new ConnectorExtensionConfigProvider(httpRequestProcessor, loggerFactory);
-        _attribute = new ConnectorTriggerAttribute();
+        _attribute = new ConnectorTriggerAttribute("ns", "trigger");
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public class ConnectorTriggerBindingTests
     // Test class for reflection
     private static class TestFunctions
     {
-        public static void SampleFunction([ConnectorTrigger] string ctx)
+        public static void SampleFunction([ConnectorTrigger("ns", "trigger")] string ctx)
         {
         }
     }
