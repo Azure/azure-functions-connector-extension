@@ -27,7 +27,7 @@ public class ConnectorFunctions
     [Function("OnNewEmail")]
     [BlobOutput("connector-messages/{rand-guid}.json", Connection = "AzureWebJobsStorage")]
     public string OnNewEmail(
-        [ConnectorTrigger]
+        [ConnectorTrigger("my-connector-namespace", "email-newemail-trigger")]
         Office365OnNewEmailTriggerPayload payload)
     {
         _logger.LogInformation("Received connector trigger payload");
