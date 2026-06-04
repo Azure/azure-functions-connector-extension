@@ -16,6 +16,9 @@
 
 An Azure Functions trigger extension for receiving webhook callbacks from Connector Namespace managed connectors (Office 365, Teams, SharePoint, etc.).
 
+- [Learn Documentation](https://learn.microsoft.com/azure/azure-functions/functions-connectors-overview)
+- [Try Samples](https://aka.ms/functions-connectors-samples)
+
 ## NuGet Packages
 
 The following NuGet packages are available as part of this project.
@@ -62,7 +65,7 @@ az functionapp keys list -g <resource-group> -n <function-app> --query "systemKe
 The full callback URL for Connector Namespace:
 
 ```text
-https://<function-app-domain>/runtime/webhooks/connector?functionName=OnNewEmail&code=<connector_extension_key>
+https://<function-app-domain>/runtime/webhooks/connector?functionName=<function-name>=<connector_extension_key>
 ```
 
 ## Features
@@ -99,7 +102,7 @@ dotnet add package Azure.Connectors.Sdk --prerelease
 The Python extension package (`azurefunctions-extensions-connectors`) integrates the [Connector SDK](https://github.com/Azure/Connectors-python-sdk) with the Functions runtime for typed bindings:
 
 ```bash
-pip install azure-functions>=2.2.0b3
+pip install azure-functions>=2.2.0b4
 pip install azurefunctions-extensions-connectors
 ```
 
@@ -130,13 +133,27 @@ The underlying Connector SDKs provide typed models:
 
 - **[Operations to Functions Signature Mapping](./docs/operations-functions-match.md)** - Complete reference of all connector trigger operations and their Azure Functions signatures across .NET, Python, and TypeScript SDKs
 
+## Copilot Skills
+
+This repository includes [Copilot Skills](https://docs.github.com/en/copilot/customizing-copilot/copilot-extensions/building-copilot-skills) that provide guided workflows for setting up and configuring connector triggers:
+
+| Skill | Description |
+| ----- | ----------- |
+| [connection-setup](./.github/skills/connection-setup/SKILL.md) | Create and configure Connector Namespace connections, authorize OAuth consent, and add access policies |
+| [trigger-registration](./.github/skills/trigger-registration/SKILL.md) | Register polling trigger configs that call back to an Azure Function on connector events |
+
+## Connector Namespace Aceess
+
+- [Connector Portal](https://connectors.azure.com/)
+- [Connector Namespace CLI Reference](https://github.com/Azure/Connectors/blob/main/public-preview/connector-namespace-cli/complete-reference.md)
+
 ## Test Samples
 
 These samples build and reference local extension code and are meant for extension testing:
 
-- **[.NET Isolated](./test/SampleApp)** - .NET isolated worker sample
-- **[Node.js](./samples/nodejs)** - Node.js v4 with blob output
-- **[Python](./samples/python)** - Python v2 with blob output
+- **[.NET Isolated](./test/dotnet)** - .NET isolated worker sample
+- **[Node.js](./test/nodejs)** - Node.js v4 with blob output
+- **[Python](./test/python)** - Python v2
 
 ## Project Structure
 
@@ -156,11 +173,11 @@ azure-functions-connector-extension/
 │   └── Microsoft.Azure.Functions.Worker.Extensions.Connector/   # Worker extension (.NET isolated)
 │       ├── ConnectorTriggerAttribute.cs                         #   Trigger attribute
 │       └── Converters/                                          #   Type converters
-├── samples/
-│   ├── nodejs/                                                  # Node.js sample with blob output
-│   └── python/                                                  # Python sample with blob output
 ├── test/
-│   ├── SampleApp/                                               # .NET isolated worker sample app
+│   ├── dotnet/                                                  # .NET isolated worker test app
+│   ├── nodejs/                                                  # Node.js sample with blob output
+│   ├── python/                                                  # Python sample with blob output
+│   ├── test-requests.http                                       # HTTP test requests
 │   └── Microsoft.Azure.Functions.Extensions.Connector.Tests/    # Unit tests
 └── eng/                                                         # Build and CI infrastructure
 ```

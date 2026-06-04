@@ -2,9 +2,6 @@
 
 This document maps connector trigger operation names to their corresponding Azure Functions signatures across .NET, Python, and TypeScript SDKs.
 
-> [!CAUTION]
-> **Python Connectors Extension Package temporary limitation:** Until [Handle dual shaped payload (#28)](https://github.com/Azure/connectors-python-sdk/issues/28) is resolved, use `str` as the parameter type. The typed SDK models are not yet reliable for single type payload.
-
 ## Python: Choosing a Decorator
 
 | Python Version | Decorator | Package Requirement |
@@ -51,6 +48,18 @@ This document maps connector trigger operation names to their corresponding Azur
 - [Microsoft Defender ATP (WDATP) Connector](#microsoft-defender-atp-wdatp-connector)
 - [Google Calendar Connector](#google-calendar-connector)
 - [Dynamics AX Connector](#dynamics-ax-connector)
+- [Eventbrite Connector](#eventbrite-connector)
+- [FreshService Connector](#freshservice-connector)
+- [Infusionsoft Connector](#infusionsoft-connector)
+- [Jira Connector](#jira-connector)
+- [Office 365 Groups Connector](#office-365-groups-connector)
+- [Office 365 Groups Mail Connector](#office-365-groups-mail-connector)
+- [OneNote Connector](#onenote-connector)
+- [Pipedrive Connector](#pipedrive-connector)
+- [Planner Connector](#planner-connector)
+- [Microsoft To Do Connector](#microsoft-to-do-connector)
+- [Trello Connector](#trello-connector)
+- [Zendesk Connector](#zendesk-connector)
 - [Source References](#source-references)
 
 ---
@@ -211,7 +220,7 @@ connectors.office365.onCalendarNewItems('OnCalendarNewItems', {
 | `GetOnDeletedItems` | When an item is deleted | batch | `SharePointOnlineOnDeletedItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
 | `GetOnDeletedFileItems` | When a file is deleted | batch | `SharePointOnlineOnDeletedFileItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
 | `GetOnUpdatedFileClassifiedTimes` | When a file is classified by a Microsoft Syntex model | batch | `SharePointOnlineOnUpdatedFileClassifiedTimesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnNewItemsFromForm` | When a form is submitted (preview) | batch | — | `str` (raw JSON) | `unknown` (raw JSON) |
+| `GetOnNewItemsFromForm` | When a form is submitted (preview) | batch | `SharePointOnlineOnNewItemsFromFormTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
 
 ### SharePoint Azure Functions Signatures
 
@@ -293,8 +302,8 @@ app.generic('OnNewSharePointItem', {
 | `WebhookMessageReactionTrigger` | When someone reacted to a message in chat | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
 | `OnNewChannelMessage` | When a new channel message is added | batch | `TeamsOnNewChannelMessageTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
 | `OnNewChannelMessageMentioningMe` | When I am mentioned in a channel message | batch | `TeamsOnNewChannelMessageMentioningMeTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnGroupMembershipAdd` | When a new team member is added | batch | `TeamsOnGroupMembershipAddTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnGroupMembershipRemoval` | When a new team member is removed | batch | `TeamsOnGroupMembershipRemovalTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnGroupMembershipAdd` | When a new team member is added | batch | `TeamsOnTeamMemberAddedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnGroupMembershipRemoval` | When a new team member is removed | batch | `TeamsOnTeamMemberRemovedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
 | `RecordingTrigger` | When a recording is available | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
 | `TranscriptTrigger` | When a transcript is available | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
 
@@ -317,7 +326,7 @@ public void OnNewChannelMessage(
 [Function("OnGroupMembershipAdd")]
 public void OnGroupMembershipAdd(
     [ConnectorTrigger]
-    TeamsOnGroupMembershipAddTriggerPayload payload) { }
+    TeamsOnTeamMemberAddedTriggerPayload payload) { }
 ```
 
 #### Teams Python
@@ -382,7 +391,7 @@ using Azure.Connectors.Sdk.OneDriveForBusiness.Models;
 [Function("OnNewOneDriveFile")]
 public void OnNewOneDriveFile(
     [ConnectorTrigger]
-    OneDriveForBusinessOnNewFileTriggerPayload payload) { }
+    OneDriveForBusinessOnNewFilesTriggerPayload payload) { }
 ```
 
 #### OneDrive Python
@@ -915,6 +924,117 @@ app.generic('OnNewSqlItem', {
 | Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
 | ----- | ----- | ----- | ----- | ----- | ----- |
 | `SubscribeOnABusinessEvent` | When a Business Event occurs | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## Eventbrite Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `OnNewEventV2` | When an event is created (V2) | batch | `EventbriteOnNewEventTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnOrderChangedV2` | When an order changes (V2) | batch | `EventbriteOnOrderChangedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## FreshService Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `OnTicketCreatedV2` | When a ticket is created (V2) | batch | `FreshServiceOnTicketCreatedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## Infusionsoft Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `OnNewTask` | When a new task is created | batch | `InfusionsoftOnNewTaskTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnNewOrder` | When there is a new order | batch | `InfusionsoftOnNewOrderTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## Jira Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `OnNewIssue_V2` | When a new issue is created (V2) | batch | `JiraOnNewIssueTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnCloseIssue_V2` | When an issue is closed (V2) | batch | `JiraOnCloseIssueTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnNewIssueJQL_V2` | When a new issue is returned by a JQL query (V2) | batch | `JiraOnNewIssueJQLTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnNewIssue_Datacenter` | When a new issue is created (Datacenter) | batch | `JiraOnNewIssueDatacenterTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnCloseIssue_Datacenter` | When an issue is closed (Datacenter) | batch | `JiraOnCloseIssueDatacenterTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnNewIssueJQL_Datacenter` | When a new issue is returned by a JQL query (Datacenter) | batch | `JiraOnNewIssueJQLDatacenterTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## Office 365 Groups Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `OnGroupMembershipChange` | When a group member is added or removed | batch | `Office365GroupsOnGroupMembershipChangeTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnNewEvent` | When there is a new event | batch | `Office365GroupsOnNewEventTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## Office 365 Groups Mail Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `OnNewEmailInGroup` | When a new email arrives to a group | batch | `Office365GroupsMailOnNewEmailInGroupTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## OneNote Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `OnNewSectionInNotebook` | When a new section is created | batch | `OnenoteOnNewSectionInNotebookTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnNewSectionGroupInNotebook` | When a new section group is created | batch | `OnenoteOnNewSectionGroupInNotebookTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnNewPageInSection` | When a new page is created in a section | batch | `OnenoteOnNewPageInSectionTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## Pipedrive Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `TrigNewActivity` | When a new activity is added | batch | `PipedriveOnTrigNewActivityTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `TrigNewDealV2` | When a new deal is added (V2) | batch | `PipedriveOnTrigNewDealTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## Planner Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `OnCompleteTask_V3` | When a task is completed | batch | `PlannerOnCompleteTaskTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnNewTask_V3` | When a new task is created | batch | `PlannerOnNewTaskTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnTaskAssignedToMe_V2` | When a task is assigned to me | batch | `PlannerOnTaskAssignedToMeTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## Microsoft To Do Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `OnNewToDoInFolderV2` | When a new to-do in a specific folder is created (V2) | batch | `TodoOnNewToDoInFolderTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnUpdateToDoInFolderV2` | When a to-do in a specific folder is updated (V2) | batch | `TodoOnUpdateToDoInFolderTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## Trello Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `OnNewCardInBoardV3` | When a new card is added to a board (V3) | batch | `TrelloOnNewCardInBoardTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| `OnNewCardInListV3` | When a new card is added to a list (V3) | batch | `TrelloOnNewCardInListTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+
+---
+
+## Zendesk Connector
+
+| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- | ----- |
+| `GetOnUpdatedItemsV2` | When an item is modified | batch | `ZendeskOnUpdatedItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
 
 ---
 

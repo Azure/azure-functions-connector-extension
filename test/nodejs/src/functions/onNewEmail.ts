@@ -22,9 +22,12 @@ connectors.office365.onNewEmail('OnNewEmail', {
             invocationContext.log(`Has attachments: '${email.hasAttachments}'.`);
         }
 
-        invocationContext.log(`Batch contains '${context.items.length}' item(s).`);
+        // context.payload is a TriggerCallbackPayload<GraphClientReceiveMessage>
+        // with normalised { body: { value: GraphClientReceiveMessage[] } } shape
+        const batch = context.payload.body?.value ?? [];
+        invocationContext.log(`Batch contains '${batch.length}' item(s).`);
 
         // Persist the raw payload to blob storage for auditing/replay
-        invocationContext.extraOutputs.set(blobOutput, context.toJSON());
+        invocationContext.extraOutputs.set(blobOutput, context.rawPayload);
     },
 });
