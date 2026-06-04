@@ -6,8 +6,7 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
 
 ## Prerequisites
 
-- [Python 3.13+](https://learn.microsoft.com/azure/azure-functions/supported-languages?pivots=programming-language-python#languages-by-runtime-version) for `connector_trigger` decorator
-- Use `generic_trigger` for lower Python version support.
+- [Supported Python version](https://learn.microsoft.com/azure/azure-functions/supported-languages?pivots=programming-language-python#languages-by-runtime-version)
 - Azure Functions Core Tools v4+
 - Azure Storage Emulator (Azurite) or Azure Storage account
 

@@ -4,10 +4,10 @@ This document maps connector trigger operation names to their corresponding Azur
 
 ## Python: Choosing a Decorator
 
-| Python Version | Decorator | Package Requirement |
-| --- | --- | --- |
-| 3.13+ | `@app.connector_trigger` | `azure-functions>=2.2.0b4` |
-| < 3.13 | `@app.generic_trigger(type="connectorTrigger", arg_name="payload")` | `azure-functions` |
+| Python Version | Decorator | Package Requirement | Required App Settings |
+| --- | --- | --- |  --- |
+| 3.13+ | `@app.connector_trigger` | `azure-functions>=2.2.0b4` | - |
+| < 3.13 | `@app.connector_trigger` | `azure-functions>=1.26.0b3` | `PYTHON_ISOLATE_WORKER_DEPENDENCIES=1` |
 
 ## Python: Choosing Packages by Trigger Operation
 
