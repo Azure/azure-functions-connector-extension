@@ -25,7 +25,7 @@ public class ConnectorFunctions
     /// Receives Office 365 email trigger callbacks and saves to blob storage.
     /// </summary>
     [Function("OnNewEmail")]
-    [BlobOutput("connector-messages/{rand-guid}.json", Connection = "AzureWebJobsStorage")]
+    [BlobOutput("connector-messages/{rand-guid}.json", Connection = "BlobStoreConnection")]
     public string OnNewEmail(
         [ConnectorTrigger]
         Office365OnNewEmailTriggerPayload payload)
