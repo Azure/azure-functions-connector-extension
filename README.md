@@ -102,7 +102,8 @@ dotnet add package Azure.Connectors.Sdk --prerelease
 The Python extension package (`azurefunctions-extensions-connectors`) integrates the [Connector SDK](https://github.com/Azure/Connectors-python-sdk) with the Functions runtime for typed bindings:
 
 ```bash
-pip install azure-functions>=2.2.0b4
+pip install azure-functions>=2.2.0b4 # For Python version >= 3.13
+pip install azure-functions>=1.26.0b3 # For Python version < 3.12
 pip install azurefunctions-extensions-connectors
 ```
 

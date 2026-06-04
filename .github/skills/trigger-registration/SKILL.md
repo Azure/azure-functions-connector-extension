@@ -108,14 +108,27 @@ dotnet add package Azure.Connectors.Sdk --prerelease
 Add to `requirements.txt` (include packages based on your approach):
 
 ```text
-# >=2.2.0b4 only required for @app.connector_trigger decorator (Python 3.13+ only), regular azure-functions is enough for generic_trigger
+# >=2.2.0b4 required Python 3.13+, >=1.26.0b3 for Python < 3.13
 azure-functions>=2.2.0b4
 
 # Currently only supports Office 365 OnNewEmail operation
 azurefunctions-extensions-connectors
 
-# Required for @app.generic_trigger with typed SDK models or str payloads, don't include if using azurefunctions-extensions-connectors 
+# Required for str payloads, don't include if using azurefunctions-extensions-connectors 
 azure-connectors
+```
+
+Add to `local.settings.json` for Python < 3.12:
+
+```json
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "PYTHON_ISOLATE_WORKER_DEPENDENCIES": "1"
+  }
+}
 ```
 
 #### TypeScript / JavaScript
@@ -227,7 +240,7 @@ Verify `local.settings.json` includes:
   "IsEncrypted": false,
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
+    "FUNCTIONS_WORKER_RUNTIME": "<language>"
   }
 }
 ```
