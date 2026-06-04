@@ -4,8 +4,8 @@ This sample demonstrates how to use the Connector Extension with .NET isolated w
 
 ## Prerequisites
 
-- .NET 8.0 SDK
-- Azure Functions Core Tools v4
+- .NET 10.0 SDK
+- Azure Functions Core Tools v4+
 - Azure Storage Emulator (Azurite) or Azure Storage account
 
 ## Setup

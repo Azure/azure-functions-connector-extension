@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+        <WarningsAsErrors></WarningsAsErrors>
+        <DefaultItemExcludes>**</DefaultItemExcludes>
+    </PropertyGroup>
+    <ItemGroup>
+        <!-- Reference the host-side extension project for local development -->
+        <ProjectReference Include="$(SrcRoot)Microsoft.Azure.Functions.Extensions.Connector\Extensions.Connector.csproj" />
+        <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="4.6.0" />
+        <PackageReference Include="Microsoft.Azure.WebJobs.Extensions.Storage.Blobs" Version="5.3.7" />
+    </ItemGroup>
+    
+    <!-- Copy extensions output to bin/ where func expects it for non-.NET languages -->
+    <Target Name="CopyExtensionsToBin" AfterTargets="Build">
+        <ItemGroup>
+            <ExtensionFiles Include="$(OutputPath)bin\**\*.*" />
+        </ItemGroup>
+        <Message Importance="high" Text="Copying extensions from $(OutputPath)bin to $(ProjectDir)bin" />
+        <Copy SourceFiles="@(ExtensionFiles)" DestinationFolder="$(ProjectDir)bin\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    </Target>
+</Project>

@@ -16,10 +16,28 @@ Automates the end-to-end connection lifecycle for connector-triggered Azure Func
 
 ## Prerequisites
 
-- Azure CLI installed and authenticated (`az login`)
+- Azure CLI ≥ 2.75.0 installed and authenticated (`az login`)
+- `connector-namespace` CLI extension installed (see below)
 - Target subscription and resource group known
 - For deployed scenarios: Function App with managed identity enabled
-- **Supported regions** for Connector Namespace: `brazilsouth`, `centraluseuap`, `eastus2euap`, `centralusstage`, `eastusstage`. Only the Connector Namespace `location` must be in a supported region; the resource group and Function App can be in any region.
+- **Supported regions** for Connector Namespace: `westcentralus`. Only the Connector Namespace `location` must be in a supported region; the resource group and Function App can be in any region.
+
+### Install the connector-namespace CLI extension
+
+```bash
+# Bash
+curl -fsSL https://aka.ms/connector-namespace-cli-install | sh
+```
+
+```powershell
+# PowerShell
+irm https://aka.ms/connector-namespace-cli-install-ps | iex
+```
+
+```bash
+# Verify
+az extension show --name connector-namespace --query "{name:name, version:version}" -o table
+```
 
 ## Procedure
 
@@ -28,30 +46,25 @@ Automates the end-to-end connection lifecycle for connector-triggered Azure Func
 Check for an existing Connector Namespace in the resource group:
 
 ```powershell
-$subscriptionId = "<subscription-id>"
 $resourceGroup = "<resource-group>"
 
-az rest --method GET `
-    --uri "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Web/connectorGateways?api-version=2026-05-01-preview" `
-    -o json | ConvertFrom-Json | Select-Object -ExpandProperty value | Select-Object name
+az connector-namespace list -g $resourceGroup -o table
 ```
 
 If none exists, create one:
 
 ```powershell
 $namespaceName = "<namespace-name>"
-$location = "<supported-region>"  # e.g., centraluseuap
+$location = "westcentralus"  # Supported region
 
-$nsBody = "{`"location`":`"$location`",`"identity`":{`"type`":`"SystemAssigned`"},`"properties`":{}}"
-$tempFile = Join-Path $env:TEMP "ns-body.json"
-[System.IO.File]::WriteAllText($tempFile, $nsBody)
-az rest --method PUT `
-    --uri "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Web/connectorGateways/$namespaceName?api-version=2026-05-01-preview" `
-    --body "@$tempFile" --headers "Content-Type=application/json" -o json
-Remove-Item $tempFile -ErrorAction SilentlyContinue
+az connector-namespace create -g $resourceGroup -n $namespaceName --location $location
 ```
 
-> **Important:** The Connector Namespace must have a managed identity enabled (`SystemAssigned`) for trigger callback authentication.
+Enable a system-assigned managed identity (required for trigger callback authentication):
+
+```powershell
+az connector-namespace identity assign -g $resourceGroup --namespace $namespaceName --system-assigned
+```
 
 ### Step 2: Create Connection
 
@@ -59,14 +72,9 @@ Remove-Item $tempFile -ErrorAction SilentlyContinue
 $connectorName = "<connector-name>"      # e.g., "office365", "sharepointonline", "teams"
 $connectionName = "<connection-name>"    # e.g., "office365-conn"
 
-$nsId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Web/connectorGateways/$namespaceName"
-$connBody = "{`"properties`":{`"connectorName`":`"$connectorName`"}}"
-$tempFile = Join-Path $env:TEMP "conn-body.json"
-[System.IO.File]::WriteAllText($tempFile, $connBody)
-az rest --method PUT `
-    --uri "https://management.azure.com${nsId}/connections/${connectionName}?api-version=2026-05-01-preview" `
-    --body "@$tempFile" --headers "Content-Type=application/json" -o json | ConvertFrom-Json | Select-Object name, @{n='status';e={$_.properties.statuses[0].status}}
-Remove-Item $tempFile -ErrorAction SilentlyContinue
+az connector-namespace connection create `
+    -g $resourceGroup --namespace $namespaceName `
+    -n $connectionName --connector-name $connectorName
 ```
 
 The connection starts in **Error** state (unauthenticated). Proceed to Step 3.
@@ -76,35 +84,36 @@ The connection starts in **Error** state (unauthenticated). Proceed to Step 3.
 Retrieve the consent link and open it in the default browser:
 
 ```powershell
-$consentBody = '{"parameters":[{"redirectUrl":"https://portal.azure.com","parameterName":"token"}]}'
-$tempFile = Join-Path $env:TEMP "consent-body.json"
-[System.IO.File]::WriteAllText($tempFile, $consentBody)
-$result = az rest --method POST `
-    --uri "https://management.azure.com${nsId}/connections/${connectionName}/listConsentLinks?api-version=2026-05-01-preview" `
-    --body "@$tempFile" --headers "Content-Type=application/json" -o json | ConvertFrom-Json
-Remove-Item $tempFile -ErrorAction SilentlyContinue
+$result = az connector-namespace connection list-consent-links `
+    -g $resourceGroup --namespace $namespaceName `
+    --connection-name $connectionName `
+    --parameters '[{"parameterName":"token","redirectUrl":"https://portal.azure.com"}]' `
+    -o json | ConvertFrom-Json
 
 $link = $result.value[0].link
 Start-Process $link
 ```
 
-After consent, verify the connection status:
+After the browser consent completes, verify the connection status:
 
 ```powershell
-az rest --method GET `
-    --uri "https://management.azure.com${nsId}/connections/${connectionName}?api-version=2026-05-01-preview" `
-    -o json | ConvertFrom-Json | Select-Object @{n='status';e={$_.properties.statuses[0].status}}
+az connector-namespace connection show `
+    -g $resourceGroup --namespace $namespaceName `
+    -n $connectionName `
+    --query "properties.statuses[0].status" -o tsv
 ```
 
 Expected: `Connected`.
 
+If status remains `Error` after consent, re-run the consent link command and try again. If repeated failures occur, delete and recreate the connection.
+
 ### Step 4: Get Connection Runtime URL
 
 ```powershell
-$conn = az rest --method GET `
-    --uri "https://management.azure.com${nsId}/connections/${connectionName}?api-version=2026-05-01-preview" `
-    -o json | ConvertFrom-Json
-$runtimeUrl = $conn.properties.connectionRuntimeUrl
+$runtimeUrl = az connector-namespace connection show `
+    -g $resourceGroup --namespace $namespaceName `
+    -n $connectionName `
+    --query "properties.connectionRuntimeUrl" -o tsv
 Write-Output "Runtime URL: $runtimeUrl"
 ```
 
@@ -118,13 +127,10 @@ Write-Output "Runtime URL: $runtimeUrl"
 $userObjectId = az ad signed-in-user show --query "id" -o tsv
 $tenantId = az account show --query "tenantId" -o tsv
 
-$policyBody = "{`"properties`":{`"principal`":{`"type`":`"ActiveDirectory`",`"identity`":{`"objectId`":`"$userObjectId`",`"tenantId`":`"$tenantId`"}}}}"
-$tempFile = Join-Path $env:TEMP "policy-body.json"
-[System.IO.File]::WriteAllText($tempFile, $policyBody)
-az rest --method PUT `
-    --uri "https://management.azure.com${nsId}/connections/${connectionName}/accessPolicies/local-dev?api-version=2026-05-01-preview" `
-    --body "@$tempFile" --headers "Content-Type=application/json" -o json | ConvertFrom-Json | Select-Object name
-Remove-Item $tempFile -ErrorAction SilentlyContinue
+az connector-namespace connection access-policy create `
+    -g $resourceGroup --namespace $namespaceName `
+    --connection-name $connectionName -n local-dev `
+    --principal "identity.object-id=$userObjectId identity.tenant-id=$tenantId type=ActiveDirectory"
 ```
 
 #### For deployed Function App (system-assigned managed identity)
@@ -134,16 +140,25 @@ $functionAppName = "<function-app-name>"
 $msiObjectId = az functionapp identity show -g $resourceGroup -n $functionAppName --query "principalId" -o tsv
 $tenantId = az account show --query "tenantId" -o tsv
 
-$policyBody = "{`"properties`":{`"principal`":{`"type`":`"ActiveDirectory`",`"identity`":{`"objectId`":`"$msiObjectId`",`"tenantId`":`"$tenantId`"}}}}"
-$tempFile = Join-Path $env:TEMP "msi-policy-body.json"
-[System.IO.File]::WriteAllText($tempFile, $policyBody)
-az rest --method PUT `
-    --uri "https://management.azure.com${nsId}/connections/${connectionName}/accessPolicies/functionapp-msi?api-version=2026-05-01-preview" `
-    --body "@$tempFile" --headers "Content-Type=application/json" -o json | ConvertFrom-Json | Select-Object name
-Remove-Item $tempFile -ErrorAction SilentlyContinue
+az connector-namespace connection access-policy create `
+    -g $resourceGroup --namespace $namespaceName `
+    --connection-name $connectionName -n functionapp-msi `
+    --principal "identity.object-id=$msiObjectId identity.tenant-id=$tenantId type=ActiveDirectory"
 ```
 
 > ACL propagation takes 1-5 minutes. If you get 403 errors immediately after adding, wait and retry.
+
+## Cleanup / Teardown
+
+If setup partially fails or resources are no longer needed, delete the connection first, then delete the namespace:
+
+```powershell
+az connector-namespace connection delete `
+    -g $resourceGroup --namespace $namespaceName `
+    -n $connectionName
+
+az connector-namespace delete -g $resourceGroup -n $namespaceName
+```
 
 ## Supported Connectors
 

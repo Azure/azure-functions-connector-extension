@@ -27,6 +27,6 @@ app.connectorTrigger('OnNewEmailDirect', {
         invocationContext.log(`Raw payload: '${JSON.stringify(parsed)}'.`);
 
         // Persist the raw payload to blob storage for auditing/replay
-        invocationContext.extraOutputs.set(blobOutput, JSON.stringify(parsed));
+        invocationContext.extraOutputs.set(blobOutput, parsed);
     },
 });

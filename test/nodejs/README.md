@@ -7,7 +7,7 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
 ## Prerequisites
 
 - [Node.js 22+](https://learn.microsoft.com/azure/azure-functions/supported-languages?pivots=programming-language-typescript#languages-by-runtime-version)
-- Azure Functions Core Tools v4
+- Azure Functions Core Tools v4+
 - Azure Storage Emulator (Azurite) or Azure Storage account
 
 ## Setup

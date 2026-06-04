@@ -16,7 +16,8 @@ Registers polling trigger configs on a Connector Namespace so that connector eve
 
 ## Prerequisites
 
-- Azure CLI installed and authenticated (`az login`)
+- Azure CLI ≥ 2.75.0 installed and authenticated (`az login`)
+- `connector-namespace` CLI extension installed (see connection-setup skill)
 - Connector Namespace with a connected connector (see `connection-setup` skill)
 - The Connector Namespace must have a **system-assigned managed identity** enabled
 - **Supported regions** for Connector Namespace: `westcentralus`
@@ -264,9 +265,18 @@ Confirm the app is running on `http://localhost:7071`.
 
 > **🔔 Confirm:** Is the Function App running with `--enableAuth`? (Yes / No)
 
-### Create a dev tunnel
-
 > ⚠️ **Security Warning:** The following steps expose your local Function App to the public internet. Only proceed for local testing and if you understand the implications.
+
+#### VS Code port forwarding
+
+1. Navigate to the **Ports** view in the Panel region (`Ports: Focus on Ports View`) and select **Forward a Port**
+2. If you haven't logged in with GitHub before, you'll be prompted to sign in
+3. Enter port `7071` — port forwarding starts and the Ports view updates to show the forwarded port and its **Forwarded Address** (e.g., `https://<id>-7071.uks1.devtunnels.ms`)
+4. Change the visibility by right-clicking on the port and selecting **Port Visibility** → **Public**. Public ports don't require sign in
+
+> **🔔 Confirm:** Is the port forwarded with Public visibility and do you see the tunnel URL in the Ports panel? (Yes / No)
+
+### Create a dev tunnel with CLI (alternative to VS Code)
 
 > 💡 Prefer the CLI over VS Code UI? Use the `devtunnel` CLI instead — see [Dev Tunnels CLI quickstart](https://learn.microsoft.com/azure/developer/dev-tunnels/get-started).
 > ```bash
@@ -287,15 +297,6 @@ Confirm the app is running on `http://localhost:7071`.
 > devtunnel host -p 7071
 > devtunnel access create -p 7071 --anonymous   # in a separate terminal
 > ```
-
-#### VS Code port forwarding
-
-1. Navigate to the **Ports** view in the Panel region (`Ports: Focus on Ports View`) and select **Forward a Port**
-2. If you haven't logged in with GitHub before, you'll be prompted to sign in
-3. Enter port `7071` — port forwarding starts and the Ports view updates to show the forwarded port and its **Forwarded Address** (e.g., `https://<id>-7071.uks1.devtunnels.ms`)
-4. Change the visibility by right-clicking on the port and selecting **Port Visibility** → **Public**. Public ports don't require sign in
-
-> **🔔 Confirm:** Is the port forwarded with Public visibility and do you see the tunnel URL in the Ports panel? (Yes / No)
 
 ## Registering a Trigger Config
 
@@ -351,67 +352,63 @@ $callbackUrl = "$tunnelUrl/runtime/webhooks/connector?functionName=$functionName
 
 ### Step 2: Create Trigger Config
 
+The `trigger create` command needs `--notification-details` passed via a temp file because the callback URL contains query-string characters:
+
 ```powershell
-$subscriptionId = "<subscription-id>"
 $resourceGroup = "<resource-group>"
 $namespaceName = "<namespace-name>"
-$nsId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Web/connectorGateways/$namespaceName"
+$subscriptionId = "<subscription-id>"
+$functionAppName = "<function-app-name>"
 
 $triggerName = "<trigger-config-name>"   # e.g., "onnewemail-trigger"
 $connectionName = "<connection-name>"    # e.g., "office365-conn"
 $connectorName = "<connector-name>"      # e.g., "office365"
-$operationName = "<operation-name>"      # e.g., "OnNewEmail" or "OnNewFile"
+$operationName = "<operation-name>"      # e.g., "OnNewEmailV3" or "OnNewFilesV2"
+$functionName = "<function-name>"        # must match [Function("...")] attribute
 
-$token = az account get-access-token `
-    --resource "https://management.core.windows.net/" `
-    --query "accessToken" -o tsv
+# Write notification details to a temp file (callbackUrl contains ? and & which break shell parsing)
+$notifFile = Join-Path $env:TEMP "notification-details.json"
+@{ callbackUrl = $callbackUrl } | ConvertTo-Json -Compress | Set-Content -Path $notifFile -NoNewline
 
-$body = @{
-    properties = @{
-        operationName = $operationName
-        connectionDetails = @{
-            connectorName = $connectorName
-            connectionName = $connectionName
-        }
-        notificationDetails = @{
-            callbackUrl = $callbackUrl
-            httpMethod = "Post"
-        }
-        parameters = @(
-            # Add connector-specific parameters here
-            # Office 365 OnNewEmailV3 example:
-            # @{ name = "folderPath"; value = "Inbox" }
-            
-            # OneDrive for Business OnNewFile example:
-            # @{ name = "folderId"; value = "root" }
-        )
-    }
-} | ConvertTo-Json -Depth 4
+# Delete any existing trigger with the same name
+az connector-namespace trigger delete `
+    -g $resourceGroup --namespace $namespaceName `
+    -n $triggerName --yes 2>$null | Out-Null
 
-$uri = "https://management.azure.com${nsId}/triggerConfigs/${triggerName}?api-version=2026-05-01-preview"
-try {
-    $response = Invoke-WebRequest -Uri $uri -Method PUT -Body $body `
-        -ContentType "application/json" `
-        -Headers @{ Authorization = "Bearer $token" }
-    Write-Output "Status: $($response.StatusCode)"
-} catch {
-    Write-Output "Error: $($_.Exception.Response.StatusCode)"
-    $_.ErrorDetails.Message
-}
+az connector-namespace trigger create `
+    -g $resourceGroup --namespace $namespaceName `
+    -n $triggerName `
+    --connection-details "{connectionName:$connectionName,connectorName:$connectorName}" `
+    --operation-name $operationName `
+    --notification-details "@$notifFile" `
+    --description "$connectorName $operationName -> $functionName" `
+    --metadata "{destinationType:functionApp,functionAppName:$functionAppName,functionAppResourceGroup:$resourceGroup,functionAppSubscriptionId:$subscriptionId,functionName:$functionName,recurrenceFrequency:Minute,recurrenceInterval:'5'}" `
+    -o none
+
+Remove-Item $notifFile -ErrorAction SilentlyContinue
 ```
 
-**Common trigger parameters:**
-- **Office 365 `OnNewEmailV3`**: Requires `folderPath` (e.g., `"Inbox"`)
-- **OneDrive for Business `OnNewFile`**: Requires `folderId` (e.g., `"root"` for the root folder)
-- **SharePoint `OnNewFile`**: Requires `dataset` (site URL) and `table` (library or list ID)
+**Trigger parameters** — add `--parameters` for connector-specific inputs:
 
-> **Note:** Trigger parameters are connector-specific. Use `az connector-namespace connection operation list --operation-type trigger` to discover available triggers and their required parameters.
+```powershell
+# Office 365 OnNewEmailV3 — specify folder
+--parameters "[{name:folderPath,value:'Inbox'}]"
+
+# OneDrive for Business OnNewFilesV2 — specify folder
+--parameters "[{name:folderId,value:'root'}]"
+
+# SharePoint OnNewItems — specify site and list
+--parameters "[{name:dataset,value:'https://contoso.sharepoint.com/sites/MySite'},{name:table,value:'MyList'}]"
+```
+
+> **Note:** Trigger parameters are connector-specific. Use `az connector-namespace connection invoke` with the connector's operations endpoint to discover available triggers and their required parameters.
 
 ### Step 3: Verify Trigger Config
 
 ```powershell
-az rest --method GET `
-    --uri "https://management.azure.com${nsId}/triggerConfigs/${triggerName}?api-version=2026-05-01-preview" `
+az connector-namespace trigger show `
+    -g $resourceGroup --namespace $namespaceName `
+    -n $triggerName `
     --query "properties.{operation:operationName, state:state, callback:notificationDetails.callbackUrl}" `
     -o table
 ```
@@ -438,11 +435,9 @@ If no logs appear:
 3. Review [Troubleshooting](#troubleshooting) section below
 4. Query trigger run history:
    ```powershell
-   az connector-namespace trigger-config run list \
-       --namespace-name $namespaceName \
-       --resource-group $resourceGroup \
-       --name $triggerName \
-       -o table
+   az connector-namespace trigger run list `
+       -g $resourceGroup --namespace $namespaceName `
+       --trigger-name $triggerName -o table
    ```
 
 ### Step 5: Update Callback URL
@@ -450,17 +445,18 @@ If no logs appear:
 To point an existing trigger config to a different callback (e.g., after redeploying or switching tunnels):
 
 ```powershell
-# Re-run the PUT from Step 2 with the updated callbackUrl
+az connector-namespace trigger update `
+    -g $resourceGroup --namespace $namespaceName `
+    -n $triggerName `
+    --notification-details "callback-url=$newCallbackUrl"
 ```
 
 ### Step 6: List All Trigger Configs
 
 ```powershell
-   az connector-namespace trigger-config list \
-       --namespace-name $namespaceName \
-       --resource-group $resourceGroup \
-       --name $triggerName \
-       -o table
+az connector-namespace trigger list `
+    -g $resourceGroup --namespace $namespaceName `
+    -o table
 ```
 
 ### Step 7: Clean up after testing
@@ -479,11 +475,10 @@ When done testing, **always** revoke public access:
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `Could not find member 'connectionName'` | Used `connectionName` at top level | Wrap in `connectionDetails` object |
-| `Could not find member 'callbackUrl'` | Put `callbackUrl` at properties level | Wrap in `notificationDetails` object |
-| `Could not find member 'parameterName'` | Used `parameterName` in params array | Use `name` field instead |
-| Trigger provisions but never fires | Missing `notificationDetails` or empty `callbackUrl` | Ensure `notificationDetails.callbackUrl` is set |
-| `az rest` PUT returns no output | `az rest` swallows non-2xx responses | Use `Invoke-WebRequest` for PUT operations |
+| `Could not find member 'connectionName'` | Used `connectionName` at top level | Use `--connection-details` shorthand: `connectionName=… connectorName=…` |
+| `Could not find member 'callbackUrl'` | Put `callbackUrl` at properties level | Use `--notification-details` shorthand: `callback-url=…` |
+| Trigger provisions but never fires | Missing `callbackUrl` or incorrect URL | Verify `--notification-details callback-url=…` is set and publicly accessible |
+| `unrecognized arguments: --namespace` | Azure CLI < 2.75.0 | Run `az upgrade` or use `--connector-namespace-name` |
 
 ### Polling Interval
 
