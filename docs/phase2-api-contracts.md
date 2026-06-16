@@ -425,17 +425,17 @@ Same as /metrics — caller must be authorized to access this TriggerConfig's da
 ### Request
 
 ```
-GET {dataPlaneEndpoint.baseUri}/events
+GET {dataPlaneEndpoint.baseUri}/events?maxMessages={integer}&maxWaitSeconds={integer}
 ```
 
-Request body (optional):
+**Query Parameters (all optional):**
 
-```json
-{
-  "maxMessages": "<integer — max events to return. Default and range TBD during implementation>",
-  "maxWaitSeconds": "<integer — long-poll timeout in seconds. Returns empty array on timeout. Set to 0 for immediate response. Default and range TBD during implementation>"
-}
-```
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `maxMessages` | integer | Max events to return. Default and range TBD during implementation. |
+| `maxWaitSeconds` | integer | Long-poll timeout in seconds. Returns empty array on timeout. Set to `0` for immediate response. Default and range TBD during implementation. |
+
+> **Note:** Parameters are passed as query string values, not in a request body. GET requests with bodies are not reliably supported across proxies, load balancers, and HTTP clients.
 
 ### Response — 200 OK (events available)
 
