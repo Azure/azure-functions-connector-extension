@@ -18,71 +18,657 @@ This document maps connector trigger operation names to their corresponding Azur
 | No typed model available | None beyond `azure-functions` | `str` |
 
 > [!NOTE]
-> **Typed Payloads:** Where columns show `string` / `str` / `unknown` (raw JSON), typed SDK models are in development. Use the raw type and parse JSON manually in your function.
+> **Typed Payloads:** The three payload columns (**.NET**, **Python**, **TypeScript**) list the strongly-typed model each SDK generates for the operation. Coverage differs per language, and the model names are not identical across SDKs.
 >
-> **Trigger Types:** Operations are classified as `batch` (returns multiple items) or `single` (returns one item). The SDKs always return a list — for `single` triggers, the list contains one element.
+> When a cell shows the **default raw-JSON binding type** instead of a model class, that SDK has no typed model for the operation — bind the trigger payload as that type and parse the JSON manually. The default per language is:
+>
+> - **.NET:** `string`
+> - **Python:** `str`
+> - **TypeScript:** `unknown`
+>
+> **Trigger Types:** The SDKs always deliver trigger items as a list. When the Connector Namespace callback contains a single item, the list contains one element, so your handler can iterate uniformly in all cases.
 
 ## Table of Contents
 
-- [Office 365 Connector](#office-365-connector)
-- [SharePoint Online Connector](#sharepoint-online-connector)
-- [Microsoft Teams Connector](#microsoft-teams-connector)
-- [OneDrive for Business Connector](#onedrive-for-business-connector)
 - [Azure Blob Storage Connector](#azure-blob-storage-connector)
-- [Event Hubs Connector](#event-hubs-connector)
-- [Service Bus Connector](#service-bus-connector)
-- [Outlook Connector](#outlook-connector)
-- [SQL Connector](#sql-connector)
-- [FTP Connector](#ftp-connector)
-- [Dropbox Connector](#dropbox-connector)
-- [OneDrive (Personal) Connector](#onedrive-personal-connector)
-- [Salesforce Connector](#salesforce-connector)
-- [GitHub Connector](#github-connector)
-- [Twitter Connector](#twitter-connector)
-- [RSS Connector](#rss-connector)
-- [Box Connector](#box-connector)
-- [Slack Connector](#slack-connector)
-- [Azure Queues Connector](#azure-queues-connector)
 - [Azure Event Grid Connector](#azure-event-grid-connector)
-- [Yammer (Viva Engage) Connector](#yammer-viva-engage-connector)
-- [Microsoft Defender ATP (WDATP) Connector](#microsoft-defender-atp-wdatp-connector)
-- [Google Calendar Connector](#google-calendar-connector)
+- [Azure IoT Central Connector](#azure-iot-central-connector)
+- [Azure Queues Connector](#azure-queues-connector)
+- [Box Connector](#box-connector)
+- [Campfire Connector](#campfire-connector)
+- [ClickSend SMS Connector](#clicksend-sms-connector)
+- [Common Data Service (Dataverse) Connector](#common-data-service-dataverse-connector)
+- [DocuSign Connector](#docusign-connector)
+- [Dropbox Connector](#dropbox-connector)
 - [Dynamics AX Connector](#dynamics-ax-connector)
+- [Elfsquad Connector](#elfsquad-connector)
+- [Event Hubs Connector](#event-hubs-connector)
 - [Eventbrite Connector](#eventbrite-connector)
+- [Formstack Forms Connector](#formstack-forms-connector)
 - [FreshService Connector](#freshservice-connector)
+- [FTP Connector](#ftp-connector)
+- [GitHub Connector](#github-connector)
+- [Google Calendar Connector](#google-calendar-connector)
+- [Google Tasks Connector](#google-tasks-connector)
+- [Impexium Connector](#impexium-connector)
 - [Infusionsoft Connector](#infusionsoft-connector)
+- [Insightly Connector](#insightly-connector)
 - [Jira Connector](#jira-connector)
+- [Mailchimp Connector](#mailchimp-connector)
+- [Microsoft Bookings Connector](#microsoft-bookings-connector)
+- [Microsoft Defender ATP (WDATP) Connector](#microsoft-defender-atp-wdatp-connector)
+- [Microsoft Forms Connector](#microsoft-forms-connector)
+- [Microsoft Teams Connector](#microsoft-teams-connector)
+- [Microsoft To Do Connector](#microsoft-to-do-connector)
+- [Monday.com Connector](#mondaycom-connector)
+- [Office 365 Connector](#office-365-connector)
 - [Office 365 Groups Connector](#office-365-groups-connector)
 - [Office 365 Groups Mail Connector](#office-365-groups-mail-connector)
+- [OneDrive (Personal) Connector](#onedrive-personal-connector)
+- [OneDrive for Business Connector](#onedrive-for-business-connector)
 - [OneNote Connector](#onenote-connector)
+- [Orderful Connector](#orderful-connector)
+- [Outlook Connector](#outlook-connector)
 - [Pipedrive Connector](#pipedrive-connector)
 - [Planner Connector](#planner-connector)
-- [Microsoft To Do Connector](#microsoft-to-do-connector)
+- [Plumsail Connector](#plumsail-connector)
+- [Power BI Connector](#power-bi-connector)
+- [Projectplace Connector](#projectplace-connector)
+- [Replicon Connector](#replicon-connector)
+- [RSS Connector](#rss-connector)
+- [Salesforce Connector](#salesforce-connector)
+- [Service Bus Connector](#service-bus-connector)
+- [SharePoint Online Connector](#sharepoint-online-connector)
+- [Shifts Connector](#shifts-connector)
+- [Slack Connector](#slack-connector)
+- [SQL Connector](#sql-connector)
+- [Text Request Connector](#text-request-connector)
 - [Trello Connector](#trello-connector)
+- [Twitter Connector](#twitter-connector)
+- [Typeform Connector](#typeform-connector)
+- [Way We Do Connector](#way-we-do-connector)
+- [Webex Connector](#webex-connector)
+- [WordPress Connector](#wordpress-connector)
+- [Yammer (Viva Engage) Connector](#yammer-viva-engage-connector)
 - [Zendesk Connector](#zendesk-connector)
+- [Zoho Sign Connector](#zoho-sign-connector)
 - [Source References](#source-references)
+
+---
+
+## Azure Blob Storage Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/azureblob](https://learn.microsoft.com/connectors/azureblob/)_
+
+### Blob Triggers
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnUpdatedFiles_V2` | When a blob is added or modified (properties only) (V2) | `AzureBlobOnUpdatedFilesTriggerPayload` | `str` | `unknown` |
+
+### Blob Azure Functions Signatures
+
+#### Blob .NET
+
+```csharp
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Extensions.Connector;
+using Azure.Connectors.Sdk.AzureBlob.Models;
+
+[Function("OnBlobUpdated")]
+public void OnBlobUpdated(
+    [ConnectorTrigger]
+    AzureBlobOnUpdatedFilesTriggerPayload payload) { }
+```
+
+#### Blob Python
+
+```python
+import azure.functions as func
+import json
+import logging
+
+app = func.FunctionApp()
+
+@app.function_name(name="OnBlobUpdated")
+@app.connector_trigger(arg_name="payload")
+def on_blob_updated(payload: str) -> None:
+    logging.info("OnBlobUpdated trigger received")
+    data = json.loads(payload)
+    items = data.get("body", {}).get("value", [])
+    for blob in items:
+        logging.info(f"Blob: {blob.get('Name')}, Path: {blob.get('Path')}")
+```
+
+#### Blob TypeScript
+
+```typescript
+import { app, InvocationContext } from '@azure/functions';
+
+app.generic('OnBlobUpdated', {
+    trigger: { type: 'connectorTrigger', name: 'payload' },
+    handler: async (payload: unknown, context: InvocationContext) => {
+        context.log('OnBlobUpdated trigger received');
+        const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        const items: Record<string, unknown>[] = (data as any)?.body?.value ?? [];
+        for (const blob of items) {
+            context.log(`Blob: ${blob.Name}, Path: ${blob.Path}`);
+        }
+    },
+});
+```
+
+---
+
+## Azure Event Grid Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/azureeventgrid](https://learn.microsoft.com/connectors/azureeventgrid/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `CreateSubscription` | When a resource event occurs | `string` | `str` | `unknown` |
+
+---
+
+## Azure IoT Central Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/azureiotcentral](https://learn.microsoft.com/connectors/azureiotcentral/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `Workflow_CreateTrigger` | When a rule is fired | `string` | `str` | `unknown` |
+
+---
+
+## Azure Queues Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/azurequeues](https://learn.microsoft.com/connectors/azurequeues/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnMessages_V2` | When there are messages in a queue (V2) | `string` | `str` | `unknown` |
+| `OnMessageThresholdReached_V2` | When a specified number of messages are in a given queue (V2) | `string` | `str` | `unknown` |
+
+---
+
+## Box Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/box](https://learn.microsoft.com/connectors/box/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewFilesV2` | When a file is created (properties only) (V2) | `BoxOnNewFilesTriggerPayload` | `str` | `unknown` |
+| `OnUpdatedFiles` | When a file is modified (properties only) | `string` | `str` | `unknown` |
+| `OnUpdatedFilesV2` | When a file is modified (properties only) (V2) | `BoxOnUpdatedFilesTriggerPayload` | `str` | `unknown` |
+
+---
+
+## Campfire Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/campfire](https://learn.microsoft.com/connectors/campfire/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewRoom` | When a room is created | `string` | `str` | `unknown` |
+| `OnNewMessage` | When a new message is received | `string` | `str` | `unknown` |
+| `OnNewUpload` | When a file is uploaded | `string` | `str` | `unknown` |
+
+---
+
+## ClickSend SMS Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/clicksendsms](https://learn.microsoft.com/connectors/clicksendsms/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `sms_inbound_automation` | SMS Inbound Automation | `string` | `str` | `unknown` |
+
+---
+
+## Common Data Service (Dataverse) Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/commondataserviceforapps](https://learn.microsoft.com/connectors/commondataserviceforapps/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `SubscribeWebhookTrigger` | When a row is added, modified or deleted | `string` | `str` | `unknown` |
+| `BusinessEventsTrigger` | When an action is performed | `string` | `str` | `unknown` |
+
+---
+
+## DocuSign Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/docusign](https://learn.microsoft.com/connectors/docusign/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `CreateHookEnvelopeV3` | When an envelope status changes (Connect) (V3) | `string` | `str` | `unknown` |
+
+---
+
+## Dropbox Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/dropbox](https://learn.microsoft.com/connectors/dropbox/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewFile` | When a file is created | `string` | `str` | `unknown` |
+| `OnNewFiles` | When a file is created (properties only) | `DropboxOnNewFilesTriggerPayload` | `str` | `unknown` |
+| `OnUpdatedFile` | When a file is modified | `string` | `str` | `unknown` |
+| `OnUpdatedFiles` | When a file is modified (properties only) | `DropboxOnUpdatedFilesTriggerPayload` | `str` | `unknown` |
+
+---
+
+## Dynamics AX Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/dynamicsax](https://learn.microsoft.com/connectors/dynamicsax/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `SubscribeOnABusinessEvent` | When a Business Event occurs | `string` | `str` | `unknown` |
+
+---
+
+## Elfsquad Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/elfsquaddata](https://learn.microsoft.com/connectors/elfsquaddata/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `create_trigger` | Custom trigger | `string` | `str` | `unknown` |
+
+---
+
+## Event Hubs Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/eventhubs](https://learn.microsoft.com/connectors/eventhubs/)_
+
+### EventHubs Triggers
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewEvents` | When events are available in Event Hub | `EventHubsOnNewEventsTriggerPayload` | `str` | `unknown` |
+
+### EventHubs Azure Functions Signatures
+
+#### EventHubs .NET
+
+```csharp
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Extensions.Connector;
+using Azure.Connectors.Sdk.Eventhubs.Models;
+
+[Function("OnNewEvents")]
+public void OnNewEvents(
+    [ConnectorTrigger]
+    EventHubsOnNewEventsTriggerPayload payload) { }
+```
+
+#### EventHubs Python
+
+```python
+import azure.functions as func
+import json
+import logging
+
+app = func.FunctionApp()
+
+@app.function_name(name="OnNewEvents")
+@app.connector_trigger(arg_name="payload")
+def on_new_events(payload: str) -> None:
+    logging.info("OnNewEvents trigger received")
+    data = json.loads(payload)
+    items = data.get("body", {}).get("value", [])
+    for event in items:
+        logging.info(f"Event: {event}")
+```
+
+#### EventHubs TypeScript
+
+```typescript
+import { app, InvocationContext } from '@azure/functions';
+
+app.generic('OnNewEvents', {
+    trigger: { type: 'connectorTrigger', name: 'payload' },
+    handler: async (payload: unknown, context: InvocationContext) => {
+        context.log('OnNewEvents trigger received');
+        const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        const items: Record<string, unknown>[] = (data as any)?.body?.value ?? [];
+        for (const event of items) {
+            context.log(`Event: ${JSON.stringify(event)}`);
+        }
+    },
+});
+```
+
+---
+
+## Eventbrite Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/eventbrite](https://learn.microsoft.com/connectors/eventbrite/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewEventV2` | When an event is created (V2) | `EventbriteOnNewEventTriggerPayload` | `str` | `unknown` |
+| `OnOrderChangedV2` | When an order changes (V2) | `EventbriteOnOrderChangedTriggerPayload` | `str` | `unknown` |
+
+---
+
+## Formstack Forms Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/formstackforms](https://learn.microsoft.com/connectors/formstackforms/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `FormstackFormSubmitted` | Triggers when a form is submitted | `string` | `str` | `unknown` |
+
+---
+
+## FreshService Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/freshservice](https://learn.microsoft.com/connectors/freshservice/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnTicketCreatedV2` | When a ticket is created (V2) | `FreshServiceOnTicketCreatedTriggerPayload` | `str` | `unknown` |
+
+---
+
+## FTP Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/ftp](https://learn.microsoft.com/connectors/ftp/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnUpdatedFiles` | When a file is added or modified (properties only) | `FtpOnUpdatedFilesTriggerPayload` | `str` | `unknown` |
+
+---
+
+## GitHub Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/github](https://learn.microsoft.com/connectors/github/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `IssueOpened` | When a new issue is opened and assigned to me | `GitHubOnIssueOpenedTriggerPayload` | `str` | `unknown` |
+| `IssueClosed` | When an issue assigned to me is closed | `GitHubOnIssueClosedTriggerPayload` | `str` | `unknown` |
+| `IssueAssigned` | When an issue is assigned to me | `GitHubOnIssueAssignedTriggerPayload` | `str` | `unknown` |
+| `WebhookPullRequestTrigger` | When a pull request is created or modified | `string` | `str` | `unknown` |
+
+---
+
+## Google Calendar Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/googlecalendar](https://learn.microsoft.com/connectors/googlecalendar/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewEventInCalendar` | When an event is added to a calendar | `string` | `str` | `unknown` |
+| `OnChangedEventInCalendar` | When an event is added, updated or deleted from a calendar | `string` | `str` | `unknown` |
+| `OnDeletedEventInCalendar` | When an event is deleted from a calendar | `string` | `str` | `unknown` |
+| `OnUpdatedEventInCalendar` | When an event is updated in a calendar | `string` | `str` | `unknown` |
+| `OnEventStarted` | When an event starts | `string` | `str` | `unknown` |
+
+---
+
+## Google Tasks Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/googletasks](https://learn.microsoft.com/connectors/googletasks/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewTaskList` | When a new task list is created | `string` | `str` | `unknown` |
+| `OnNewTaskInList` | When a task is added to a task list | `string` | `str` | `unknown` |
+| `OnDueTaskInList` | When a task is due in a task list | `string` | `str` | `unknown` |
+| `OnCompletedTaskInListV2` | When a task is completed in a task list (V2) | `string` | `str` | `unknown` |
+
+---
+
+## Impexium Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/impexium](https://learn.microsoft.com/connectors/impexium/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `When-Individual-Created` | When an individual is created | `string` | `str` | `unknown` |
+| `When-Individual-Deleted` | When an individual is deleted | `string` | `str` | `unknown` |
+| `When-Individual-Request-Forgotten` | When an individual requests to be forgotten | `string` | `str` | `unknown` |
+| `When-product-purchased` | When a product is purchased | `string` | `str` | `unknown` |
+| `When-Committee-Member-Updated` | When a committee member is updated | `string` | `str` | `unknown` |
+| `When-purchase-cancelled` | When a purchase is canceled | `string` | `str` | `unknown` |
+| `When-Request-Updated` | When a customer request is updated | `string` | `str` | `unknown` |
+| `When-Email-Updated` | When a customer email is updated | `string` | `str` | `unknown` |
+| `When-Customer-Custom-Field-Value-Updated` | When a customer custom field value is updated | `string` | `str` | `unknown` |
+| `When-Customer-Is-Merged` | When a customer is merged | `string` | `str` | `unknown` |
+| `When-Customer-Relationship-Updated` | When a customer relationship is updated | `string` | `str` | `unknown` |
+| `When-Customer-Phone-Updated` | When a customer phone is updated | `string` | `str` | `unknown` |
+| `When-Customer-Address-Updated` | When a customer address is updated | `string` | `str` | `unknown` |
+| `When-Event-Registration-Substituted` | When an event registration is substituted | `string` | `str` | `unknown` |
+| `When-Purchase-Paid` | When a purchase is paid | `string` | `str` | `unknown` |
+| `When-Membership-Terminated` | When a membership is terminated | `string` | `str` | `unknown` |
+
+---
+
+## Infusionsoft Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/infusionsoft](https://learn.microsoft.com/connectors/infusionsoft/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewTask` | When a new task is created | `InfusionsoftOnNewTaskTriggerPayload` | `str` | `unknown` |
+| `OnNewOrder` | When there is a new order | `InfusionsoftOnNewOrderTriggerPayload` | `str` | `unknown` |
+
+---
+
+## Insightly Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/insightly](https://learn.microsoft.com/connectors/insightly/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnTaskAssignedToMe` | When a task is assigned to me | `string` | `str` | `unknown` |
+| `OnTaskCreated` | When a task is created | `string` | `str` | `unknown` |
+| `OnTaskUpdated` | When a task is updated | `string` | `str` | `unknown` |
+| `OnProjectCreated` | When a project is created | `string` | `str` | `unknown` |
+| `OnProjectUpdated` | When a project is updated | `string` | `str` | `unknown` |
+| `OnLeadCreated` | When a lead is created | `string` | `str` | `unknown` |
+| `OnLeadUpdated` | When a lead is updated | `string` | `str` | `unknown` |
+| `OnContactCreated` | When a contact is created | `string` | `str` | `unknown` |
+| `OnContactUpdated` | When a contact is updated | `string` | `str` | `unknown` |
+| `OnEventCreated` | When an event is created | `string` | `str` | `unknown` |
+| `OnEventUpdated` | When an event is updated | `string` | `str` | `unknown` |
+
+---
+
+## Jira Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/jira](https://learn.microsoft.com/connectors/jira/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewIssue_V2` | When a new issue is created (V2) | `JiraOnNewIssueTriggerPayload` | `str` | `unknown` |
+| `OnCloseIssue_V2` | When an issue is closed (V2) | `JiraOnCloseIssueTriggerPayload` | `str` | `unknown` |
+| `OnNewIssueJQL_V2` | When a new issue is returned by a JQL query (V2) | `JiraOnNewIssueJQLTriggerPayload` | `str` | `unknown` |
+| `OnNewIssue_Datacenter` | When a new issue is created (Datacenter) | `JiraOnNewIssueDatacenterTriggerPayload` | `str` | `unknown` |
+| `OnCloseIssue_Datacenter` | When an issue is closed (Datacenter) | `JiraOnCloseIssueDatacenterTriggerPayload` | `str` | `unknown` |
+| `OnNewIssueJQL_Datacenter` | When a new issue is returned by a JQL query (Datacenter) | `JiraOnNewIssueJQLDatacenterTriggerPayload` | `str` | `unknown` |
+
+---
+
+## Mailchimp Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/mailchimp](https://learn.microsoft.com/connectors/mailchimp/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnMemberSubscribed` | When a Member has been added to a list | `string` | `str` | `unknown` |
+| `OnCreateList` | When a new list is created | `string` | `str` | `unknown` |
+
+---
+
+## Microsoft Bookings Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/microsoftbookings](https://learn.microsoft.com/connectors/microsoftbookings/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `CreateAppointment` | When an appointment is created | `string` | `str` | `unknown` |
+| `UpdateAppointment` | When an appointment is updated | `string` | `str` | `unknown` |
+| `CancelAppointment` | When an appointment is cancelled | `string` | `str` | `unknown` |
+
+---
+
+## Microsoft Defender ATP (WDATP) Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/wdatp](https://learn.microsoft.com/connectors/wdatp/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewRemediationActivity` | When a new remediation activity is created (Preview) | `WdatpOnNewRemediationActivityTriggerPayload` | `str` | `unknown` |
+| `WebHooks_CreateWebHook` | When a new WDATP alert occurs | `string` | `str` | `unknown` |
+
+---
+
+## Microsoft Forms Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/microsoftforms](https://learn.microsoft.com/connectors/microsoftforms/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `CreateFormWebhook` | When a new response is submitted | `string` | `str` | `unknown` |
+
+---
+
+## Microsoft Teams Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/teams](https://learn.microsoft.com/connectors/teams/)_
+
+### Teams Triggers
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `WebhookChatMessageTrigger` | When a new chat message is added | `string` | `str` | `unknown` |
+| `WebhookNewMessageTrigger` | When a new message is added to a chat or channel | `string` | `str` | `unknown` |
+| `WebhookAtMentionTrigger` | When I'm @mentioned | `string` | `str` | `unknown` |
+| `WebhookKeywordTrigger` | When keywords are mentioned | `string` | `str` | `unknown` |
+| `WebhookMessageReactionTrigger` | When someone reacted to a message in chat | `string` | `str` | `unknown` |
+| `OnNewChannelMessage` | When a new channel message is added | `TeamsOnNewChannelMessageTriggerPayload` | `str` | `unknown` |
+| `OnNewChannelMessageMentioningMe` | When I am mentioned in a channel message | `TeamsOnNewChannelMessageMentioningMeTriggerPayload` | `str` | `unknown` |
+| `OnGroupMembershipAdd` | When a new team member is added | `TeamsOnTeamMemberAddedTriggerPayload` | `str` | `unknown` |
+| `OnGroupMembershipRemoval` | When a new team member is removed | `TeamsOnTeamMemberRemovedTriggerPayload` | `str` | `unknown` |
+| `RecordingTrigger` | When a recording is available | `string` | `str` | `unknown` |
+| `TranscriptTrigger` | When a transcript is available | `string` | `str` | `unknown` |
+
+### Teams Azure Functions Signatures
+
+#### Teams .NET
+
+```csharp
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Extensions.Connector;
+using Azure.Connectors.Sdk.Teams.Models;
+
+// When a new channel message is added
+[Function("OnNewChannelMessage")]
+public void OnNewChannelMessage(
+    [ConnectorTrigger]
+    TeamsOnNewChannelMessageTriggerPayload payload) { }
+
+// When a new team member is added
+[Function("OnGroupMembershipAdd")]
+public void OnGroupMembershipAdd(
+    [ConnectorTrigger]
+    TeamsOnTeamMemberAddedTriggerPayload payload) { }
+```
+
+#### Teams Python
+
+```python
+import azure.functions as func
+import json
+import logging
+
+app = func.FunctionApp()
+
+@app.function_name(name="OnNewChannelMessage")
+@app.connector_trigger(arg_name="payload")
+def on_new_channel_message(payload: str) -> None:
+    logging.info("OnNewChannelMessage trigger received")
+    data = json.loads(payload)
+    items = data.get("body", {}).get("value", [])
+    for message in items:
+        logging.info(f"From: {message.get('from')}")
+```
+
+#### Teams TypeScript
+
+```typescript
+import { app, InvocationContext } from '@azure/functions';
+
+app.generic('OnNewChannelMessage', {
+    trigger: { type: 'connectorTrigger', name: 'payload' },
+    handler: async (payload: unknown, context: InvocationContext) => {
+        context.log('OnNewChannelMessage trigger received');
+        const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        const items: Record<string, unknown>[] = (data as any)?.body?.value ?? [];
+        for (const message of items) {
+            context.log(`From: ${message.from}`);
+        }
+    },
+});
+```
+
+---
+
+## Microsoft To Do Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/todo](https://learn.microsoft.com/connectors/todo/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewToDoInFolderV2` | When a new to-do in a specific folder is created (V2) | `TodoOnNewToDoInFolderTriggerPayload` | `str` | `unknown` |
+| `OnUpdateToDoInFolderV2` | When a to-do in a specific folder is updated (V2) | `TodoOnUpdateToDoInFolderTriggerPayload` | `str` | `unknown` |
+
+---
+
+## Monday.com Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/monday](https://learn.microsoft.com/connectors/monday/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `WebhookCreateItem` | When an item is created | `string` | `str` | `unknown` |
+| `WebhookCreateUpdate` | When a new update is posted | `string` | `str` | `unknown` |
+| `WebhookChangeName` | When an item&apos;s name changes | `string` | `str` | `unknown` |
+| `WebhookChangeSubitemName` | When a subitem&apos;s name changes | `string` | `str` | `unknown` |
+| `WebhookCreateSubitem` | When a subitem is created | `string` | `str` | `unknown` |
+| `WebhookColumnChanges` | When a column changes | `string` | `str` | `unknown` |
+| `WebhookAnyColumnChanges` | When any column changes | `string` | `str` | `unknown` |
+| `WebhookSubitemColumnChanges` | When any subitem column changes | `string` | `str` | `unknown` |
 
 ---
 
 ## Office 365 Connector
 
+_📖 Connector reference: [learn.microsoft.com/connectors/office365](https://learn.microsoft.com/connectors/office365/)_
+
 ### Email Triggers
 
-| Operation ID | Description | Type | .NET Payload Type | Python SDK Type | TypeScript SDK Return Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewEmailV3` | When a new email arrives (V3) | batch | `Office365OnNewEmailTriggerPayload` | `ClientReceiveMessage` | `TriggerBatchResponseGraphClientReceiveMessage` |
-| `OnFlaggedEmailV4` | When an email is flagged (V4) | batch | `Office365OnFlaggedEmailTriggerPayload` | `GraphClientReceiveMessage` | `TriggerBatchResponseGraphClientReceiveMessage` |
-| `OnNewMentionMeEmailV3` | When a new email mentioning me arrives (V3) | batch | `Office365OnNewEmailMentioningMeTriggerPayload` | `GraphClientReceiveMessage` | `TriggerBatchResponseGraphClientReceiveMessage` |
-| `SharedMailboxOnNewEmailV2` | When a new email arrives in a shared mailbox (V2) | batch | `Office365OnSharedMailboxNewEmailTriggerPayload` | `GraphClientReceiveMessage` | `TriggerBatchResponseGraphClientReceiveMessage` |
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewEmailV3` | When a new email arrives (V3) | `Office365OnNewEmailTriggerPayload` | `ClientReceiveMessage` | `TriggerBatchResponseGraphClientReceiveMessage` |
+| `OnFlaggedEmailV4` | When an email is flagged (V4) | `Office365OnFlaggedEmailTriggerPayload` | `GraphClientReceiveMessage` | `TriggerBatchResponseGraphClientReceiveMessage` |
+| `OnNewMentionMeEmailV3` | When a new email mentioning me arrives (V3) | `Office365OnNewEmailMentioningMeTriggerPayload` | `GraphClientReceiveMessage` | `TriggerBatchResponseGraphClientReceiveMessage` |
+| `SharedMailboxOnNewEmailV2` | When a new email arrives in a shared mailbox (V2) | `Office365OnSharedMailboxNewEmailTriggerPayload` | `GraphClientReceiveMessage` | `TriggerBatchResponseGraphClientReceiveMessage` |
 
 ### Calendar Triggers
 
-| Operation ID | Description | Type | .NET Payload Type | Python SDK Type | TypeScript SDK Return Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `CalendarGetOnChangedItemsV3` | When an event is added, updated or deleted (V3) | batch | `Office365OnCalendarChangedItemsTriggerPayload` | `GraphCalendarEventClientWithActionType` | `GraphCalendarEventListWithActionType` |
-| `CalendarGetOnNewItemsV3` | When a new event is created (V3) | batch | `Office365OnCalendarNewItemsTriggerPayload` | `GraphCalendarEventClientReceive` | `GraphCalendarEventListClientReceive` |
-| `CalendarGetOnUpdatedItemsV3` | When an event is modified (V3) | batch | `Office365OnCalendarUpdatedItemsTriggerPayload` | `GraphCalendarEventClientReceive` | `GraphCalendarEventListClientReceive` |
-| `OnUpcomingEventsV3` | When an upcoming event is starting soon (V3) | batch | `Office365OnUpcomingEventsTriggerPayload` | `GraphCalendarEventClientReceive` | `GraphCalendarEventListClientReceive` |
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `CalendarGetOnChangedItemsV3` | When an event is added, updated or deleted (V3) | `Office365OnCalendarChangedItemsTriggerPayload` | `GraphCalendarEventClientWithActionType` | `GraphCalendarEventListWithActionType` |
+| `CalendarGetOnNewItemsV3` | When a new event is created (V3) | `Office365OnCalendarNewItemsTriggerPayload` | `GraphCalendarEventClientReceive` | `GraphCalendarEventListClientReceive` |
+| `CalendarGetOnUpdatedItemsV3` | When an event is modified (V3) | `Office365OnCalendarUpdatedItemsTriggerPayload` | `GraphCalendarEventClientReceive` | `GraphCalendarEventListClientReceive` |
+| `OnUpcomingEventsV3` | When an upcoming event is starting soon (V3) | `Office365OnUpcomingEventsTriggerPayload` | `GraphCalendarEventClientReceive` | `GraphCalendarEventListClientReceive` |
 
 ### O365 Azure Functions Signatures
 
@@ -206,178 +792,53 @@ connectors.office365.onCalendarNewItems('OnCalendarNewItems', {
 
 ---
 
-## SharePoint Online Connector
+## Office 365 Groups Connector
 
-### SharePoint Triggers
+_📖 Connector reference: [learn.microsoft.com/connectors/office365groups](https://learn.microsoft.com/connectors/office365groups/)_
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `GetOnNewItems` | When an item is created | batch | `SharePointOnlineOnNewItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnUpdatedItems` | When an item is created or modified | batch | `SharePointOnlineOnUpdatedItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnChangedItems` | When an item or a file is modified | batch | `SharePointOnlineOnChangedItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnNewFileItems` | When a file is created (properties only) | batch | `SharePointOnlineOnNewFileItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnUpdatedFileItems` | When a file is created or modified (properties only) | batch | `SharePointOnlineOnUpdatedFileItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnDeletedItems` | When an item is deleted | batch | `SharePointOnlineOnDeletedItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnDeletedFileItems` | When a file is deleted | batch | `SharePointOnlineOnDeletedFileItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnUpdatedFileClassifiedTimes` | When a file is classified by a Microsoft Syntex model | batch | `SharePointOnlineOnUpdatedFileClassifiedTimesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnNewItemsFromForm` | When a form is submitted (preview) | batch | `SharePointOnlineOnNewItemsFromFormTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
-### SharePoint Azure Functions Signatures
-
-#### SharePoint .NET
-
-```csharp
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Extensions.Connector;
-using Azure.Connectors.Sdk.SharePointOnline.Models;
-
-// GetOnNewItems
-[Function("OnNewSharePointItem")]
-public void OnNewSharePointItem(
-    [ConnectorTrigger]
-    SharePointOnlineOnNewItemsTriggerPayload payload) { }
-
-// GetOnUpdatedFileItems
-[Function("OnUpdatedSharePointFile")]
-public void OnUpdatedSharePointFile(
-    [ConnectorTrigger]
-    SharePointOnlineOnUpdatedFileItemsTriggerPayload payload) { }
-
-// GetOnDeletedItems
-[Function("OnDeletedSharePointItem")]
-public void OnDeletedSharePointItem(
-    [ConnectorTrigger]
-    SharePointOnlineOnDeletedItemsTriggerPayload payload) { }
-```
-
-#### SharePoint Python
-
-```python
-import azure.functions as func
-import json
-import logging
-
-app = func.FunctionApp()
-
-@app.function_name(name="OnNewSharePointItem")
-@app.connector_trigger(arg_name="payload")
-def on_new_sharepoint_item(payload: str) -> None:
-    logging.info("OnNewSharePointItem trigger received")
-    data = json.loads(payload)
-    items = data.get("body", {}).get("value", [])
-    for item in items:
-        logging.info(f"Item ID: {item.get('Id')}")
-```
-
-#### SharePoint TypeScript
-
-```typescript
-import { app, InvocationContext } from '@azure/functions';
-
-app.generic('OnNewSharePointItem', {
-    trigger: { type: 'connectorTrigger', name: 'payload' },
-    handler: async (payload: unknown, context: InvocationContext) => {
-        context.log('OnNewSharePointItem trigger received');
-        const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
-        const items: Record<string, unknown>[] = (data as any)?.body?.value ?? [];
-        for (const item of items) {
-            context.log(`Item ID: ${item.Id}`);
-        }
-    },
-});
-```
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnGroupMembershipChange` | When a group member is added or removed | `Office365GroupsOnGroupMembershipChangeTriggerPayload` | `str` | `unknown` |
+| `OnNewEvent` | When there is a new event | `Office365GroupsOnNewEventTriggerPayload` | `str` | `unknown` |
 
 ---
 
-## Microsoft Teams Connector
+## Office 365 Groups Mail Connector
 
-### Teams Triggers
+_📖 Connector reference: [learn.microsoft.com/connectors/office365groupsmail](https://learn.microsoft.com/connectors/office365groupsmail/)_
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `WebhookChatMessageTrigger` | When a new chat message is added | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `WebhookNewMessageTrigger` | When a new message is added to a chat or channel | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `WebhookAtMentionTrigger` | When I'm @mentioned | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `WebhookKeywordTrigger` | When keywords are mentioned | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `WebhookMessageReactionTrigger` | When someone reacted to a message in chat | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewChannelMessage` | When a new channel message is added | batch | `TeamsOnNewChannelMessageTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewChannelMessageMentioningMe` | When I am mentioned in a channel message | batch | `TeamsOnNewChannelMessageMentioningMeTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnGroupMembershipAdd` | When a new team member is added | batch | `TeamsOnTeamMemberAddedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnGroupMembershipRemoval` | When a new team member is removed | batch | `TeamsOnTeamMemberRemovedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `RecordingTrigger` | When a recording is available | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `TranscriptTrigger` | When a transcript is available | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewEmailInGroup` | When a new email arrives to a group | `Office365GroupsMailOnNewEmailInGroupTriggerPayload` | `str` | `unknown` |
 
-### Teams Azure Functions Signatures
+---
 
-#### Teams .NET
+## OneDrive (Personal) Connector
 
-```csharp
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Extensions.Connector;
-using Azure.Connectors.Sdk.Teams.Models;
+_📖 Connector reference: [learn.microsoft.com/connectors/onedrive](https://learn.microsoft.com/connectors/onedrive/)_
 
-// When a new channel message is added
-[Function("OnNewChannelMessage")]
-public void OnNewChannelMessage(
-    [ConnectorTrigger]
-    TeamsOnNewChannelMessageTriggerPayload payload) { }
-
-// When a new team member is added
-[Function("OnGroupMembershipAdd")]
-public void OnGroupMembershipAdd(
-    [ConnectorTrigger]
-    TeamsOnTeamMemberAddedTriggerPayload payload) { }
-```
-
-#### Teams Python
-
-```python
-import azure.functions as func
-import json
-import logging
-
-app = func.FunctionApp()
-
-@app.function_name(name="OnNewChannelMessage")
-@app.connector_trigger(arg_name="payload")
-def on_new_channel_message(payload: str) -> None:
-    logging.info("OnNewChannelMessage trigger received")
-    data = json.loads(payload)
-    items = data.get("body", {}).get("value", [])
-    for message in items:
-        logging.info(f"From: {message.get('from')}")
-```
-
-#### Teams TypeScript
-
-```typescript
-import { app, InvocationContext } from '@azure/functions';
-
-app.generic('OnNewChannelMessage', {
-    trigger: { type: 'connectorTrigger', name: 'payload' },
-    handler: async (payload: unknown, context: InvocationContext) => {
-        context.log('OnNewChannelMessage trigger received');
-        const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
-        const items: Record<string, unknown>[] = (data as any)?.body?.value ?? [];
-        for (const message of items) {
-            context.log(`From: ${message.from}`);
-        }
-    },
-});
-```
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewFileV2` | When a file is created | `string` | `str` | `unknown` |
+| `OnNewFilesV2` | When a file is created (properties only) | `OneDriveOnNewFilesTriggerPayload` | `str` | `unknown` |
+| `OnDeletedFiles` | When a file is deleted (properties only) | `OneDriveOnDeletedFilesTriggerPayload` | `str` | `unknown` |
+| `OnUpdatedFilesV2` | When a file is modified (properties only) | `OneDriveOnUpdatedFilesTriggerPayload` | `str` | `unknown` |
+| `OnUpdatedFileV2` | When a file is modified | `string` | `str` | `unknown` |
 
 ---
 
 ## OneDrive for Business Connector
 
+_📖 Connector reference: [learn.microsoft.com/connectors/onedriveforbusiness](https://learn.microsoft.com/connectors/onedriveforbusiness/)_
+
 ### OneDrive Triggers
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewFileV2` | When a file is created | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewFilesV2` | When a file is created (properties only) | batch | `OneDriveForBusinessOnNewFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpdatedFileV2` | When a file is modified | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpdatedFilesV2` | When a file is modified (properties only) | batch | `OneDriveForBusinessOnUpdatedFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewFileV2` | When a file is created | `string` | `str` | `unknown` |
+| `OnNewFilesV2` | When a file is created (properties only) | `OneDriveForBusinessOnNewFilesTriggerPayload` | `str` | `unknown` |
+| `OnUpdatedFileV2` | When a file is modified | `string` | `str` | `unknown` |
+| `OnUpdatedFilesV2` | When a file is modified (properties only) | `OneDriveForBusinessOnUpdatedFilesTriggerPayload` | `str` | `unknown` |
 
 ### OneDrive Azure Functions Signatures
 
@@ -433,30 +894,63 @@ app.generic('OnNewOneDriveFile', {
 
 ---
 
-## Azure Blob Storage Connector
+## OneNote Connector
 
-### Blob Triggers
+_📖 Connector reference: [learn.microsoft.com/connectors/onenote](https://learn.microsoft.com/connectors/onenote/)_
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnUpdatedFiles_V2` | When a blob is added or modified (properties only) (V2) | batch | `AzureBlobOnUpdatedFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewSectionInNotebook` | When a new section is created | `OnenoteOnNewSectionInNotebookTriggerPayload` | `str` | `unknown` |
+| `OnNewSectionGroupInNotebook` | When a new section group is created | `OnenoteOnNewSectionGroupInNotebookTriggerPayload` | `str` | `unknown` |
+| `OnNewPageInSection` | When a new page is created in a section | `OnenoteOnNewPageInSectionTriggerPayload` | `str` | `unknown` |
 
-### Blob Azure Functions Signatures
+---
 
-#### Blob .NET
+## Orderful Connector
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `Communication-Channel` | Listen to Communication Channel | `string` | `str` | `unknown` |
+
+---
+
+## Outlook Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/outlook](https://learn.microsoft.com/connectors/outlook/)_
+
+### Outlook Triggers
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewEmailV2` | When a new email arrives (V2) | `OutlookOnNewEmailTriggerPayload` | `str` | `unknown` |
+| `OnFlaggedEmailV2` | When an email is flagged (V2) | `OutlookOnFlaggedEmailTriggerPayload` | `str` | `unknown` |
+| `OnNewMentionMeEmailV2` | When a new email mentioning me arrives (V2) | `OutlookOnNewMentionMeEmailTriggerPayload` | `str` | `unknown` |
+| `CalendarGetOnChangedItemsV2` | When an event is added, updated or deleted (V2) | `OutlookOnCalendarGetOnChangedItemsTriggerPayload` | `str` | `unknown` |
+| `CalendarGetOnNewItemsV2` | When a new event is created (V2) | `OutlookOnCalendarGetOnNewItemsTriggerPayload` | `str` | `unknown` |
+| `CalendarGetOnUpdatedItemsV2` | When an event is modified (V2) | `OutlookOnCalendarGetOnUpdatedItemsTriggerPayload` | `str` | `unknown` |
+| `OnUpcomingEventsV2` | When an upcoming event is starting soon (V2) | `OutlookOnUpcomingEventsTriggerPayload` | `str` | `unknown` |
+
+### Outlook Azure Functions Signatures
+
+#### Outlook .NET
 
 ```csharp
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Connector;
-using Azure.Connectors.Sdk.AzureBlob.Models;
+using Azure.Connectors.Sdk.Outlook.Models;
 
-[Function("OnBlobUpdated")]
-public void OnBlobUpdated(
+[Function("OnNewOutlookEmail")]
+public void OnNewOutlookEmail(
     [ConnectorTrigger]
-    AzureBlobOnUpdatedFilesTriggerPayload payload) { }
+    OutlookOnNewEmailTriggerPayload payload) { }
+
+[Function("OnOutlookCalendarChanged")]
+public void OnOutlookCalendarChanged(
+    [ConnectorTrigger]
+    OutlookOnCalendarGetOnChangedItemsTriggerPayload payload) { }
 ```
 
-#### Blob Python
+#### Outlook Python
 
 ```python
 import azure.functions as func
@@ -465,29 +959,31 @@ import logging
 
 app = func.FunctionApp()
 
-@app.function_name(name="OnBlobUpdated")
+@app.function_name(name="OnNewOutlookEmail")
 @app.connector_trigger(arg_name="payload")
-def on_blob_updated(payload: str) -> None:
-    logging.info("OnBlobUpdated trigger received")
+def on_new_outlook_email(payload: str) -> None:
+    logging.info("OnNewOutlookEmail trigger received")
     data = json.loads(payload)
     items = data.get("body", {}).get("value", [])
-    for blob in items:
-        logging.info(f"Blob: {blob.get('Name')}, Path: {blob.get('Path')}")
+    for email in items:
+        logging.info(f"Subject: {email.get('Subject')}")
+        logging.info(f"From: {email.get('From')}")
 ```
 
-#### Blob TypeScript
+#### Outlook TypeScript
 
 ```typescript
 import { app, InvocationContext } from '@azure/functions';
 
-app.generic('OnBlobUpdated', {
+app.generic('OnNewOutlookEmail', {
     trigger: { type: 'connectorTrigger', name: 'payload' },
     handler: async (payload: unknown, context: InvocationContext) => {
-        context.log('OnBlobUpdated trigger received');
+        context.log('OnNewOutlookEmail trigger received');
         const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
         const items: Record<string, unknown>[] = (data as any)?.body?.value ?? [];
-        for (const blob of items) {
-            context.log(`Blob: ${blob.Name}, Path: ${blob.Path}`);
+        for (const email of items) {
+            context.log(`Subject: ${email.Subject}`);
+            context.log(`From: ${email.From}`);
         }
     },
 });
@@ -495,82 +991,114 @@ app.generic('OnBlobUpdated', {
 
 ---
 
-## Event Hubs Connector
+## Pipedrive Connector
 
-### EventHubs Triggers
+_📖 Connector reference: [learn.microsoft.com/connectors/pipedrive](https://learn.microsoft.com/connectors/pipedrive/)_
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewEvents` | When events are available in Event Hub | batch | `EventHubsOnNewEventsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `TrigNewActivity` | When a new activity is added | `PipedriveOnTrigNewActivityTriggerPayload` | `str` | `unknown` |
+| `TrigNewDealV2` | When a new deal is added (V2) | `PipedriveOnTrigNewDealTriggerPayload` | `str` | `unknown` |
 
-### EventHubs Azure Functions Signatures
+---
 
-#### EventHubs .NET
+## Planner Connector
 
-```csharp
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Extensions.Connector;
-using Azure.Connectors.Sdk.Eventhubs.Models;
+_📖 Connector reference: [learn.microsoft.com/connectors/planner](https://learn.microsoft.com/connectors/planner/)_
 
-[Function("OnNewEvents")]
-public void OnNewEvents(
-    [ConnectorTrigger]
-    EventHubsOnNewEventsTriggerPayload payload) { }
-```
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnCompleteTask_V3` | When a task is completed | `PlannerOnCompleteTaskTriggerPayload` | `str` | `unknown` |
+| `OnNewTask_V3` | When a new task is created | `PlannerOnNewTaskTriggerPayload` | `str` | `unknown` |
+| `OnTaskAssignedToMe_V2` | When a task is assigned to me | `PlannerOnTaskAssignedToMeTriggerPayload` | `str` | `unknown` |
 
-#### EventHubs Python
+---
 
-```python
-import azure.functions as func
-import json
-import logging
+## Plumsail Connector
 
-app = func.FunctionApp()
+_📖 Connector reference: [learn.microsoft.com/connectors/plumsail](https://learn.microsoft.com/connectors/plumsail/)_
 
-@app.function_name(name="OnNewEvents")
-@app.connector_trigger(arg_name="payload")
-def on_new_events(payload: str) -> None:
-    logging.info("OnNewEvents trigger received")
-    data = json.loads(payload)
-    items = data.get("body", {}).get("value", [])
-    for event in items:
-        logging.info(f"Event: {event}")
-```
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `FlowV1ProcessesFlowTriggersPost` | Process finished | `string` | `str` | `unknown` |
 
-#### EventHubs TypeScript
+---
 
-```typescript
-import { app, InvocationContext } from '@azure/functions';
+## Power BI Connector
 
-app.generic('OnNewEvents', {
-    trigger: { type: 'connectorTrigger', name: 'payload' },
-    handler: async (payload: unknown, context: InvocationContext) => {
-        context.log('OnNewEvents trigger received');
-        const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
-        const items: Record<string, unknown>[] = (data as any)?.body?.value ?? [];
-        for (const event of items) {
-            context.log(`Event: ${JSON.stringify(event)}`);
-        }
-    },
-});
-```
+_📖 Connector reference: [learn.microsoft.com/connectors/powerbi](https://learn.microsoft.com/connectors/powerbi/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `GoalsAssignedTrigger` | When someone assigns a new owner to a goal | `string` | `str` | `unknown` |
+| `GoalChangeTrigger` | When a goal changes | `string` | `str` | `unknown` |
+| `GoalStatusChangeTrigger` | When status of a goal changes | `string` | `str` | `unknown` |
+| `GoalValueChangeTrigger` | When current value of a goal changes | `string` | `str` | `unknown` |
+| `GoalRefreshFailedTrigger` | When a data refresh for a goal fails | `string` | `str` | `unknown` |
+| `GoalValueOrNoteUpsertTrigger` | When someone adds or edits a goal check-in | `string` | `str` | `unknown` |
+| `CheckAlertStatus` | When a data driven alert is triggered | `string` | `str` | `unknown` |
+
+---
+
+## Projectplace Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/projectplace](https://learn.microsoft.com/connectors/projectplace/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `set_webhook_card_create` | When a card is created | `string` | `str` | `unknown` |
+| `set_webhook_properties_change` | When a card&apos;s properties are changed | `string` | `str` | `unknown` |
+| `set_webhook_card_due_date` | When a card is due | `string` | `str` | `unknown` |
+
+---
+
+## Replicon Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/replicon](https://learn.microsoft.com/connectors/replicon/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `WebhookSubscriptionsRestAPI` | Subscribe to Event triggers | `string` | `str` | `unknown` |
+
+---
+
+## RSS Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/rss](https://learn.microsoft.com/connectors/rss/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewFeed` | When a feed item is published | `RssOnNewFeedTriggerPayload` | `str` | `unknown` |
+
+---
+
+## Salesforce Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/salesforce](https://learn.microsoft.com/connectors/salesforce/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `GetOnNewItems` | When a record is created | `SalesforceOnNewItemsTriggerPayload` | `str` | `unknown` |
+| `GetOnUpdatedItems` | When a record is modified | `SalesforceOnUpdatedItemsTriggerPayload` | `str` | `unknown` |
 
 ---
 
 ## Service Bus Connector
 
+_📖 Connector reference: [learn.microsoft.com/connectors/servicebus](https://learn.microsoft.com/connectors/servicebus/)_
+
 ### ServiceBus Triggers
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `GetMessageFromQueue` | When a message is received in a queue (auto-complete) | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetNewMessageFromQueueWithPeekLock` | When a message is received in a queue (peek-lock) | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetMessageFromTopic` | When a message is received in a topic subscription (auto-complete) | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetNewMessageFromTopicWithPeekLock` | When a message is received in a topic subscription (peek-lock) | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetMessagesFromQueue` | When one or more messages arrive in a queue (auto-complete) | batch | `ServicebusOnGetMessagesFromQueueTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetMessagesFromTopic` | When one or more messages arrive in a topic (auto-complete) | batch | `ServicebusOnGetMessagesFromTopicTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetNewMessagesFromQueueWithPeekLock` | When one or more messages arrive in a queue (peek-lock) | batch | `ServicebusOnGetNewMessagesFromQueueWithPeekLockTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetNewMessagesFromTopicWithPeekLock` | When one or more messages arrive in a topic (peek-lock) | batch | `ServicebusOnGetNewMessagesFromTopicWithPeekLockTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `GetMessageFromQueue` | When a message is received in a queue (auto-complete) | `string` | `str` | `unknown` |
+| `GetNewMessageFromQueueWithPeekLock` | When a message is received in a queue (peek-lock) | `string` | `str` | `unknown` |
+| `GetMessageFromTopic` | When a message is received in a topic subscription (auto-complete) | `string` | `str` | `unknown` |
+| `GetNewMessageFromTopicWithPeekLock` | When a message is received in a topic subscription (peek-lock) | `string` | `str` | `unknown` |
+| `GetMessagesFromQueue` | When one or more messages arrive in a queue (auto-complete) | `ServicebusOnGetMessagesFromQueueTriggerPayload` | `str` | `unknown` |
+| `GetMessagesFromTopic` | When one or more messages arrive in a topic (auto-complete) | `ServicebusOnGetMessagesFromTopicTriggerPayload` | `str` | `unknown` |
+| `GetNewMessagesFromQueueWithPeekLock` | When one or more messages arrive in a queue (peek-lock) | `ServicebusOnGetNewMessagesFromQueueWithPeekLockTriggerPayload` | `str` | `unknown` |
+| `GetNewMessagesFromTopicWithPeekLock` | When one or more messages arrive in a topic (peek-lock) | `ServicebusOnGetNewMessagesFromTopicWithPeekLockTriggerPayload` | `str` | `unknown` |
 
 > Single-message triggers have no typed payload — use `string` in .NET, `str` in Python, or `unknown` in TypeScript to receive raw JSON.
 
@@ -644,41 +1172,53 @@ app.generic('OnQueueMessages', {
 
 ---
 
-## Outlook Connector
+## SharePoint Online Connector
 
-### Outlook Triggers
+_📖 Connector reference: [learn.microsoft.com/connectors/sharepointonline](https://learn.microsoft.com/connectors/sharepointonline/)_
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewEmailV2` | When a new email arrives (V2) | batch | `OutlookOnNewEmailTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnFlaggedEmailV2` | When an email is flagged (V2) | batch | `OutlookOnFlaggedEmailTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewMentionMeEmailV2` | When a new email mentioning me arrives (V2) | batch | `OutlookOnNewMentionMeEmailTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `CalendarGetOnChangedItemsV2` | When an event is added, updated or deleted (V2) | batch | `OutlookOnCalendarGetOnChangedItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `CalendarGetOnNewItemsV2` | When a new event is created (V2) | batch | `OutlookOnCalendarGetOnNewItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `CalendarGetOnUpdatedItemsV2` | When an event is modified (V2) | batch | `OutlookOnCalendarGetOnUpdatedItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpcomingEventsV2` | When an upcoming event is starting soon (V2) | batch | `OutlookOnUpcomingEventsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+### SharePoint Triggers
 
-### Outlook Azure Functions Signatures
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `GetOnNewItems` | When an item is created | `SharePointOnlineOnNewItemsTriggerPayload` | `str` | `unknown` |
+| `GetOnUpdatedItems` | When an item is created or modified | `SharePointOnlineOnUpdatedItemsTriggerPayload` | `str` | `unknown` |
+| `GetOnChangedItems` | When an item or a file is modified | `SharePointOnlineOnChangedItemsTriggerPayload` | `str` | `unknown` |
+| `GetOnNewFileItems` | When a file is created (properties only) | `SharePointOnlineOnNewFileItemsTriggerPayload` | `str` | `unknown` |
+| `GetOnUpdatedFileItems` | When a file is created or modified (properties only) | `SharePointOnlineOnUpdatedFileItemsTriggerPayload` | `str` | `unknown` |
+| `GetOnDeletedItems` | When an item is deleted | `SharePointOnlineOnDeletedItemsTriggerPayload` | `str` | `unknown` |
+| `GetOnDeletedFileItems` | When a file is deleted | `SharePointOnlineOnDeletedFileItemsTriggerPayload` | `str` | `unknown` |
+| `GetOnUpdatedFileClassifiedTimes` | When a file is classified by a Microsoft Syntex model | `SharePointOnlineOnUpdatedFileClassifiedTimesTriggerPayload` | `str` | `unknown` |
+| `GetOnNewItemsFromForm` | When a form is submitted (preview) | `SharePointOnlineOnNewItemsFromFormTriggerPayload` | `str` | `unknown` |
 
-#### Outlook .NET
+### SharePoint Azure Functions Signatures
+
+#### SharePoint .NET
 
 ```csharp
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Connector;
-using Azure.Connectors.Sdk.Outlook.Models;
+using Azure.Connectors.Sdk.SharePointOnline.Models;
 
-[Function("OnNewOutlookEmail")]
-public void OnNewOutlookEmail(
+// GetOnNewItems
+[Function("OnNewSharePointItem")]
+public void OnNewSharePointItem(
     [ConnectorTrigger]
-    OutlookOnNewEmailTriggerPayload payload) { }
+    SharePointOnlineOnNewItemsTriggerPayload payload) { }
 
-[Function("OnOutlookCalendarChanged")]
-public void OnOutlookCalendarChanged(
+// GetOnUpdatedFileItems
+[Function("OnUpdatedSharePointFile")]
+public void OnUpdatedSharePointFile(
     [ConnectorTrigger]
-    OutlookOnCalendarGetOnChangedItemsTriggerPayload payload) { }
+    SharePointOnlineOnUpdatedFileItemsTriggerPayload payload) { }
+
+// GetOnDeletedItems
+[Function("OnDeletedSharePointItem")]
+public void OnDeletedSharePointItem(
+    [ConnectorTrigger]
+    SharePointOnlineOnDeletedItemsTriggerPayload payload) { }
 ```
 
-#### Outlook Python
+#### SharePoint Python
 
 ```python
 import azure.functions as func
@@ -687,31 +1227,29 @@ import logging
 
 app = func.FunctionApp()
 
-@app.function_name(name="OnNewOutlookEmail")
+@app.function_name(name="OnNewSharePointItem")
 @app.connector_trigger(arg_name="payload")
-def on_new_outlook_email(payload: str) -> None:
-    logging.info("OnNewOutlookEmail trigger received")
+def on_new_sharepoint_item(payload: str) -> None:
+    logging.info("OnNewSharePointItem trigger received")
     data = json.loads(payload)
     items = data.get("body", {}).get("value", [])
-    for email in items:
-        logging.info(f"Subject: {email.get('Subject')}")
-        logging.info(f"From: {email.get('From')}")
+    for item in items:
+        logging.info(f"Item ID: {item.get('Id')}")
 ```
 
-#### Outlook TypeScript
+#### SharePoint TypeScript
 
 ```typescript
 import { app, InvocationContext } from '@azure/functions';
 
-app.generic('OnNewOutlookEmail', {
+app.generic('OnNewSharePointItem', {
     trigger: { type: 'connectorTrigger', name: 'payload' },
     handler: async (payload: unknown, context: InvocationContext) => {
-        context.log('OnNewOutlookEmail trigger received');
+        context.log('OnNewSharePointItem trigger received');
         const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
         const items: Record<string, unknown>[] = (data as any)?.body?.value ?? [];
-        for (const email of items) {
-            context.log(`Subject: ${email.Subject}`);
-            context.log(`From: ${email.From}`);
+        for (const item of items) {
+            context.log(`Item ID: ${item.Id}`);
         }
     },
 });
@@ -719,14 +1257,40 @@ app.generic('OnNewOutlookEmail', {
 
 ---
 
+## Shifts Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/shifts](https://learn.microsoft.com/connectors/shifts/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `TriggerForOpenShiftChangeRequests` | When an Open Shift request is created, updated or deleted | `string` | `str` | `unknown` |
+| `TriggerForSwapShiftsChangeRequests` | When a Swap Shifts request is created, updated or deleted | `string` | `str` | `unknown` |
+| `TriggerForOfferShiftRequests` | When an Offer Shift request is created, updated or deleted | `string` | `str` | `unknown` |
+| `TriggerForTimeOffRequests` | When a Time Off request is created, updated or deleted | `string` | `str` | `unknown` |
+| `TriggerForShifts` | When a Shift is created, updated or deleted | `string` | `str` | `unknown` |
+
+---
+
+## Slack Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/slack](https://learn.microsoft.com/connectors/slack/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewFile` | When a file is created | `SlackOnNewFileTriggerPayload` | `str` | `unknown` |
+
+---
+
 ## SQL Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/sql](https://learn.microsoft.com/connectors/sql/)_
 
 ### SQL Triggers
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `GetOnNewItems_V2` | When an item is created (V2) | batch | `SqlOnNewItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnUpdatedItems_V2` | When an item is modified (V2) | batch | `SqlOnUpdatedItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `GetOnNewItems_V2` | When an item is created (V2) | `SqlOnNewItemsTriggerPayload` | `str` | `unknown` |
+| `GetOnUpdatedItems_V2` | When an item is modified (V2) | `SqlOnUpdatedItemsTriggerPayload` | `str` | `unknown` |
 
 ### SQL Azure Functions Signatures
 
@@ -787,254 +1351,116 @@ app.generic('OnNewSqlItem', {
 
 ---
 
-## FTP Connector
+## Text Request Connector
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnUpdatedFiles` | When a file is added or modified (properties only) | batch | `FtpOnUpdatedFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+_📖 Connector reference: [learn.microsoft.com/connectors/textrequest](https://learn.microsoft.com/connectors/textrequest/)_
 
----
-
-## Dropbox Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewFile` | When a file is created | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewFiles` | When a file is created (properties only) | batch | `DropboxOnNewFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpdatedFile` | When a file is modified | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpdatedFiles` | When a file is modified (properties only) | batch | `DropboxOnUpdatedFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## OneDrive (Personal) Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewFileV2` | When a file is created | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewFilesV2` | When a file is created (properties only) | batch | `OneDriveOnNewFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnDeletedFiles` | When a file is deleted (properties only) | batch | `OneDriveOnDeletedFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpdatedFilesV2` | When a file is modified (properties only) | batch | `OneDriveOnUpdatedFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpdatedFileV2` | When a file is modified | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Salesforce Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `GetOnNewItems` | When a record is created | batch | `SalesforceOnNewItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `GetOnUpdatedItems` | When a record is modified | batch | `SalesforceOnUpdatedItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## GitHub Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `IssueOpened` | When a new issue is opened and assigned to me | batch | `GitHubOnIssueOpenedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `IssueClosed` | When an issue assigned to me is closed | batch | `GitHubOnIssueClosedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `IssueAssigned` | When an issue is assigned to me | batch | `GitHubOnIssueAssignedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `WebhookPullRequestTrigger` | When a pull request is created or modified | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Twitter Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewTweet` | When a new tweet is posted | batch | `TwitterOnNewTweetTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## RSS Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewFeed` | When a feed item is published | batch | `RssOnNewFeedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Box Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewFilesV2` | When a file is created (properties only) (V2) | batch | `BoxOnNewFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpdatedFiles` | When a file is modified (properties only) | batch | — | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpdatedFilesV2` | When a file is modified (properties only) (V2) | batch | `BoxOnUpdatedFilesTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Slack Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewFile` | When a file is created | batch | `SlackOnNewFileTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Azure Queues Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnMessages_V2` | When there are messages in a queue (V2) | batch | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnMessageThresholdReached_V2` | When a specified number of messages are in a given queue (V2) | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Azure Event Grid Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `CreateSubscription` | When a resource event occurs | batch | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Yammer (Viva Engage) Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewMessagesInGroupV2` | When there is a new message in a group (V2) | batch | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewMessagesFollowingV2` | When there is a new message in my followed feed (V2) | batch | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Microsoft Defender ATP (WDATP) Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewRemediationActivity` | When a new remediation activity is created (Preview) | batch | `WdatpOnNewRemediationActivityTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `WebHooks_CreateWebHook` | When a new WDATP alert occurs | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Google Calendar Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewEventInCalendar` | When an event is added to a calendar | batch | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnChangedEventInCalendar` | When an event is added, updated or deleted from a calendar | batch | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnDeletedEventInCalendar` | When an event is deleted from a calendar | batch | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpdatedEventInCalendar` | When an event is updated in a calendar | batch | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnEventStarted` | When an event starts | batch | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Dynamics AX Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `SubscribeOnABusinessEvent` | When a Business Event occurs | single | `string` (raw JSON) | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Eventbrite Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewEventV2` | When an event is created (V2) | batch | `EventbriteOnNewEventTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnOrderChangedV2` | When an order changes (V2) | batch | `EventbriteOnOrderChangedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## FreshService Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnTicketCreatedV2` | When a ticket is created (V2) | batch | `FreshServiceOnTicketCreatedTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Infusionsoft Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewTask` | When a new task is created | batch | `InfusionsoftOnNewTaskTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewOrder` | When there is a new order | batch | `InfusionsoftOnNewOrderTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Jira Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewIssue_V2` | When a new issue is created (V2) | batch | `JiraOnNewIssueTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnCloseIssue_V2` | When an issue is closed (V2) | batch | `JiraOnCloseIssueTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewIssueJQL_V2` | When a new issue is returned by a JQL query (V2) | batch | `JiraOnNewIssueJQLTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewIssue_Datacenter` | When a new issue is created (Datacenter) | batch | `JiraOnNewIssueDatacenterTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnCloseIssue_Datacenter` | When an issue is closed (Datacenter) | batch | `JiraOnCloseIssueDatacenterTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewIssueJQL_Datacenter` | When a new issue is returned by a JQL query (Datacenter) | batch | `JiraOnNewIssueJQLDatacenterTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Office 365 Groups Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnGroupMembershipChange` | When a group member is added or removed | batch | `Office365GroupsOnGroupMembershipChangeTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewEvent` | When there is a new event | batch | `Office365GroupsOnNewEventTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Office 365 Groups Mail Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewEmailInGroup` | When a new email arrives to a group | batch | `Office365GroupsMailOnNewEmailInGroupTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## OneNote Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewSectionInNotebook` | When a new section is created | batch | `OnenoteOnNewSectionInNotebookTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewSectionGroupInNotebook` | When a new section group is created | batch | `OnenoteOnNewSectionGroupInNotebookTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewPageInSection` | When a new page is created in a section | batch | `OnenoteOnNewPageInSectionTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Pipedrive Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `TrigNewActivity` | When a new activity is added | batch | `PipedriveOnTrigNewActivityTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `TrigNewDealV2` | When a new deal is added (V2) | batch | `PipedriveOnTrigNewDealTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Planner Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnCompleteTask_V3` | When a task is completed | batch | `PlannerOnCompleteTaskTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewTask_V3` | When a new task is created | batch | `PlannerOnNewTaskTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnTaskAssignedToMe_V2` | When a task is assigned to me | batch | `PlannerOnTaskAssignedToMeTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-
----
-
-## Microsoft To Do Connector
-
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewToDoInFolderV2` | When a new to-do in a specific folder is created (V2) | batch | `TodoOnNewToDoInFolderTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnUpdateToDoInFolderV2` | When a to-do in a specific folder is updated (V2) | batch | `TodoOnUpdateToDoInFolderTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `TextingWebhook` | Triggers when a text is sent or received | `string` | `str` | `unknown` |
 
 ---
 
 ## Trello Connector
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `OnNewCardInBoardV3` | When a new card is added to a board (V3) | batch | `TrelloOnNewCardInBoardTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
-| `OnNewCardInListV3` | When a new card is added to a list (V3) | batch | `TrelloOnNewCardInListTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+_📖 Connector reference: [learn.microsoft.com/connectors/trello](https://learn.microsoft.com/connectors/trello/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewCardInBoardV3` | When a new card is added to a board (V3) | `TrelloOnNewCardInBoardTriggerPayload` | `str` | `unknown` |
+| `OnNewCardInListV3` | When a new card is added to a list (V3) | `TrelloOnNewCardInListTriggerPayload` | `str` | `unknown` |
+
+---
+
+## Twitter Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/twitter](https://learn.microsoft.com/connectors/twitter/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewTweet` | When a new tweet is posted | `TwitterOnNewTweetTriggerPayload` | `str` | `unknown` |
+
+---
+
+## Typeform Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/typeform](https://learn.microsoft.com/connectors/typeform/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `NewResponseWebhook_V2` | When a response is submitted | `string` | `str` | `unknown` |
+
+---
+
+## Way We Do Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/waywedo](https://learn.microsoft.com/connectors/waywedo/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `Checklist_Create_WebHook` | When a checklist instance is started | `string` | `str` | `unknown` |
+| `New_Comment_WebHook` | When a comment is added to a checklist | `string` | `str` | `unknown` |
+| `Finish_Checklist_WebHook` | When a checklist is finished | `string` | `str` | `unknown` |
+| `Invite_Supervisor_WebHook` | When a supervisor is invited | `string` | `str` | `unknown` |
+| `Generate_Acceptance_PDF_WebHook` | When a procedure is accepted | `string` | `str` | `unknown` |
+| `Checklist_Step_Completed_WebHook` | When a checklist step is completed | `string` | `str` | `unknown` |
+
+---
+
+## Webex Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/webex](https://learn.microsoft.com/connectors/webex/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `MembershipsUpdated` | When a membership is updated | `string` | `str` | `unknown` |
+| `MembershipsDeleted` | When a membership is deleted | `string` | `str` | `unknown` |
+| `MembershipsCreated` | When a membership is created | `string` | `str` | `unknown` |
+| `MessagesCreated` | When a message is created | `string` | `str` | `unknown` |
+| `MessagesDeleted` | When a message is deleted | `string` | `str` | `unknown` |
+| `SpaceCreated` | When a space is created | `string` | `str` | `unknown` |
+| `SpaceUpdated` | When a space is updated | `string` | `str` | `unknown` |
+
+---
+
+## WordPress Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/wordpress](https://learn.microsoft.com/connectors/wordpress/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnTriggerNewPost` | When a post is created | `string` | `str` | `unknown` |
+
+---
+
+## Yammer (Viva Engage) Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/yammer](https://learn.microsoft.com/connectors/yammer/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `OnNewMessagesInGroupV2` | When there is a new message in a group (V2) | `string` | `str` | `unknown` |
+| `OnNewMessagesFollowingV2` | When there is a new message in my followed feed (V2) | `string` | `str` | `unknown` |
 
 ---
 
 ## Zendesk Connector
 
-| Operation ID | Description | Type | .NET Payload Type | Python Type | TypeScript Type |
-| ----- | ----- | ----- | ----- | ----- | ----- |
-| `GetOnUpdatedItemsV2` | When an item is modified | batch | `ZendeskOnUpdatedItemsTriggerPayload` | `str` (raw JSON) | `unknown` (raw JSON) |
+_📖 Connector reference: [learn.microsoft.com/connectors/zendesk](https://learn.microsoft.com/connectors/zendesk/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `GetOnUpdatedItemsV2` | When an item is modified | `ZendeskOnUpdatedItemsTriggerPayload` | `str` | `unknown` |
+
+---
+
+## Zoho Sign Connector
+
+_📖 Connector reference: [learn.microsoft.com/connectors/zohosign](https://learn.microsoft.com/connectors/zohosign/)_
+
+| Operation ID | Description | .NET Payload Type | Python Type | TypeScript Type |
+| ----- | ----- | ----- | ----- | ----- |
+| `zoho-sign-triggers` | Zoho Sign Triggers | `string` | `str` | `unknown` |
 
 ---
 
