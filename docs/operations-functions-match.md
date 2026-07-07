@@ -18,7 +18,7 @@ This document maps connector trigger operation names to their corresponding Azur
 | No typed model available | None beyond `azure-functions` | `str` |
 
 > [!NOTE]
-> **Typed Payloads:** The **.NET Payload Type**, **Python Type**, and **TypeScript Type** columns list the strongly-typed model each SDK generates for the operation. Coverage differs per language and the type names are not identical across SDKs.
+> **Typed Payloads:** The three payload columns (**.NET**, **Python**, **TypeScript**) list the strongly-typed model each SDK generates for the operation. Coverage differs per language, and the model names are not identical across SDKs.
 >
 > When a cell shows the **default raw-JSON binding type** instead of a model class, that SDK has no typed model for the operation — bind the trigger payload as that type and parse the JSON manually. The default per language is:
 >
