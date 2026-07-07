@@ -142,6 +142,7 @@ This repository includes [Copilot Skills](https://docs.github.com/en/copilot/cus
 | ----- | ----------- |
 | [connection-setup](./.github/skills/connection-setup/SKILL.md) | Create and configure Connector Namespace connections, authorize OAuth consent, and add access policies |
 | [trigger-registration](./.github/skills/trigger-registration/SKILL.md) | Register polling trigger configs that call back to an Azure Function on connector events |
+| [operations-doc-sync](./.github/skills/operations-doc-sync/SKILL.md) | Update `docs/operations-functions-match.md` to match the latest trigger operations in the parent SDK repos |
 
 ## Connector Namespace Aceess
 
