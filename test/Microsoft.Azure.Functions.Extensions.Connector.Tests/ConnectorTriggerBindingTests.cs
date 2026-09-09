@@ -119,7 +119,7 @@ public class ConnectorTriggerBindingTests
     }
 
     [Fact]
-    public async Task CreateListenerAsync_ReturnsConnectorListener()
+    public async Task CreateListenerAsync_ReturnsConnectorListener_ForWebhook()
     {
         // Arrange
         var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
@@ -142,6 +142,60 @@ public class ConnectorTriggerBindingTests
         // Assert
         Assert.NotNull(listener);
         Assert.IsType<ConnectorListener>(listener);
+    }
+
+    [Fact]
+    public async Task CreateListenerAsync_ReturnsConnectorPollingListener_ForPoll()
+    {
+        // Arrange
+        var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
+            .GetParameters()[0];
+        var attribute = new ConnectorTriggerAttribute
+        {
+            DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
+            Connection = "ConnectorNamespace",
+            TriggerConfigName = "OnNewEmail",
+            MaxEvents = 16,
+        };
+        var binding = new ConnectorTriggerBinding(parameter, _configProvider, attribute);
+        var mockExecutor = new Mock<Microsoft.Azure.WebJobs.Host.Executors.ITriggeredFunctionExecutor>();
+        var descriptor = new TestFunctionDescriptor { ShortName = "TestFunction" };
+        var listenerContext = new Microsoft.Azure.WebJobs.Host.Listeners.ListenerFactoryContext(
+            descriptor,
+            mockExecutor.Object,
+            CancellationToken.None);
+
+        // Act
+        var listener = await binding.CreateListenerAsync(listenerContext);
+
+        // Assert
+        var pollingListener = Assert.IsType<ConnectorPollingListener>(listener);
+        Assert.Equal(attribute.Connection, pollingListener.Options.Connection);
+        Assert.Equal(attribute.TriggerConfigName, pollingListener.Options.TriggerConfigName);
+        Assert.Equal(attribute.MaxEvents, pollingListener.Options.MaxEvents);
+    }
+
+    [Fact]
+    public async Task CreateListenerAsync_ThrowsForUnsupportedDeliveryMode()
+    {
+        // Arrange
+        var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
+            .GetParameters()[0];
+        var attribute = new ConnectorTriggerAttribute
+        {
+            DeliveryMode = (ConnectorTriggerDeliveryMode)42,
+        };
+        var binding = new ConnectorTriggerBinding(parameter, _configProvider, attribute);
+        var mockExecutor = new Mock<Microsoft.Azure.WebJobs.Host.Executors.ITriggeredFunctionExecutor>();
+        var descriptor = new TestFunctionDescriptor { ShortName = "TestFunction" };
+        var listenerContext = new Microsoft.Azure.WebJobs.Host.Listeners.ListenerFactoryContext(
+            descriptor,
+            mockExecutor.Object,
+            CancellationToken.None);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            binding.CreateListenerAsync(listenerContext));
     }
 
     [Fact]

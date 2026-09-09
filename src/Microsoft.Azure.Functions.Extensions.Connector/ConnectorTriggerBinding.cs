@@ -47,7 +47,20 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
 
         var registration = new ConnectorFunctionRegistration(functionName, context.Executor);
 
-        return Task.FromResult<IListener>(new ConnectorListener(_configProvider, registration));
+        IListener listener = _attribute.DeliveryMode switch
+        {
+            ConnectorTriggerDeliveryMode.Webhook => new ConnectorListener(_configProvider, registration),
+            ConnectorTriggerDeliveryMode.Poll => new ConnectorPollingListener(
+                registration,
+                new ConnectorPollingOptions(
+                    _attribute.Connection,
+                    _attribute.TriggerConfigName,
+                    _attribute.MaxEvents)),
+            _ => throw new InvalidOperationException(
+                $"Unsupported Connector trigger delivery mode '{_attribute.DeliveryMode}'."),
+        };
+
+        return Task.FromResult(listener);
     }
 
     public ParameterDescriptor ToParameterDescriptor() => new TriggerParameterDescriptor

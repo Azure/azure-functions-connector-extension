@@ -7,10 +7,28 @@ using Microsoft.Azure.Functions.Worker.Extensions.Abstractions;
 namespace Microsoft.Azure.Functions.Worker.Extensions.Connector;
 
 /// <summary>
-/// Trigger attribute for Connector Namespace webhooks.
+/// Trigger attribute for Connector Namespace events.
 /// </summary>
 [InputConverter(typeof(ConnectorTriggerConverter))]
 public sealed class ConnectorTriggerAttribute : TriggerBindingAttribute
 {
+    /// <summary>
+    /// Gets or sets how Connector Namespace delivers trigger events.
+    /// </summary>
+    public ConnectorTriggerDeliveryMode DeliveryMode { get; set; } = ConnectorTriggerDeliveryMode.Webhook;
 
+    /// <summary>
+    /// Gets or sets the app setting name or prefix for the Connector Namespace connection.
+    /// </summary>
+    public string? Connection { get; set; }
+
+    /// <summary>
+    /// Gets or sets the name of the Connector Namespace trigger configuration.
+    /// </summary>
+    public string? TriggerConfigName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum number of events to receive in one Poll request.
+    /// </summary>
+    public int MaxEvents { get; set; } = 32;
 }
