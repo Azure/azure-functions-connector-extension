@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-using Xunit;
-
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
 public class ConnectorTriggerAttributeTests
@@ -17,7 +15,8 @@ public class ConnectorTriggerAttributeTests
         Assert.Equal(ConnectorTriggerDeliveryMode.Webhook, attribute.DeliveryMode);
         Assert.Null(attribute.Connection);
         Assert.Null(attribute.TriggerConfigName);
-        Assert.Equal(32, attribute.MaxEvents);
+        Assert.Equal(0, attribute.BatchSize);
+        Assert.Equal(0, attribute.Concurrency);
     }
 
     [Fact]
@@ -39,13 +38,15 @@ public class ConnectorTriggerAttributeTests
             DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
             Connection = "ConnectorNamespace",
             TriggerConfigName = "OnNewEmail",
-            MaxEvents = 16,
+            BatchSize = 4,
+            Concurrency = 8,
         };
 
         // Assert
         Assert.Equal(ConnectorTriggerDeliveryMode.Poll, attribute.DeliveryMode);
         Assert.Equal("ConnectorNamespace", attribute.Connection);
         Assert.Equal("OnNewEmail", attribute.TriggerConfigName);
-        Assert.Equal(16, attribute.MaxEvents);
+        Assert.Equal(4, attribute.BatchSize);
+        Assert.Equal(8, attribute.Concurrency);
     }
 }

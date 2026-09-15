@@ -28,7 +28,14 @@ public sealed class ConnectorTriggerAttribute : TriggerBindingAttribute
     public string? TriggerConfigName { get; set; }
 
     /// <summary>
-    /// Gets or sets the maximum number of events to receive in one Poll request.
+    /// Gets or sets the maximum number of events supplied to one function invocation.
+    /// Valid values are zero through 32. A value of zero uses the host-level default.
     /// </summary>
-    public int MaxEvents { get; set; } = 32;
+    public int BatchSize { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum number of concurrent function invocations per worker.
+    /// The value must be non-negative. A value of zero uses the host-level default.
+    /// </summary>
+    public int Concurrency { get; set; }
 }

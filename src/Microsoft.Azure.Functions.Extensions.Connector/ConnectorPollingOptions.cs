@@ -9,4 +9,61 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 internal sealed record ConnectorPollingOptions(
     string? Connection,
     string? TriggerConfigName,
-    int MaxEvents);
+    int BatchSize,
+    int Concurrency)
+{
+    internal const int MaximumBatchSize = 32;
+
+    internal static ConnectorPollingOptions Create(
+        ConnectorTriggerAttribute attribute,
+        ConnectorOptions defaults)
+    {
+        ArgumentNullException.ThrowIfNull(attribute);
+        ArgumentNullException.ThrowIfNull(defaults);
+
+        int batchSize = ResolveBatchSize(attribute.BatchSize, defaults.DefaultBatchSize);
+        int concurrency = ResolveConcurrency(attribute.Concurrency, defaults.DefaultConcurrency);
+
+        return new ConnectorPollingOptions(
+            attribute.Connection,
+            attribute.TriggerConfigName,
+            batchSize,
+            concurrency);
+    }
+
+    private static int ResolveBatchSize(int configuredValue, int defaultValue)
+    {
+        if (configuredValue < 0 || configuredValue > MaximumBatchSize)
+        {
+            throw new InvalidOperationException(
+                $"Connector trigger BatchSize must be between 0 and {MaximumBatchSize}.");
+        }
+
+        int value = configuredValue == 0 ? defaultValue : configuredValue;
+        if (value < 1 || value > MaximumBatchSize)
+        {
+            throw new InvalidOperationException(
+                $"Connector DefaultBatchSize must be between 1 and {MaximumBatchSize}.");
+        }
+
+        return value;
+    }
+
+    private static int ResolveConcurrency(int configuredValue, int defaultValue)
+    {
+        if (configuredValue < 0)
+        {
+            throw new InvalidOperationException(
+                "Connector trigger Concurrency must be zero or greater.");
+        }
+
+        int value = configuredValue == 0 ? defaultValue : configuredValue;
+        if (value < 1)
+        {
+            throw new InvalidOperationException(
+                "Connector DefaultConcurrency must be greater than zero.");
+        }
+
+        return value;
+    }
+}
