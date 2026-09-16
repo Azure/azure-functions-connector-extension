@@ -35,7 +35,7 @@ The proof of concept verified this end-to-end path:
 5. Receive messages, convert complete trigger `outputs`, execute a typed
    function, and acknowledge successful processing.
 
-The supported Connector Gateway ARM resource type is:
+The supported Connector Namespace ARM resource type is:
 
 ```text
 Microsoft.Web/connectorGateways
@@ -62,7 +62,7 @@ controls:
 ```csharp
 [ConnectorTrigger(
     DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
-    Connection = "ConnectorGateway",
+    Connection = "ConnectorNamespace",
     TriggerConfigName = "%CONNECTOR_TRIGGER_CONFIG%",
     BatchSize = 4,
     Concurrency = 8)]
@@ -103,23 +103,30 @@ Add validated immutable configuration and dependency registration.
 Configuration shape:
 
 ```text
-ConnectorGateway__resourceId=/subscriptions/.../resourceGroups/.../providers/Microsoft.Web/connectorGateways/...
-ConnectorGateway__credential=managedidentity
-ConnectorGateway__clientId=<optional-user-assigned-identity-client-id>
-ConnectorGateway__managedIdentityResourceId=<optional-resource-id>
+ConnectorNamespace__resourceId=/subscriptions/.../resourceGroups/.../providers/Microsoft.Web/connectorGateways/...
+ConnectorNamespace__credential=managedidentity
+ConnectorNamespace__clientId=<optional-user-assigned-identity-client-id>
+ConnectorNamespace__managedIdentityResourceId=<optional-resource-id>
 ```
 
 Changes:
 
 - Resolve the literal `Connection` prefix through `IConfiguration`.
-- Require `Connection`, `resourceId`, and `TriggerConfigName` only in Poll
-  mode.
+- Require `Connection`, `resourceId`, and `TriggerConfigName` only in Poll mode.
+- Document that Connector Namespace setup provisions the Poll trigger configuration and that `TriggerConfigName` identifies it; the extension does not create or convert trigger configurations.
+- Document that Poll trigger configuration is not currently available through the Connector Namespace portal or the delivery-mode options of the current `az connector-namespace trigger create` command, and must use a raw ARM PUT request such as `az rest --method put`.
 - Parse resource IDs with `Azure.Core.ResourceIdentifier`.
 - Require exactly a resource-group-scoped
   `Microsoft.Web/connectorGateways/{gateway}` resource.
 - Reject invalid subscription GUIDs, child-resource paths, full URLs, query
   strings, and fragments.
-- Add managed identity credential selection with test seams.
+- Add `Azure.Identity` 1.17.1 and `Microsoft.Extensions.Azure` 1.13.1.
+- Register the shared Microsoft Extensions Azure services.
+- Pass the full named connection section to `AzureComponentFactory.CreateTokenCredential`, matching other first-party Functions extensions.
+- Document and test the standard paths:
+  - Local development omits `credential` and uses the shared developer-identity behavior.
+  - Azure deployment uses `credential=managedidentity`.
+  - `clientId` or `managedIdentityResourceId` may select a user-assigned identity.
 - Register Poll services through `AddConnector`.
 
 Completion criteria:
@@ -162,16 +169,19 @@ Requirements:
 - Read:
 
   ```text
-  {connectorGatewayResourceId}/triggerConfigs/{escapedName}?api-version=2026-05-01-preview
+  {connectorNamespaceResourceId}/triggerConfigs/{escapedName}?api-version=2026-05-01-preview
   ```
 
 - Authenticate with the ARM scope.
+- Document that ARM GET requires the control-plane action `Microsoft.Web/connectorGateways/triggerconfigs/read`.
+- Treat built-in Reader at the Connector Namespace resource scope as the least-privilege built-in-role proposal, pending an end-to-end test with no broader inherited permissions.
 - Verify that delivery mode is Poll and the trigger is enabled.
 - Extract `receiveUri`, `acknowledgeUri`, `hasMessagesUri`, and
   `approximateQueueDepthUri`.
 - Require absolute HTTPS endpoints.
 - Cache by connection and trigger-config name.
 - Refresh only for endpoint-specific stale failures.
+- Before publishing final customer guidance, run a service-backed authorization test with no broader inherited permissions to confirm or correct the proposed ARM role.
 
 ## PR 5: Runtime and Linked-Output Clients
 
@@ -186,6 +196,8 @@ GetQueueStatusAsync(endpoints, cancellationToken)
 Requirements:
 
 - Authenticate runtime operations with the API Hub scope.
+- Require the Function identity to have an access policy on the connection referenced by the trigger config.
+- Add a service-backed authorization test for the connection access policy.
 - Preserve existing endpoint query parameters.
 - Explicitly send `maxEvents` in the range 1-32.
 - Parse `x-ms-more-messages-available`.

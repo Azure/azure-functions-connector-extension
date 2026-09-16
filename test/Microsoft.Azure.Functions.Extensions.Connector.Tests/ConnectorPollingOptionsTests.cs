@@ -10,7 +10,7 @@ public class ConnectorPollingOptionsTests
     {
         var attribute = new ConnectorTriggerAttribute
         {
-            Connection = "ConnectorGateway",
+            Connection = "ConnectorNamespace",
             TriggerConfigName = "OnNewEmail",
             BatchSize = 4,
             Concurrency = 8,
@@ -18,7 +18,7 @@ public class ConnectorPollingOptionsTests
 
         var result = ConnectorPollingOptions.Create(attribute, new ConnectorOptions());
 
-        Assert.Equal("ConnectorGateway", result.Connection);
+        Assert.Equal("ConnectorNamespace", result.Connection);
         Assert.Equal("OnNewEmail", result.TriggerConfigName);
         Assert.Equal(4, result.BatchSize);
         Assert.Equal(8, result.Concurrency);

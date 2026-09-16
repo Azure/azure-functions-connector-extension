@@ -6,6 +6,7 @@
 - [Summary](#summary)
 - [Goals](#goals)
 - [Non-goals](#non-goals)
+- [Future Enhancements](#future-enhancements)
 - [Current Extension Architecture](#current-extension-architecture)
 - [Connector Namespace Runtime Contract](#connector-namespace-runtime-contract)
   - [Receive](#receive)
@@ -15,6 +16,10 @@
   - [Authentication](#authentication)
   - [Delivery Semantics](#delivery-semantics)
 - [Proposed User Contract](#proposed-user-contract)
+  - [Connector Namespace Trigger Configuration](#connector-namespace-trigger-configuration)
+  - [Current ARM Discovery Configuration](#current-arm-discovery-configuration)
+  - [Identity and Permissions](#identity-and-permissions)
+  - [Ordering Guidance](#ordering-guidance)
   - [Payload and Message Metadata](#payload-and-message-metadata)
 - [Internal Architecture](#internal-architecture)
   - [Endpoint Resolver](#1-endpoint-resolver)
@@ -46,6 +51,7 @@
   - [PR 8: Scaling and completion](#pr-8-scaling-and-completion)
 - [Initial File-Level Work](#initial-file-level-work)
 - [Open Questions](#open-questions)
+- [Supporting Information: Provisioning a Poll Trigger Configuration](#supporting-information-provisioning-a-poll-trigger-configuration)
 - [Reference](#reference)
 
 ## Status
@@ -87,7 +93,11 @@ Keep the protocol client, listener, scaler, and ARM endpoint resolver behind sep
 - Treating Poll as a connector operation generated from Swagger.
 - Providing exactly-once delivery.
 - Configuring the service lock duration or queue TTL.
-- Constructing polling endpoint URLs from a regional hostname or gateway ID.
+- Constructing polling endpoint URLs from a regional hostname or Connector Namespace resource identifier.
+
+## Future Enhancements
+
+- Add rich Connector SDK client bindings, similar to client bindings offered by extensions such as Storage. This would let applications bind to generated Connector clients without constructing and managing those clients themselves. This is useful beyond Poll delivery but is not required for the initial Poll implementation.
 
 ## Current Extension Architecture
 
@@ -121,7 +131,7 @@ A Poll trigger configuration exposes four opaque, server-generated endpoints:
 - `hasMessagesUri`
 - `approximateQueueDepthUri`
 
-Clients must obtain these URLs from the trigger configuration response. They must not manually construct the runtime hostname or substitute a Connector Namespace resource name for the gateway ID.
+Clients must obtain these URLs from the trigger configuration response. They must not manually construct the runtime hostname or substitute a Connector Namespace resource name for the complete ARM resource identifier.
 
 ### Receive
 
@@ -147,9 +157,7 @@ Each message contains:
 
 ### Large Trigger Outputs
 
-Connector Gateway currently returns trigger outputs inline when they fit within
-the 64 KB queue message-size limit. Larger outputs are returned through an
-`outputsLink` without truncating the complete trigger outputs.
+Connector Namespace currently returns trigger outputs inline when they fit within the 64 KB queue message-size limit. Larger outputs are returned through an `outputsLink` without truncating the complete trigger outputs.
 
 A Receive response may contain both inline and linked messages:
 
@@ -320,15 +328,115 @@ public void Run(
 
 `Webhook` must remain the default.
 
+### Connector Namespace Trigger Configuration
+
+As part of setting up Poll delivery, the customer provisions a trigger configuration on the Connector Namespace with:
+
+- The connector connection and trigger operation to poll.
+- Any parameters required by that connector operation.
+- `deliveryMode` set to `Poll`.
+- The trigger configuration enabled before the Function listener starts.
+
+The Connector Namespace portal does not currently support provisioning a Poll trigger configuration, and the current `az connector-namespace trigger create` command does not expose `deliveryMode`. Until those surfaces support Poll, provisioning must use a raw ARM PUT request, such as `az rest --method put`, with `deliveryMode` set to `Poll`. Customer documentation must provide that provisioning flow separately from the Function trigger configuration.
+
+The Function's `TriggerConfigName` identifies this service-side trigger configuration. It is not the Function name, and the Functions extension does not provision it.
+
+The extension does not create, update, enable, or convert Connector Namespace trigger configurations. It reads the named trigger configuration, obtains its server-generated polling endpoints, and validates that it is enabled and uses Poll delivery. Customers must also grant the Function identity an access policy on the connection referenced by that trigger configuration.
+
+### Current ARM Discovery Configuration
+
 `Connection` is a literal app setting name or configuration prefix, consistent with other Azure Functions extensions. It is not itself resolved through `%...%` substitution. The Connector Namespace resource ID and credential configuration belong in app settings rather than function metadata:
 
 ```text
 ConnectorNamespace__resourceId=/subscriptions/{subscription}/resourceGroups/{resource-group}/providers/Microsoft.Web/connectorGateways/{gateway}
 ConnectorNamespace__credential=managedidentity
 ConnectorNamespace__clientId={optional-user-assigned-managed-identity-client-id}
+ConnectorNamespace__managedIdentityResourceId={optional-user-assigned-managed-identity-resource-id}
 ```
 
 `TriggerConfigName` remains trigger metadata because it identifies the event source within the namespace. It should support Functions name resolution so environment-specific configuration is not embedded in attributes.
+
+The full Connector Namespace resource ID is required by the current service contract because the polling endpoints are exposed by the ARM GET operation for a trigger configuration. A Connector Namespace name alone does not identify its subscription and resource group and is not sufficient to build that request. Using the full ID also permits a Function App and Connector Namespace to reside in different resource groups or subscriptions when authorization allows it.
+
+This differs from bindings such as Service Bus and Event Hubs, where the configured fully qualified namespace is itself a stable data-plane endpoint. Connector Poll currently requires an ARM bootstrap step:
+
+```text
+Connector Namespace resource ID + trigger config name
+    -> ARM GET trigger configuration
+    -> opaque polling endpoints
+```
+
+This is a requirement of the current ARM resolver, not an intrinsic part of the public Poll trigger contract. Endpoint discovery stays behind `IConnectorPollingEndpointResolver` so a future fully qualified namespace or non-ARM discovery endpoint can replace the bootstrap path without changing the trigger attribute.
+
+Before listener startup succeeds, the resolver must verify that the referenced trigger configuration:
+
+- Exists and is enabled.
+- Has `deliveryMode` set to `Poll`.
+- Returns all required polling endpoints.
+
+A Webhook trigger configuration cannot be used by a Function configured for Poll delivery.
+
+### Identity and Permissions
+
+The target Connector Namespace and the caller identity are separate:
+
+```text
+ConnectorNamespace__resourceId
+    Target Connector Namespace
+
+ConnectorNamespace__credential and identity selectors
+    Identity used to access it
+```
+
+The extension follows the standard Functions identity-based connection pattern used by Service Bus, Event Hubs, Storage, Event Grid, and Cosmos DB. It passes the complete named connection section to `AzureComponentFactory.CreateTokenCredential`.
+
+| Environment | Configuration | Behavior |
+|---|---|---|
+| Local development | Omit `credential` | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
+| Azure, system-assigned identity | `credential=managedidentity` | Use the Function App's system-assigned managed identity |
+| Azure, user-assigned identity | `credential=managedidentity` plus `clientId` or `managedIdentityResourceId` | Use the selected user-assigned managed identity |
+
+Authentication uses two token audiences:
+
+| Operation | Token audience/scope |
+|---|---|
+| Read the trigger configuration through ARM | `https://management.azure.com/.default` |
+| Receive, acknowledge, and query queue status | `https://apihub.azure.com/.default` |
+
+The request URI identifies the target Connector Namespace; the credential does not receive or infer that target resource ID. ARM and Connector Namespace authorize the caller represented by the bearer token against the requested resource.
+
+ARM endpoint discovery requires the following control-plane action:
+
+```text
+Microsoft.Web/connectorGateways/triggerconfigs/read
+```
+
+Required permissions:
+
+| Access | Requirement | Scope |
+|---|---|---|
+| ARM endpoint discovery | `Microsoft.Web/connectorGateways/triggerconfigs/read`, included in the built-in **Reader** role | Connector Namespace resource, or inherited from its resource group or subscription |
+| Poll runtime endpoints | Access policy for the Function identity | Connection referenced by the trigger config |
+
+**Reader** is an Azure built-in role definition; it is not assigned to the Function App automatically. The Function identity must receive an explicit Reader role assignment covering the target Connector Namespace unless it already inherits Reader from the target resource group or subscription. This assignment is also required when the Connector Namespace is in another subscription.
+
+The runtime access policy is configured under:
+
+```text
+Connector Namespace
+└── connections/{connectionName}
+    └── accessPolicies/{callerObjectId}
+```
+
+Obtaining a token for `https://apihub.azure.com/.default` authenticates the identity, and the connection access policy authorizes that identity to use the Poll runtime endpoints.
+
+### Ordering Guidance
+
+Connector Poll delivery does not guarantee ordering. `messageId` is stable across redelivery and is intended for deduplication; it does not define event order.
+
+Connector Namespace does not currently add a sequence number, enqueue time, partition key, or ordering key to the Poll message envelope. The position of a message in a Receive response is also not an ordering contract.
+
+Applications that require ordering must use source-specific ordering information when the connector payload provides it. They may buffer and reorder events in application code or forward events to an ordered downstream system, such as a Service Bus entity using sessions with an appropriate source event identifier as the session ID. The extension cannot infer a universal ordering key across connectors.
 
 Batch size and concurrency are separate settings:
 
@@ -439,7 +547,7 @@ public sealed class ConnectorEvent<T>
     public required T Data { get; init; }
 
     /// <summary>
-    /// Stable Connector Gateway delivery identifier when supplied by the
+    /// Stable Connector Namespace delivery identifier when supplied by the
     /// delivery protocol. Present for Poll and null for Webhook unless the
     /// service later defines an equivalent stable Webhook identifier.
     /// </summary>
@@ -478,14 +586,14 @@ public void OnNewEmail(
 This follows the Kafka and Event Hubs pattern in which metadata remains attached to each event. It is preferred over scalar `[BindingName("messageId")]` parameters or parallel `messageIds[]` arrays because those contracts become ambiguous or index-sensitive for batched invocations.
 
 `ConnectorEvent<T>` exposes only application-safe metadata. Poll always
-populates `MessageId`. Webhook populates it only if Connector Gateway later
+populates `MessageId`. Webhook populates it only if Connector Namespace later
 supplies an equivalent stable identifier with documented retry semantics;
 otherwise it is `null`. The extension must not generate a replacement
 `MessageId`, because an invocation-local identifier would not remain stable
 across delivery retries.
 
 Do not add speculative metadata such as `CorrelationId`, `DeliveryAttempt`, or
-`EnqueuedTime` until Connector Gateway supplies those fields and defines their
+`EnqueuedTime` until Connector Namespace supplies those fields and defines their
 semantics. Public metadata can be extended later without changing the payload
 type. The `lockToken` is an acknowledgement capability and must remain internal
 to the host extension.
@@ -724,6 +832,18 @@ Implement a scale monitor or target scaler using approximate queue depth:
 
 Scaling should use a separate service from the listener and poll client.
 
+The proposed target-based scaling model is pending review and enhancement by the Functions scaling owner:
+
+```text
+eventsPerInstance =
+    effectiveConcurrency * effectiveBatchSize
+
+targetWorkerCount =
+    ceil(approximateQueueDepth / eventsPerInstance)
+```
+
+`Concurrency` represents active function invocations per instance. `BatchSize` represents events per invocation, so their product is the proposed event capacity per instance. Connector Namespace `maxEvents` is not a separate public scaling setting; the listener derives it for each Receive call from the remaining local capacity as `min(32, (effectiveConcurrency - activeInvocations) * effectiveBatchSize)`. There is no separate Connector-specific target executions-per-instance setting in the current proposal. `@aloiva` should review and correct this batching, concurrency, and target-scaling model and advise whether the public properties need to change before the scaler contract is finalized.
+
 Historical PR #26 is useful only as a reference for the Functions
 scale-controller integration. Reusable extension-side patterns include:
 
@@ -769,9 +889,7 @@ Update `ConnectorWebJobsBuilderExtensions.AddConnector` to register:
 - Poll listener factory.
 - Scale provider/monitor.
 
-Prefer `DefaultAzureCredential` as the initial default, with a supported override seam for tests and specialized hosting.
-
-The exact credential selection must account for managed identity configuration, including user-assigned managed identities.
+Register `Microsoft.Extensions.Azure` services and reuse `AzureComponentFactory.CreateTokenCredential` with the named connection section. This matches other first-party Functions extensions and preserves the standard local developer-identity and Azure managed-identity behavior. The component factory also provides the test override seam.
 
 ## Error Handling
 
@@ -993,47 +1111,76 @@ Names and file boundaries are preliminary and should follow repository conventio
 ## Open Questions
 
 1. Should endpoint discovery be mandatory, or should advanced users be able to provide the four runtime URLs directly?
-2. How should user-assigned managed identity selection be configured?
-3. Which Functions scaling interface is appropriate for this extension version?
-4. What default empty-queue backoff and jitter should be used?
-5. Should a long-running execution be allowed to finish after the two-minute lock budget, or should the extension cancel it?
-6. When should endpoint cache entries be refreshed?
-7. What evidence would justify extracting the internal protocol client into a separate public package?
-8. Is `outputsLink.uri` fully authorized by its signed parameters, or must the
-   client also attach the API Hub bearer token?
-9. How long is the signed outputs link valid, and is it guaranteed to remain
-    valid for the full two-minute message lock?
-10. On redelivery, does the service return a newly signed `outputsLink` along
-    with the new `lockToken`?
-11. What is the maximum supported `outputsLink.contentSize`?
-12. Does `contentSize` represent the exact uncompressed trigger-output JSON
-    byte count or the transmitted response size?
-13. Does `GET outputsLink.uri` return the complete `outputs` object directly,
-    including `headers` and `body`, or an envelope such as
-    `{ "outputs": ... }`?
-14. Is the linked-content response always
-    `application/json; charset=utf-8`?
-15. Can linked-content responses use transport compression such as gzip or
-    Brotli?
-16. Can an outputs link return an HTTP redirect? If so, which redirect target
-    hosts are valid?
-17. Is repeating a GET against the same signed outputs link safe and
-    idempotent after a transient network failure?
-18. When retrieving complete trigger outputs through `outputsLink.uri`, does
-    the response provide an integrity value such as SHA-256, `Content-MD5`,
-    CRC, `Digest`, or an ETag? This question applies to the downloaded
-    `outputs` bytes, not to `messageId`, `lockToken`, the full Receive response,
-    or the original upstream event.
-19. When is linked content deleted: after acknowledgement, signed-link expiry,
-    or queue TTL?
-20. Does acknowledging a message immediately make its linked content
-    unavailable?
-21. Can the outputs-link authority vary, or can clients validate it against a
-    documented Azure hostname or domain?
+2. Will Connector Namespace expose a fully qualified namespace or stable non-ARM discovery endpoint so clients do not need ARM access to bootstrap polling endpoints?
+3. Does the complete ARM discovery and Poll runtime path support a Function App and Connector Namespace in different subscriptions?
+4. Which Functions scaling interface is appropriate for this extension version?
+5. How should `BatchSize` and `Concurrency` map to the documented target executions-per-instance model?
+6. What default empty-queue backoff and jitter should be used?
+7. Should a long-running execution be allowed to finish after the two-minute lock budget, or should the extension cancel it?
+8. When should endpoint cache entries be refreshed?
+9. What evidence would justify extracting the internal protocol client into a separate public package?
+10. Is `outputsLink.uri` fully authorized by its signed parameters, or must the client also attach the API Hub bearer token?
+11. How long is the signed outputs link valid, and is it guaranteed to remain valid for the full two-minute message lock?
+12. On redelivery, does the service return a newly signed `outputsLink` along with the new `lockToken`?
+13. What is the maximum supported `outputsLink.contentSize`?
+14. Does `contentSize` represent the exact uncompressed trigger-output JSON byte count or the transmitted response size?
+15. Does `GET outputsLink.uri` return the complete `outputs` object directly, including `headers` and `body`, or an envelope such as `{ "outputs": ... }`?
+16. Is the linked-content response always `application/json; charset=utf-8`?
+17. Can linked-content responses use transport compression such as gzip or Brotli?
+18. Can an outputs link return an HTTP redirect? If so, which redirect target hosts are valid?
+19. Is repeating a GET against the same signed outputs link safe and idempotent after a transient network failure?
+20. When retrieving complete trigger outputs through `outputsLink.uri`, does the response provide an integrity value such as SHA-256, `Content-MD5`, CRC, `Digest`, or an ETag? This question applies to the downloaded `outputs` bytes, not to `messageId`, `lockToken`, the full Receive response, or the original upstream event.
+21. When is linked content deleted: after acknowledgement, signed-link expiry, or queue TTL?
+22. Does acknowledging a message immediately make its linked content unavailable?
+23. Can the outputs-link authority vary, or can clients validate it against a documented Azure hostname or domain?
+
+## Supporting Information: Provisioning a Poll Trigger Configuration
+
+The Connector Namespace portal does not currently support provisioning a Poll trigger configuration, and the current `az connector-namespace trigger create` command does not expose `deliveryMode`. Until those surfaces support Poll, use a raw ARM PUT request.
+
+Create a request body such as:
+
+```json
+{
+  "properties": {
+    "connectionDetails": {
+      "connectionName": "<connection-name>",
+      "connectorName": "office365"
+    },
+    "deliveryMode": "Poll",
+    "description": "Poll delivery - When a new email arrives",
+    "operationName": "OnNewEmailV3",
+    "parameters": [
+      {
+        "name": "folderPath",
+        "value": "Inbox"
+      }
+    ],
+    "state": "Disabled",
+    "type": "NotSpecified"
+  }
+}
+```
+
+The connector operation and parameters are connector-specific. Provision the trigger configuration with:
+
+```powershell
+$connectorNamespaceResourceId = "<connector-namespace-resource-id>"
+$triggerConfigName = "<trigger-config-name>"
+
+az rest `
+    --method put `
+    --uri "$connectorNamespaceResourceId/triggerConfigs/$triggerConfigName?api-version=2026-05-01-preview" `
+    --body "@poll-trigger.json"
+```
+
+Do not include `pollingEndpoints`, `id`, `name`, `systemData`, or other server-generated response properties in the request body. Connector Namespace generates the polling endpoints.
+
+Creating the trigger configuration as `Disabled` allows the Function and its connection access policy to be configured before polling begins. Set the trigger configuration to `Enabled` before starting the Function listener. The listener fails startup when the trigger configuration is disabled.
 
 ## Reference
 
-- AzureUX-BPM PR 16351458: Connector Gateway trigger-config pull-delivery runtime design.
+- AzureUX-BPM PR 16351458: Connector Namespace trigger-config pull-delivery runtime design.
 - #26: historical Functions scale-controller integration reference only; its
   Connector Namespace contract is obsolete.
 - Connector Namespace runtime behavior verified against `receive`, `acknowledge`, `hasMessages`, and `approximateQueueDepth`.
