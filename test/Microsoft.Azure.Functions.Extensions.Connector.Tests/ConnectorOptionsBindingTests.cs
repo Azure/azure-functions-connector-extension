@@ -80,6 +80,18 @@ public class ConnectorOptionsBindingTests
         Assert.Contains("\"DefaultConcurrency\": 8", formatted);
     }
 
+    [Fact]
+    public void AddConnector_RegistersAzureHttpAndPollingFactories()
+    {
+        using IHost host = BuildHost(new Dictionary<string, string?>());
+
+        Assert.NotNull(host.Services.GetRequiredService<Microsoft.Extensions.Azure.AzureComponentFactory>());
+        Assert.NotNull(host.Services.GetRequiredService<IHttpClientFactory>());
+        Assert.NotNull(host.Services.GetRequiredService<IConnectorPollingConnectionFactory>());
+        Assert.NotNull(host.Services.GetRequiredService<IConnectorPollingEndpointResolverFactory>());
+        Assert.NotNull(host.Services.GetRequiredService<IConnectorQueueDepthClientFactory>());
+    }
+
     private static IHost BuildHost(
         IDictionary<string, string?> settings,
         Action<ConnectorOptions>? configure = null)

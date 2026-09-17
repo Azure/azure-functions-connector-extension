@@ -827,22 +827,19 @@ Implement a scale monitor or target scaler using approximate queue depth:
 - Resolve the same trigger endpoints.
 - Query approximate depth with bounded retries.
 - Return no-work/scale-in decisions conservatively.
-- Scale out based on configurable messages-per-worker targets.
+- Scale out based on effective invocation concurrency.
 - Avoid equating approximate depth with immediately receivable messages.
 
 Scaling should use a separate service from the listener and poll client.
 
-The proposed target-based scaling model is pending review and enhancement by the Functions scaling owner:
+Target scaling uses invocation concurrency only:
 
 ```text
-eventsPerInstance =
-    effectiveConcurrency * effectiveBatchSize
-
 targetWorkerCount =
-    ceil(approximateQueueDepth / eventsPerInstance)
+    ceil(approximateQueueDepth / effectiveConcurrency)
 ```
 
-`Concurrency` represents active function invocations per instance. `BatchSize` represents events per invocation, so their product is the proposed event capacity per instance. Connector Namespace `maxEvents` is not a separate public scaling setting; the listener derives it for each Receive call from the remaining local capacity as `min(32, (effectiveConcurrency - activeInvocations) * effectiveBatchSize)`. There is no separate Connector-specific target executions-per-instance setting in the current proposal. `@aloiva` should review and correct this batching, concurrency, and target-scaling model and advise whether the public properties need to change before the scaler contract is finalized.
+`Concurrency` is the effective number of active function invocations per worker and therefore the target-scaling capacity. `BatchSize` controls listener invocation grouping; it does not reduce the worker target. Keeping it out of target arithmetic avoids under-scaling for partially filled batches or when approximate depth does not map to immediately receivable full batches. Connector Namespace `maxEvents` remains the listener calculation `min(32, (effectiveConcurrency - activeInvocations) * effectiveBatchSize)`.
 
 Historical PR #26 is useful only as a reference for the Functions
 scale-controller integration. Reusable extension-side patterns include:
@@ -854,10 +851,10 @@ scale-controller integration. Reusable extension-side patterns include:
 - Reading trigger metadata and host-level `ConnectorOptions` inside the scaler
   provider.
 - Calculating target workers from approximate pending events and effective
-  per-worker capacity:
+  invocation concurrency:
 
   ```text
-  ceil(pendingEvents / (effectiveConcurrency * effectiveBatchSize))
+  ceil(pendingEvents / effectiveConcurrency)
   ```
 
 - Scale Monitor validation through trigger registration and scale-status
@@ -990,7 +987,7 @@ Record without payload or token content:
 
 - Zero/non-zero depth decisions.
 - Approximate values and transient failures.
-- Messages-per-worker calculations.
+- Effective-concurrency target calculations and BatchSize independence.
 - Endpoint/auth failure behavior.
 
 ### End-to-end test
@@ -1114,7 +1111,7 @@ Names and file boundaries are preliminary and should follow repository conventio
 2. Will Connector Namespace expose a fully qualified namespace or stable non-ARM discovery endpoint so clients do not need ARM access to bootstrap polling endpoints?
 3. Does the complete ARM discovery and Poll runtime path support a Function App and Connector Namespace in different subscriptions?
 4. Which Functions scaling interface is appropriate for this extension version?
-5. How should `BatchSize` and `Concurrency` map to the documented target executions-per-instance model?
+5. Should future service concurrency signals augment the current `ceil(depth / effectiveConcurrency)` target model?
 6. What default empty-queue backoff and jitter should be used?
 7. Should a long-running execution be allowed to finish after the two-minute lock budget, or should the extension cancel it?
 8. When should endpoint cache entries be refreshed?

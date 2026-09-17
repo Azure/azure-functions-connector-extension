@@ -318,10 +318,10 @@ Requirements:
   `approximateQueueDepthUri`.
 - Scale from approximate queue depth without treating it as an exact count or
   a prerequisite for Receive.
-- Calculate target workers from effective per-worker capacity:
+- Calculate target workers from effective invocation concurrency. `BatchSize` is listener invocation grouping and must not affect the target:
 
   ```text
-  ceil(pendingEvents / (effectiveConcurrency * effectiveBatchSize))
+  ceil(pendingEvents / effectiveConcurrency)
   ```
 
 - Return conservative decisions when queue status is unavailable.
