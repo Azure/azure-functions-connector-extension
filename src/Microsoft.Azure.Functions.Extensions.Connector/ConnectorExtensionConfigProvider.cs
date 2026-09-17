@@ -3,7 +3,6 @@
 
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Web;
 using Microsoft.Azure.WebJobs;
@@ -11,6 +10,7 @@ using Microsoft.Azure.WebJobs.Description;
 using Microsoft.Azure.WebJobs.Host.Config;
 using Microsoft.Azure.WebJobs.Host.Executors;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
@@ -26,17 +26,20 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
     private readonly ILogger<ConnectorExtensionConfigProvider> _logger;
     private readonly ILogger _consoleLogger;
     private readonly ConnectorHttpRequestProcessor _httpRequestProcessor;
+    private readonly ConnectorOptions _options;
     private readonly ConcurrentDictionary<string, ConnectorFunctionRegistration> _functions = new(StringComparer.OrdinalIgnoreCase);
 
     public ConnectorExtensionConfigProvider(
         ConnectorHttpRequestProcessor httpRequestProcessor,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IOptions<ConnectorOptions> options)
     {
         _httpRequestProcessor = httpRequestProcessor ?? throw new ArgumentNullException(nameof(httpRequestProcessor));
         _logger = loggerFactory?.CreateLogger<ConnectorExtensionConfigProvider>()
             ?? throw new ArgumentNullException(nameof(loggerFactory));
         _consoleLogger = loggerFactory?.CreateLogger("Host.Function.Console")
             ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
     internal void RegisterFunction(ConnectorFunctionRegistration registration)
@@ -58,7 +61,7 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
 
         context
             .AddBindingRule<ConnectorTriggerAttribute>()
-            .BindToTrigger(new ConnectorTriggerBindingProvider(this));
+            .BindToTrigger(new ConnectorTriggerBindingProvider(this, _options));
     }
 
     public async Task<HttpResponseMessage> ConvertAsync(HttpRequestMessage input, CancellationToken cancellationToken)

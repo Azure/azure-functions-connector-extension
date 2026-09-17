@@ -2,10 +2,9 @@
 // Licensed under the MIT License.
 
 using Microsoft.Azure.WebJobs.Host.Executors;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
-using Xunit;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
@@ -22,7 +21,10 @@ public class ConnectorListenerTests
         var loggerFactory = NullLoggerFactory.Instance;
         var httpRequestProcessor = new ConnectorHttpRequestProcessor(
             NullLogger<ConnectorHttpRequestProcessor>.Instance);
-        _configProvider = new ConnectorExtensionConfigProvider(httpRequestProcessor, loggerFactory);
+        _configProvider = new ConnectorExtensionConfigProvider(
+            httpRequestProcessor,
+            loggerFactory,
+            Options.Create(new ConnectorOptions()));
     }
 
     [Fact]

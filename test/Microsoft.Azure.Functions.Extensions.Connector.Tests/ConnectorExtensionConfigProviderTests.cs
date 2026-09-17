@@ -2,12 +2,11 @@
 // Licensed under the MIT License.
 
 using System.Net;
-using System.Net.Http;
 using System.Text;
 using Microsoft.Azure.WebJobs.Host.Executors;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
-using Xunit;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
@@ -21,7 +20,10 @@ public class ConnectorExtensionConfigProviderTests
         var loggerFactory = NullLoggerFactory.Instance;
         _httpRequestProcessor = new ConnectorHttpRequestProcessor(
             NullLogger<ConnectorHttpRequestProcessor>.Instance);
-        _configProvider = new ConnectorExtensionConfigProvider(_httpRequestProcessor, loggerFactory);
+        _configProvider = new ConnectorExtensionConfigProvider(
+            _httpRequestProcessor,
+            loggerFactory,
+            Options.Create(new ConnectorOptions()));
     }
 
     [Fact]
@@ -29,14 +31,30 @@ public class ConnectorExtensionConfigProviderTests
     {
         var loggerFactory = NullLoggerFactory.Instance;
         Assert.Throws<ArgumentNullException>(() =>
-            new ConnectorExtensionConfigProvider(null!, loggerFactory));
+            new ConnectorExtensionConfigProvider(
+                null!,
+                loggerFactory,
+                Options.Create(new ConnectorOptions())));
     }
 
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenLoggerFactoryIsNull()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new ConnectorExtensionConfigProvider(_httpRequestProcessor, null!));
+            new ConnectorExtensionConfigProvider(
+                _httpRequestProcessor,
+                null!,
+                Options.Create(new ConnectorOptions())));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentNullException_WhenOptionsIsNull()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new ConnectorExtensionConfigProvider(
+                _httpRequestProcessor,
+                NullLoggerFactory.Instance,
+                null!));
     }
 
     [Fact]

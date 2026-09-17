@@ -17,15 +17,18 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
     private readonly ParameterInfo _parameter;
     private readonly ConnectorExtensionConfigProvider _configProvider;
     private readonly ConnectorTriggerAttribute _attribute;
+    private readonly ConnectorOptions _options;
 
     public ConnectorTriggerBinding(
         ParameterInfo parameter,
         ConnectorExtensionConfigProvider configProvider,
-        ConnectorTriggerAttribute attribute)
+        ConnectorTriggerAttribute attribute,
+        ConnectorOptions options)
     {
         _parameter = parameter ?? throw new ArgumentNullException(nameof(parameter));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _attribute = attribute ?? throw new ArgumentNullException(nameof(attribute));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
     public Type TriggerValueType => typeof(string);
@@ -47,7 +50,17 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
 
         var registration = new ConnectorFunctionRegistration(functionName, context.Executor);
 
-        return Task.FromResult<IListener>(new ConnectorListener(_configProvider, registration));
+        IListener listener = _attribute.DeliveryMode switch
+        {
+            ConnectorTriggerDeliveryMode.Webhook => new ConnectorListener(_configProvider, registration),
+            ConnectorTriggerDeliveryMode.Poll => new ConnectorPollingListener(
+                registration,
+                ConnectorPollingOptions.Create(_attribute, _options)),
+            _ => throw new InvalidOperationException(
+                $"Unsupported Connector trigger delivery mode '{_attribute.DeliveryMode}'."),
+        };
+
+        return Task.FromResult(listener);
     }
 
     public ParameterDescriptor ToParameterDescriptor() => new TriggerParameterDescriptor

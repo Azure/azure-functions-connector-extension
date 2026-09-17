@@ -1,10 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-using System.Reflection;
 using Microsoft.Azure.WebJobs.Host.Triggers;
 using Microsoft.Extensions.Logging.Abstractions;
-using Xunit;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
@@ -19,15 +18,25 @@ public class ConnectorTriggerBindingProviderTests
         var loggerFactory = NullLoggerFactory.Instance;
         var httpRequestProcessor = new ConnectorHttpRequestProcessor(
             NullLogger<ConnectorHttpRequestProcessor>.Instance);
-        _configProvider = new ConnectorExtensionConfigProvider(httpRequestProcessor, loggerFactory);
-        _provider = new ConnectorTriggerBindingProvider(_configProvider);
+        _configProvider = new ConnectorExtensionConfigProvider(
+            httpRequestProcessor,
+            loggerFactory,
+            Options.Create(new ConnectorOptions()));
+        _provider = new ConnectorTriggerBindingProvider(_configProvider, new ConnectorOptions());
     }
 
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenConfigProviderIsNull()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new ConnectorTriggerBindingProvider(null!));
+            new ConnectorTriggerBindingProvider(null!, new ConnectorOptions()));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentNullException_WhenOptionsIsNull()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new ConnectorTriggerBindingProvider(_configProvider, null!));
     }
 
     [Fact]
