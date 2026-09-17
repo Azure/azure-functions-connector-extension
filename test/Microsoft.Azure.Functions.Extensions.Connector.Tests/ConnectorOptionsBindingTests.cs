@@ -19,7 +19,7 @@ public class ConnectorOptionsBindingTests
         ConnectorOptions options =
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
-        Assert.Equal(1, options.DefaultBatchSize);
+        Assert.Equal(1, options.DefaultMaxBatchSize);
         Assert.Equal(16, options.DefaultConcurrency);
     }
 
@@ -28,7 +28,7 @@ public class ConnectorOptionsBindingTests
     {
         var settings = new Dictionary<string, string?>
         {
-            ["AzureWebJobs:extensions:connector:defaultBatchSize"] = "4",
+            ["AzureWebJobs:extensions:connector:defaultMaxBatchSize"] = "4",
             ["AzureWebJobs:extensions:connector:defaultConcurrency"] = "8",
         };
 
@@ -37,7 +37,7 @@ public class ConnectorOptionsBindingTests
         ConnectorOptions options =
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
-        Assert.Equal(4, options.DefaultBatchSize);
+        Assert.Equal(4, options.DefaultMaxBatchSize);
         Assert.Equal(8, options.DefaultConcurrency);
     }
 
@@ -46,7 +46,7 @@ public class ConnectorOptionsBindingTests
     {
         var settings = new Dictionary<string, string?>
         {
-            ["AzureWebJobs:extensions:connector:defaultBatchSize"] = "4",
+            ["AzureWebJobs:extensions:connector:defaultMaxBatchSize"] = "4",
             ["AzureWebJobs:extensions:connector:defaultConcurrency"] = "8",
         };
 
@@ -54,14 +54,14 @@ public class ConnectorOptionsBindingTests
             settings,
             options =>
             {
-                options.DefaultBatchSize = 2;
+                options.DefaultMaxBatchSize = 2;
                 options.DefaultConcurrency = 6;
             });
 
         ConnectorOptions options =
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
-        Assert.Equal(2, options.DefaultBatchSize);
+        Assert.Equal(2, options.DefaultMaxBatchSize);
         Assert.Equal(6, options.DefaultConcurrency);
     }
 
@@ -70,13 +70,13 @@ public class ConnectorOptionsBindingTests
     {
         var options = new ConnectorOptions
         {
-            DefaultBatchSize = 4,
+            DefaultMaxBatchSize = 4,
             DefaultConcurrency = 8,
         };
 
         string formatted = ((IOptionsFormatter)options).Format();
 
-        Assert.Contains("\"DefaultBatchSize\": 4", formatted);
+        Assert.Contains("\"DefaultMaxBatchSize\": 4", formatted);
         Assert.Contains("\"DefaultConcurrency\": 8", formatted);
     }
 

@@ -31,12 +31,12 @@ public sealed class ConnectorTriggerAttribute : Attribute
     /// <summary>
     /// Gets or sets the maximum number of events supplied to one function invocation.
     /// Valid values are zero through 32. A value of zero uses
-    /// <see cref="ConnectorOptions.DefaultBatchSize"/>.
+    /// <see cref="ConnectorOptions.DefaultMaxBatchSize"/>.
     /// </summary>
-    public int BatchSize { get; set; }
+    public int MaxBatchSize { get; set; }
 
     /// <summary>
-    /// Gets or sets the maximum number of concurrent function invocations per worker.
+    /// Gets or sets the maximum number of pending events per worker instance.
     /// The value must be non-negative. A value of zero uses
     /// <see cref="ConnectorOptions.DefaultConcurrency"/>.
     /// </summary>

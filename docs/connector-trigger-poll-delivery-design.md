@@ -115,10 +115,7 @@ The trigger-contract seam has been implemented:
 - `ConnectorPollingListener.StartAsync` intentionally throws
   `NotSupportedException` until the production message pump is implemented.
 
-The baseline seam used an earlier `MaxEvents` property. PR 1 replaces it with
-the public `BatchSize` and `Concurrency` properties described below. The
-service `maxEvents` value remains an internal, capacity-based Receive
-parameter.
+The baseline seam used an earlier `MaxEvents` property. PR 1 replaces it with the public `MaxBatchSize` and `Concurrency` properties described below. `MaxBatchSize` maps to the service `maxEvents` parameter, while `Concurrency` remains independent and defines the maximum pending events per instance for target-based scaling.
 
 Poll delivery must run in the host extension, not in a language worker. This allows the same acquisition behavior to support .NET, Python, Node.js, and other extension-bundle consumers.
 
@@ -318,7 +315,7 @@ public void Run(
         DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
         Connection = "ConnectorNamespace",
         TriggerConfigName = "%CONNECTOR_TRIGGER_CONFIG_NAME%",
-        BatchSize = 4,
+        MaxBatchSize = 4,
         Concurrency = 8)]
     Office365OnNewEmailTriggerPayload[] payloads)
 {
@@ -438,22 +435,22 @@ Connector Namespace does not currently add a sequence number, enqueue time, part
 
 Applications that require ordering must use source-specific ordering information when the connector payload provides it. They may buffer and reorder events in application code or forward events to an ordered downstream system, such as a Service Bus entity using sessions with an appropriate source event identifier as the session ID. The extension cannot infer a universal ordering key across connectors.
 
-Batch size and concurrency are separate settings:
+Max batch size and concurrency are separate settings:
 
-- `BatchSize` is the number of Connector events supplied to one function invocation.
-- `Concurrency` is the maximum number of function invocations active on one worker.
+- `MaxBatchSize` is the maximum number of Connector events requested in one Receive operation and supplied to one function invocation.
+- `Concurrency` is the maximum number of pending Connector events allowed on one worker instance.
 - A value of `0` on either attribute property means to use the host-level default.
-- `BatchSize = 1` preserves one event per function invocation.
-- `BatchSize` must be between `0` and `32`; the effective value must be
+- `MaxBatchSize = 1` preserves one event per function invocation.
+- `MaxBatchSize` must be between `0` and `32`; the effective value must be
   between `1` and `32`.
 - `Concurrency` must be zero or greater; the effective value must be greater
   than zero.
-- Maximum in-flight messages are approximately `BatchSize * Concurrency`.
+- `MaxBatchSize` controls batching only and does not participate in the target-based scaling calculation.
 
-The effective batch size must be compatible with the declared function
+The effective max batch size must be compatible with the declared function
 parameter:
 
-| Function parameter | Allowed effective `BatchSize` |
+| Function parameter | Allowed effective `MaxBatchSize` |
 |---|---:|
 | `T` | Exactly `1` |
 | `ConnectorEvent<T>` | Exactly `1` |
@@ -461,19 +458,19 @@ parameter:
 | `ConnectorEvent<T>[]` | `1` or greater |
 
 Validation uses the effective value after applying host-level defaults. A
-scalar parameter with `BatchSize = 0` is therefore invalid when
-`DefaultBatchSize` is greater than `1`.
+scalar parameter with `MaxBatchSize = 0` is therefore invalid when
+`DefaultMaxBatchSize` is greater than `1`.
 
 The language binding or worker converter that can see the real target type
 must reject an incompatible scalar binding during function indexing or
 listener startup with an actionable error. Host-side PR 1 cannot reliably
 infer the target shape for every language worker, so this validation belongs
-to PR 6. The extension must not silently ignore `BatchSize`, truncate received
+to PR 6. The extension must not silently ignore `MaxBatchSize`, truncate received
 events, or automatically change the function parameter shape.
 
-`Concurrency` is independent of parameter shape. For example, a scalar
-parameter with `BatchSize = 1` and `Concurrency = 8` is valid and permits up to
-eight concurrent single-event invocations.
+`Concurrency` is independent of parameter shape. For example, a scalar parameter with `MaxBatchSize = 1` and `Concurrency = 8` is valid and permits up to eight pending single-event invocations. With a batched parameter, the number of invocations varies with the number of events returned in each batch while the total pending events remain bounded by `Concurrency`.
+
+An event counts as pending from the time Receive leases it until the listener acknowledges it or finishes handling a failed attempt without acknowledgement. This includes linked-output hydration, function execution, and acknowledgement processing.
 
 Host-level defaults:
 
@@ -482,38 +479,38 @@ public sealed class ConnectorOptions
 {
     public int DefaultConcurrency { get; set; } = 16;
 
-    public int DefaultBatchSize { get; set; } = 1;
+    public int DefaultMaxBatchSize { get; set; } = 1;
 }
 ```
 
-The service `maxEvents` query parameter is an internal Receive batch size, not a public invocation-batch setting. The listener calculates it from available invocation capacity and caps it at the service maximum of 32:
+The service `maxEvents` query parameter maps to the effective `MaxBatchSize`. For each Receive call, the listener also caps it by the remaining event capacity on the instance:
 
 ```csharp
-int availableInvocationSlots =
-    effectiveConcurrency - activeInvocationCount;
+int availableEventCapacity =
+    effectiveConcurrency - pendingEventCount;
 
-int availableMessageCapacity =
-    availableInvocationSlots * effectiveBatchSize;
-
-int maxEvents = Math.Min(32, availableMessageCapacity);
+int maxEvents = Math.Min(
+    32,
+    Math.Min(effectiveMaxBatchSize, availableEventCapacity));
 ```
 
 The listener issues Receive only when `maxEvents > 0` and always sends the calculated value explicitly. It must not rely on the service default of 32 because that could lease more messages than the worker can immediately process.
 
 Examples:
 
-| Batch size | Concurrency | Active invocations | `maxEvents` |
+| Max batch size | Concurrency | Pending events | `maxEvents` |
 | ---: | ---: | ---: | ---: |
-| 1 | 16 | 0 | 16 |
-| 1 | 16 | 10 | 6 |
-| 4 | 8 | 0 | 32 |
-| 4 | 8 | 3 | 20 |
-| 8 | 2 | 0 | 16 |
-| 32 | 16 | 0 | 32 |
+| 1 | 16 | 0 | 1 |
+| 1 | 16 | 10 | 1 |
+| 4 | 8 | 0 | 4 |
+| 4 | 8 | 3 | 4 |
+| 8 | 2 | 0 | 2 |
+| 32 | 16 | 0 | 16 |
+| 4 | 8 | 8 | 0 |
 
-The initial implementation does not prefetch beyond active execution capacity. Every received message immediately starts its fixed two-minute lock budget, so leasing messages into a local waiting buffer increases lock expiration and duplicate-delivery risk.
+The initial implementation does not prefetch beyond remaining event capacity. Every received message immediately starts its fixed two-minute lock budget, so leasing messages into a local waiting buffer increases lock expiration and duplicate-delivery risk.
 
-When all concurrency slots are occupied, the listener does not issue Receive. Even when `x-ms-more-messages-available` is true, immediate draining occurs only when invocation capacity is available.
+When the pending-event limit is reached, the listener does not issue Receive. Even when `x-ms-more-messages-available` is true, immediate draining occurs only when event capacity is available.
 
 ### Payload and Message Metadata
 
@@ -523,7 +520,7 @@ Payload-only, one event per invocation:
 
 ```csharp
 public void OnNewEmail(
-    [ConnectorTrigger(BatchSize = 1)]
+    [ConnectorTrigger(MaxBatchSize = 1)]
     Office365OnNewEmailTriggerPayload email)
 {
 }
@@ -533,7 +530,7 @@ Payload-only batch:
 
 ```csharp
 public void OnNewEmail(
-    [ConnectorTrigger(BatchSize = 8)]
+    [ConnectorTrigger(MaxBatchSize = 8)]
     Office365OnNewEmailTriggerPayload[] emails)
 {
 }
@@ -559,7 +556,7 @@ Metadata-rich single event:
 
 ```csharp
 public void OnNewEmail(
-    [ConnectorTrigger(BatchSize = 1)]
+    [ConnectorTrigger(MaxBatchSize = 1)]
     ConnectorEvent<Office365OnNewEmailTriggerPayload> email)
 {
     if (email.MessageId is { } deduplicationId)
@@ -573,7 +570,7 @@ Metadata-rich batch:
 
 ```csharp
 public void OnNewEmail(
-    [ConnectorTrigger(BatchSize = 8)]
+    [ConnectorTrigger(MaxBatchSize = 8)]
     ConnectorEvent<Office365OnNewEmailTriggerPayload>[] emails)
 {
     foreach (ConnectorEvent<Office365OnNewEmailTriggerPayload> email in emails)
@@ -736,15 +733,14 @@ Do not turn the current class into a large mode-switching listener.
 `ConnectorPollingListener` owns the message pump:
 
 1. Resolve polling endpoints.
-2. Determine available invocation capacity from effective `BatchSize` and `Concurrency`.
-3. Call Receive with `maxEvents` capped at 32 and no greater than current processing capacity.
+2. Determine remaining event capacity from effective `Concurrency` and the current pending-event count.
+3. Call Receive with `maxEvents` capped by 32, effective `MaxBatchSize`, and the remaining event capacity.
 4. If Receive is empty, apply cancellation-aware backoff with jitter.
 5. Hydrate linked outputs using bounded content-download concurrency.
 6. Exclude messages whose linked outputs could not be retrieved or validated;
    leave them unacknowledged.
-7. Partition successfully hydrated messages into invocation batches of at most
-   `BatchSize`.
-8. Dispatch no more than `Concurrency` function invocations at once.
+7. Dispatch the successfully hydrated Receive batch as one invocation.
+8. Continue receiving only while total pending events remain below `Concurrency`.
 9. For each invocation batch, pass normalized `outputs` values and safe
     metadata through the binding/conversion path.
 10. Retain each message's `messageId` and `lockToken` internally.
@@ -753,11 +749,11 @@ Do not turn the current class into a large mode-switching listener.
 12. If an invocation fails or is cancelled, leave every message in that
     invocation batch unacknowledged.
 13. Batch-acknowledge successful message locks in requests of at most 32 items.
-14. If `x-ms-more-messages-available` is true and invocation capacity is
+14. If `x-ms-more-messages-available` is true and event capacity is
     available, immediately drain another Receive batch.
 15. Otherwise continue using the normal polling cadence.
 
-Concurrency counts function invocations, not individual messages. For example, `BatchSize = 4` and `Concurrency = 8` permits up to eight active invocations and approximately 32 in-flight messages.
+Concurrency counts pending events, not function invocations. For example, `MaxBatchSize = 4` and `Concurrency = 8` permits up to eight pending events on the instance. That may be two full four-event invocations or more partially filled invocations.
 
 Acknowledgement is initially all-or-none per function invocation. Partial success within one invocation requires a future explicit per-item result contract; the extension must not infer which messages completed before a function failure.
 
@@ -832,17 +828,14 @@ Implement a scale monitor or target scaler using approximate queue depth:
 
 Scaling should use a separate service from the listener and poll client.
 
-The proposed target-based scaling model is pending review and enhancement by the Functions scaling owner:
+Target-based scaling uses `Concurrency` as the maximum pending events per instance:
 
 ```text
-eventsPerInstance =
-    effectiveConcurrency * effectiveBatchSize
-
 targetWorkerCount =
-    ceil(approximateQueueDepth / eventsPerInstance)
+    ceil(approximateQueueDepth / effectiveConcurrency)
 ```
 
-`Concurrency` represents active function invocations per instance. `BatchSize` represents events per invocation, so their product is the proposed event capacity per instance. Connector Namespace `maxEvents` is not a separate public scaling setting; the listener derives it for each Receive call from the remaining local capacity as `min(32, (effectiveConcurrency - activeInvocations) * effectiveBatchSize)`. There is no separate Connector-specific target executions-per-instance setting in the current proposal. `@aloiva` should review and correct this batching, concurrency, and target-scaling model and advise whether the public properties need to change before the scaler contract is finalized.
+`MaxBatchSize` is independent of scaling. It controls only the maximum events requested and delivered in one invocation. The listener maps it to Connector Namespace `maxEvents`, capped by the remaining event capacity on the instance. Because a Receive call can return fewer than `MaxBatchSize`, invocation count is not a stable measure of per-instance capacity.
 
 Historical PR #26 is useful only as a reference for the Functions
 scale-controller integration. Reusable extension-side patterns include:
@@ -853,11 +846,10 @@ scale-controller integration. Reusable extension-side patterns include:
   signature.
 - Reading trigger metadata and host-level `ConnectorOptions` inside the scaler
   provider.
-- Calculating target workers from approximate pending events and effective
-  per-worker capacity:
+- Calculating target workers from approximate pending events and effective per-worker event capacity:
 
   ```text
-  ceil(pendingEvents / (effectiveConcurrency * effectiveBatchSize))
+  ceil(pendingEvents / effectiveConcurrency)
   ```
 
 - Scale Monitor validation through trigger registration and scale-status
@@ -925,14 +917,14 @@ Record without payload or token content:
 
 - Webhook remains the default.
 - Poll properties flow from worker metadata into the host attribute.
-- Attribute `BatchSize` and `Concurrency` overrides flow correctly.
+- Attribute `MaxBatchSize` and `Concurrency` overrides flow correctly.
 - Zero-valued overrides use host-level defaults.
-- Batch size and concurrency ranges are validated.
-- Scalar `T` and `ConnectorEvent<T>` reject an effective `BatchSize` greater
+- Max batch size and concurrency ranges are validated.
+- Scalar `T` and `ConnectorEvent<T>` reject an effective `MaxBatchSize` greater
   than `1`.
-- Scalar parameters using `BatchSize = 0` are validated against
-  `DefaultBatchSize`.
-- Array parameters accept an effective `BatchSize` of `1` or greater.
+- Scalar parameters using `MaxBatchSize = 0` are validated against
+  `DefaultMaxBatchSize`.
+- Array parameters accept an effective `MaxBatchSize` of `1` or greater.
 - `Concurrency` remains valid and independent for scalar and array bindings.
 - Invalid combinations fail clearly.
 - Binding chooses the correct listener.
@@ -968,9 +960,9 @@ Record without payload or token content:
 ### Listener tests
 
 - Empty queue backoff.
-- Receive size is calculated from available batch/concurrency capacity and capped at 32.
-- Received messages are partitioned by effective `BatchSize`.
-- Active function invocations never exceed effective `Concurrency`.
+- Receive size is capped by effective `MaxBatchSize`, remaining event capacity, and 32.
+- Each invocation receives no more than effective `MaxBatchSize`.
+- Pending events never exceed effective `Concurrency`.
 - A successful invocation acknowledges every message in that invocation batch.
 - A failed invocation acknowledges no messages from that invocation batch.
 - Concurrent invocation results remain associated with the correct message locks.
@@ -1013,9 +1005,9 @@ preserve Webhook behavior and pass its focused build and tests.
 
 ### PR 1: Trigger contract
 
-- Replace public `MaxEvents` with `BatchSize` and `Concurrency` in both
+- Replace public `MaxEvents` with `MaxBatchSize` and `Concurrency` in both
   attributes.
-- Add host-level defaults of `DefaultBatchSize = 1` and
+- Add host-level defaults of `DefaultMaxBatchSize = 1` and
   `DefaultConcurrency = 16`.
 - Preserve `Webhook` as the default and keep host/worker metadata synchronized.
 - Update contract and listener-selection tests.
@@ -1114,25 +1106,24 @@ Names and file boundaries are preliminary and should follow repository conventio
 2. Will Connector Namespace expose a fully qualified namespace or stable non-ARM discovery endpoint so clients do not need ARM access to bootstrap polling endpoints?
 3. Does the complete ARM discovery and Poll runtime path support a Function App and Connector Namespace in different subscriptions?
 4. Which Functions scaling interface is appropriate for this extension version?
-5. How should `BatchSize` and `Concurrency` map to the documented target executions-per-instance model?
-6. What default empty-queue backoff and jitter should be used?
-7. Should a long-running execution be allowed to finish after the two-minute lock budget, or should the extension cancel it?
-8. When should endpoint cache entries be refreshed?
-9. What evidence would justify extracting the internal protocol client into a separate public package?
-10. Is `outputsLink.uri` fully authorized by its signed parameters, or must the client also attach the API Hub bearer token?
-11. How long is the signed outputs link valid, and is it guaranteed to remain valid for the full two-minute message lock?
-12. On redelivery, does the service return a newly signed `outputsLink` along with the new `lockToken`?
-13. What is the maximum supported `outputsLink.contentSize`?
-14. Does `contentSize` represent the exact uncompressed trigger-output JSON byte count or the transmitted response size?
-15. Does `GET outputsLink.uri` return the complete `outputs` object directly, including `headers` and `body`, or an envelope such as `{ "outputs": ... }`?
-16. Is the linked-content response always `application/json; charset=utf-8`?
-17. Can linked-content responses use transport compression such as gzip or Brotli?
-18. Can an outputs link return an HTTP redirect? If so, which redirect target hosts are valid?
-19. Is repeating a GET against the same signed outputs link safe and idempotent after a transient network failure?
-20. When retrieving complete trigger outputs through `outputsLink.uri`, does the response provide an integrity value such as SHA-256, `Content-MD5`, CRC, `Digest`, or an ETag? This question applies to the downloaded `outputs` bytes, not to `messageId`, `lockToken`, the full Receive response, or the original upstream event.
-21. When is linked content deleted: after acknowledgement, signed-link expiry, or queue TTL?
-22. Does acknowledging a message immediately make its linked content unavailable?
-23. Can the outputs-link authority vary, or can clients validate it against a documented Azure hostname or domain?
+5. What default empty-queue backoff and jitter should be used?
+6. Should a long-running execution be allowed to finish after the two-minute lock budget, or should the extension cancel it?
+7. When should endpoint cache entries be refreshed?
+8. What evidence would justify extracting the internal protocol client into a separate public package?
+9. Is `outputsLink.uri` fully authorized by its signed parameters, or must the client also attach the API Hub bearer token?
+10. How long is the signed outputs link valid, and is it guaranteed to remain valid for the full two-minute message lock?
+11. On redelivery, does the service return a newly signed `outputsLink` along with the new `lockToken`?
+12. What is the maximum supported `outputsLink.contentSize`?
+13. Does `contentSize` represent the exact uncompressed trigger-output JSON byte count or the transmitted response size?
+14. Does `GET outputsLink.uri` return the complete `outputs` object directly, including `headers` and `body`, or an envelope such as `{ "outputs": ... }`?
+15. Is the linked-content response always `application/json; charset=utf-8`?
+16. Can linked-content responses use transport compression such as gzip or Brotli?
+17. Can an outputs link return an HTTP redirect? If so, which redirect target hosts are valid?
+18. Is repeating a GET against the same signed outputs link safe and idempotent after a transient network failure?
+19. When retrieving complete trigger outputs through `outputsLink.uri`, does the response provide an integrity value such as SHA-256, `Content-MD5`, CRC, `Digest`, or an ETag? This question applies to the downloaded `outputs` bytes, not to `messageId`, `lockToken`, the full Receive response, or the original upstream event.
+20. When is linked content deleted: after acknowledgement, signed-link expiry, or queue TTL?
+21. Does acknowledging a message immediately make its linked content unavailable?
+22. Can the outputs-link authority vary, or can clients validate it against a documented Azure hostname or domain?
 
 ## Supporting Information: Provisioning a Poll Trigger Configuration
 

@@ -20,10 +20,10 @@ public sealed class ConnectorOptions : IOptionsFormatter
     /// Gets or sets the default number of events supplied to one function invocation.
     /// Valid values are one through 32.
     /// </summary>
-    public int DefaultBatchSize { get; set; } = 1;
+    public int DefaultMaxBatchSize { get; set; } = 1;
 
     /// <summary>
-    /// Gets or sets the default maximum number of concurrent function invocations per worker.
+    /// Gets or sets the default maximum number of pending events per worker instance.
     /// The value must be greater than zero.
     /// </summary>
     public int DefaultConcurrency { get; set; } = 16;
@@ -31,7 +31,7 @@ public sealed class ConnectorOptions : IOptionsFormatter
     string IOptionsFormatter.Format() => JsonSerializer.Serialize(
         new
         {
-            DefaultBatchSize,
+            DefaultMaxBatchSize,
             DefaultConcurrency,
         },
         SerializerOptions);

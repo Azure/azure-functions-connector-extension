@@ -9,7 +9,7 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 internal sealed record ConnectorPollingOptions(
     string? Connection,
     string? TriggerConfigName,
-    int BatchSize,
+    int MaxBatchSize,
     int Concurrency)
 {
     internal const int MaximumBatchSize = 32;
@@ -21,29 +21,29 @@ internal sealed record ConnectorPollingOptions(
         ArgumentNullException.ThrowIfNull(attribute);
         ArgumentNullException.ThrowIfNull(defaults);
 
-        int batchSize = ResolveBatchSize(attribute.BatchSize, defaults.DefaultBatchSize);
+        int maxBatchSize = ResolveMaxBatchSize(attribute.MaxBatchSize, defaults.DefaultMaxBatchSize);
         int concurrency = ResolveConcurrency(attribute.Concurrency, defaults.DefaultConcurrency);
 
         return new ConnectorPollingOptions(
             attribute.Connection,
             attribute.TriggerConfigName,
-            batchSize,
+            maxBatchSize,
             concurrency);
     }
 
-    private static int ResolveBatchSize(int configuredValue, int defaultValue)
+    private static int ResolveMaxBatchSize(int configuredValue, int defaultValue)
     {
         if (configuredValue < 0 || configuredValue > MaximumBatchSize)
         {
             throw new InvalidOperationException(
-                $"Connector trigger BatchSize must be between 0 and {MaximumBatchSize}.");
+                $"Connector trigger MaxBatchSize must be between 0 and {MaximumBatchSize}.");
         }
 
         int value = configuredValue == 0 ? defaultValue : configuredValue;
         if (value < 1 || value > MaximumBatchSize)
         {
             throw new InvalidOperationException(
-                $"Connector DefaultBatchSize must be between 1 and {MaximumBatchSize}.");
+                $"Connector DefaultMaxBatchSize must be between 1 and {MaximumBatchSize}.");
         }
 
         return value;

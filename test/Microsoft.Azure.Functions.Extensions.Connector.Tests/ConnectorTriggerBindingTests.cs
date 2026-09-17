@@ -168,7 +168,7 @@ public class ConnectorTriggerBindingTests
             DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
             Connection = "ConnectorNamespace",
             TriggerConfigName = "OnNewEmail",
-            BatchSize = 4,
+            MaxBatchSize = 4,
             Concurrency = 8,
         };
         var binding = new ConnectorTriggerBinding(parameter, _configProvider, attribute, _options);
@@ -186,7 +186,7 @@ public class ConnectorTriggerBindingTests
         var pollingListener = Assert.IsType<ConnectorPollingListener>(listener);
         Assert.Equal(attribute.Connection, pollingListener.Options.Connection);
         Assert.Equal(attribute.TriggerConfigName, pollingListener.Options.TriggerConfigName);
-        Assert.Equal(attribute.BatchSize, pollingListener.Options.BatchSize);
+        Assert.Equal(attribute.MaxBatchSize, pollingListener.Options.MaxBatchSize);
         Assert.Equal(attribute.Concurrency, pollingListener.Options.Concurrency);
     }
 
@@ -201,7 +201,7 @@ public class ConnectorTriggerBindingTests
         };
         var options = new ConnectorOptions
         {
-            DefaultBatchSize = 2,
+            DefaultMaxBatchSize = 2,
             DefaultConcurrency = 6,
         };
         var binding = new ConnectorTriggerBinding(parameter, _configProvider, attribute, options);
@@ -215,7 +215,7 @@ public class ConnectorTriggerBindingTests
         var listener = await binding.CreateListenerAsync(listenerContext);
 
         var pollingListener = Assert.IsType<ConnectorPollingListener>(listener);
-        Assert.Equal(2, pollingListener.Options.BatchSize);
+        Assert.Equal(2, pollingListener.Options.MaxBatchSize);
         Assert.Equal(6, pollingListener.Options.Concurrency);
     }
 
