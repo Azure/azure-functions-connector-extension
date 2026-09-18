@@ -115,10 +115,7 @@ The trigger-contract seam has been implemented:
 - `ConnectorPollingListener.StartAsync` intentionally throws
   `NotSupportedException` until the production message pump is implemented.
 
-The baseline seam used an earlier `MaxEvents` property. PR 1 replaces it with
-the public `BatchSize` and `Concurrency` properties described below. The
-service `maxEvents` value remains an internal, capacity-based Receive
-parameter.
+The baseline seam used an earlier `MaxEvents` property. PR 1 replaces it with the public `MaxBatchSize` and `Concurrency` properties described below. `MaxBatchSize` maps to the service `maxEvents` parameter, while `Concurrency` remains independent and defines the maximum concurrent function invocations per instance for target-based scaling.
 
 Poll delivery must run in the host extension, not in a language worker. This allows the same acquisition behavior to support .NET, Python, Node.js, and other extension-bundle consumers.
 
@@ -318,7 +315,7 @@ public void Run(
         DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
         Connection = "ConnectorNamespace",
         TriggerConfigName = "%CONNECTOR_TRIGGER_CONFIG_NAME%",
-        BatchSize = 4,
+        MaxBatchSize = 4,
         Concurrency = 8)]
     Office365OnNewEmailTriggerPayload[] payloads)
 {
@@ -446,22 +443,23 @@ Connector Namespace does not currently add a sequence number, enqueue time, part
 
 Applications that require ordering must use source-specific ordering information when the connector payload provides it. They may buffer and reorder events in application code or forward events to an ordered downstream system, such as a Service Bus entity using sessions with an appropriate source event identifier as the session ID. The extension cannot infer a universal ordering key across connectors.
 
-Batch size and concurrency are separate settings:
+Max batch size and concurrency are separate settings:
 
-- `BatchSize` is the number of Connector events supplied to one function invocation.
-- `Concurrency` is the maximum number of function invocations active on one worker.
+- `MaxBatchSize` is the maximum number of Connector events requested in one Receive operation and supplied to one function invocation.
+- `Concurrency` is the maximum number of concurrent function invocations allowed on one worker instance.
 - A value of `0` on either attribute property means to use the host-level default.
-- `BatchSize = 1` preserves one event per function invocation.
-- `BatchSize` must be between `0` and `32`; the effective value must be
+- `MaxBatchSize = 1` preserves one event per function invocation.
+- `MaxBatchSize` must be between `0` and `32`; the effective value must be
   between `1` and `32`.
 - `Concurrency` must be zero or greater; the effective value must be greater
   than zero.
-- Maximum in-flight messages are approximately `BatchSize * Concurrency`.
+- `MaxBatchSize` controls batching only and does not participate in the target-based scaling calculation.
+- Maximum in-flight messages are approximately `MaxBatchSize * Concurrency`.
 
-The effective batch size must be compatible with the declared function
+The effective max batch size must be compatible with the declared function
 parameter:
 
-| Function parameter | Allowed effective `BatchSize` |
+| Function parameter | Allowed effective `MaxBatchSize` |
 |---|---:|
 | `T` | Exactly `1` |
 | `ConnectorEvent<T>` | Exactly `1` |
@@ -469,19 +467,25 @@ parameter:
 | `ConnectorEvent<T>[]` | `1` or greater |
 
 Validation uses the effective value after applying host-level defaults. A
-scalar parameter with `BatchSize = 0` is therefore invalid when
-`DefaultBatchSize` is greater than `1`.
+scalar parameter with `MaxBatchSize = 0` is therefore invalid when
+`DefaultMaxBatchSize` is greater than `1`.
 
 The language binding or worker converter that can see the real target type
 must reject an incompatible scalar binding during function indexing or
 listener startup with an actionable error. Host-side PR 1 cannot reliably
 infer the target shape for every language worker, so this validation belongs
-to PR 6. The extension must not silently ignore `BatchSize`, truncate received
+to PR 6. The extension must not silently ignore `MaxBatchSize`, truncate received
 events, or automatically change the function parameter shape.
 
 `Concurrency` is independent of parameter shape. For example, a scalar
-parameter with `BatchSize = 1` and `Concurrency = 8` is valid and permits up to
-eight concurrent single-event invocations.
+parameter with `MaxBatchSize = 1` and `Concurrency = 8` is valid and permits
+up to eight concurrent single-event invocations. With a batched parameter,
+the same concurrency permits up to eight concurrent invocation batches.
+
+An event counts as in flight from the time Receive leases it until the
+listener acknowledges it or finishes handling a failed attempt without
+acknowledgement. This includes linked-output hydration, function execution,
+and acknowledgement processing.
 
 Host-level defaults:
 
@@ -490,27 +494,30 @@ public sealed class ConnectorOptions
 {
     public int DefaultConcurrency { get; set; } = 16;
 
-    public int DefaultBatchSize { get; set; } = 1;
+    public int DefaultMaxBatchSize { get; set; } = 1;
 }
 ```
 
-The service `maxEvents` query parameter is an internal Receive batch size, not a public invocation-batch setting. The listener calculates it from available invocation capacity and caps it at the service maximum of 32:
+The service `maxEvents` query parameter is calculated from the remaining
+invocation capacity and capped at 32:
 
 ```csharp
 int availableInvocationSlots =
     effectiveConcurrency - activeInvocationCount;
 
 int availableMessageCapacity =
-    availableInvocationSlots * effectiveBatchSize;
+    availableInvocationSlots * effectiveMaxBatchSize;
 
-int maxEvents = Math.Min(32, availableMessageCapacity);
+int maxEvents = Math.Min(
+    32,
+    availableMessageCapacity);
 ```
 
 The listener issues Receive only when `maxEvents > 0` and always sends the calculated value explicitly. It must not rely on the service default of 32 because that could lease more messages than the worker can immediately process.
 
 Examples:
 
-| Batch size | Concurrency | Active invocations | `maxEvents` |
+| Max batch size | Concurrency | Active invocations | `maxEvents` |
 | ---: | ---: | ---: | ---: |
 | 1 | 16 | 0 | 16 |
 | 1 | 16 | 10 | 6 |
@@ -518,10 +525,16 @@ Examples:
 | 4 | 8 | 3 | 20 |
 | 8 | 2 | 0 | 16 |
 | 32 | 16 | 0 | 32 |
+| 4 | 8 | 8 | 0 |
 
-The initial implementation does not prefetch beyond active execution capacity. Every received message immediately starts its fixed two-minute lock budget, so leasing messages into a local waiting buffer increases lock expiration and duplicate-delivery risk.
+The initial implementation does not prefetch beyond remaining invocation
+capacity. Every received message immediately starts its fixed two-minute lock
+budget, so leasing messages into a local waiting buffer increases lock
+expiration and duplicate-delivery risk.
 
-When all concurrency slots are occupied, the listener does not issue Receive. Even when `x-ms-more-messages-available` is true, immediate draining occurs only when invocation capacity is available.
+When the concurrent-invocation limit is reached, the listener does not issue
+Receive. Even when `x-ms-more-messages-available` is true, immediate draining
+occurs only when invocation capacity is available.
 
 ### Payload and Message Metadata
 
@@ -531,7 +544,7 @@ Payload-only, one event per invocation:
 
 ```csharp
 public void OnNewEmail(
-    [ConnectorTrigger(BatchSize = 1)]
+    [ConnectorTrigger(MaxBatchSize = 1)]
     Office365OnNewEmailTriggerPayload email)
 {
 }
@@ -541,7 +554,7 @@ Payload-only batch:
 
 ```csharp
 public void OnNewEmail(
-    [ConnectorTrigger(BatchSize = 8)]
+    [ConnectorTrigger(MaxBatchSize = 8)]
     Office365OnNewEmailTriggerPayload[] emails)
 {
 }
@@ -567,7 +580,7 @@ Metadata-rich single event:
 
 ```csharp
 public void OnNewEmail(
-    [ConnectorTrigger(BatchSize = 1)]
+    [ConnectorTrigger(MaxBatchSize = 1)]
     ConnectorEvent<Office365OnNewEmailTriggerPayload> email)
 {
     if (email.MessageId is { } deduplicationId)
@@ -581,7 +594,7 @@ Metadata-rich batch:
 
 ```csharp
 public void OnNewEmail(
-    [ConnectorTrigger(BatchSize = 8)]
+    [ConnectorTrigger(MaxBatchSize = 8)]
     ConnectorEvent<Office365OnNewEmailTriggerPayload>[] emails)
 {
     foreach (ConnectorEvent<Office365OnNewEmailTriggerPayload> email in emails)
@@ -744,14 +757,14 @@ Do not turn the current class into a large mode-switching listener.
 `ConnectorPollingListener` owns the message pump:
 
 1. Resolve polling endpoints.
-2. Determine available invocation capacity from effective `BatchSize` and `Concurrency`.
-3. Call Receive with `maxEvents` capped at 32 and no greater than current processing capacity.
+2. Determine available invocation capacity from effective `MaxBatchSize` and `Concurrency`.
+3. Call Receive with `maxEvents` capped by 32 and no greater than current processing capacity.
 4. If Receive is empty, apply cancellation-aware backoff with jitter.
 5. Hydrate linked outputs using bounded content-download concurrency.
 6. Exclude messages whose linked outputs could not be retrieved or validated;
    leave them unacknowledged.
-7. Partition successfully hydrated messages into invocation batches of at most
-   `BatchSize`.
+7. Partition successfully hydrated messages into invocation batches of at
+   most `MaxBatchSize`.
 8. Dispatch no more than `Concurrency` function invocations at once.
 9. For each invocation batch, pass normalized `outputs` values and safe
     metadata through the binding/conversion path.
@@ -765,7 +778,9 @@ Do not turn the current class into a large mode-switching listener.
     available, immediately drain another Receive batch.
 15. Otherwise continue using the normal polling cadence.
 
-Concurrency counts function invocations, not individual messages. For example, `BatchSize = 4` and `Concurrency = 8` permits up to eight active invocations and approximately 32 in-flight messages.
+Concurrency counts function invocations, not individual messages. For
+example, `MaxBatchSize = 4` and `Concurrency = 8` permits up to eight active
+invocations and approximately 32 in-flight messages.
 
 Acknowledgement is initially all-or-none per function invocation. Partial success within one invocation requires a future explicit per-item result contract; the extension must not infer which messages completed before a function failure.
 
@@ -847,7 +862,14 @@ targetWorkerCount =
     ceil(approximateQueueDepth / effectiveConcurrency)
 ```
 
-`Concurrency` is the effective number of active function invocations per worker and therefore the target-scaling capacity. `BatchSize` controls listener invocation grouping; it does not reduce the worker target. Keeping it out of target arithmetic avoids under-scaling for partially filled batches or when approximate depth does not map to immediately receivable full batches. Connector Namespace `maxEvents` remains the listener calculation `min(32, (effectiveConcurrency - activeInvocations) * effectiveBatchSize)`.
+`Concurrency` is the effective number of active function invocations per
+worker and therefore the target-scaling capacity. `MaxBatchSize` controls
+listener invocation grouping; it does not reduce the worker target. Keeping
+it out of target arithmetic avoids under-scaling for partially filled batches
+or when approximate depth does not map to immediately receivable full
+batches. Connector Namespace `maxEvents` remains the listener calculation
+`min(32, (effectiveConcurrency - activeInvocations) *
+effectiveMaxBatchSize)`.
 
 Historical PR #26 is useful only as a reference for the Functions
 scale-controller integration. Reusable extension-side patterns include:
@@ -930,14 +952,14 @@ Record without payload or token content:
 
 - Webhook remains the default.
 - Poll properties flow from worker metadata into the host attribute.
-- Attribute `BatchSize` and `Concurrency` overrides flow correctly.
+- Attribute `MaxBatchSize` and `Concurrency` overrides flow correctly.
 - Zero-valued overrides use host-level defaults.
-- Batch size and concurrency ranges are validated.
-- Scalar `T` and `ConnectorEvent<T>` reject an effective `BatchSize` greater
+- Max batch size and concurrency ranges are validated.
+- Scalar `T` and `ConnectorEvent<T>` reject an effective `MaxBatchSize` greater
   than `1`.
-- Scalar parameters using `BatchSize = 0` are validated against
-  `DefaultBatchSize`.
-- Array parameters accept an effective `BatchSize` of `1` or greater.
+- Scalar parameters using `MaxBatchSize = 0` are validated against
+  `DefaultMaxBatchSize`.
+- Array parameters accept an effective `MaxBatchSize` of `1` or greater.
 - `Concurrency` remains valid and independent for scalar and array bindings.
 - Invalid combinations fail clearly.
 - Binding chooses the correct listener.
@@ -973,8 +995,8 @@ Record without payload or token content:
 ### Listener tests
 
 - Empty queue backoff.
-- Receive size is calculated from available batch/concurrency capacity and capped at 32.
-- Received messages are partitioned by effective `BatchSize`.
+- Receive size is capped by effective `MaxBatchSize`, remaining invocation capacity, and 32.
+- Each invocation receives no more than effective `MaxBatchSize`.
 - Active function invocations never exceed effective `Concurrency`.
 - A successful invocation acknowledges every message in that invocation batch.
 - A failed invocation acknowledges no messages from that invocation batch.
@@ -995,7 +1017,7 @@ Record without payload or token content:
 
 - Zero/non-zero depth decisions.
 - Approximate values and transient failures.
-- Effective-concurrency target calculations and BatchSize independence.
+- Effective-concurrency target calculations and `MaxBatchSize` independence.
 - Endpoint/auth failure behavior.
 
 ### End-to-end test
@@ -1018,9 +1040,9 @@ preserve Webhook behavior and pass its focused build and tests.
 
 ### PR 1: Trigger contract
 
-- Replace public `MaxEvents` with `BatchSize` and `Concurrency` in both
+- Replace public `MaxEvents` with `MaxBatchSize` and `Concurrency` in both
   attributes.
-- Add host-level defaults of `DefaultBatchSize = 1` and
+- Add host-level defaults of `DefaultMaxBatchSize = 1` and
   `DefaultConcurrency = 16`.
 - Preserve `Webhook` as the default and keep host/worker metadata synchronized.
 - Update contract and listener-selection tests.

@@ -34,10 +34,10 @@ public class ConnectorTargetScalerTests
     }
 
     [Fact]
-    public async Task GetScaleResultAsync_BatchSizeDoesNotAffectTarget()
+    public async Task GetScaleResultAsync_MaxBatchSizeDoesNotAffectTarget()
     {
-        ConnectorTargetScaler smallBatch = CreateScaler(new SequenceDepthClient(65), 8, new ConnectorOptions { DefaultConcurrency = 8, DefaultBatchSize = 1 });
-        ConnectorTargetScaler largeBatch = CreateScaler(new SequenceDepthClient(65), 8, new ConnectorOptions { DefaultConcurrency = 8, DefaultBatchSize = 32 });
+        ConnectorTargetScaler smallBatch = CreateScaler(new SequenceDepthClient(65), 8, new ConnectorOptions { DefaultConcurrency = 8, DefaultMaxBatchSize = 1 });
+        ConnectorTargetScaler largeBatch = CreateScaler(new SequenceDepthClient(65), 8, new ConnectorOptions { DefaultConcurrency = 8, DefaultMaxBatchSize = 32 });
 
         TargetScalerResult first = await smallBatch.GetScaleResultAsync(new TargetScalerContext());
         TargetScalerResult second = await largeBatch.GetScaleResultAsync(new TargetScalerContext());

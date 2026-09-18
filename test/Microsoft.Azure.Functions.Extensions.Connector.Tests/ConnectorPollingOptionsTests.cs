@@ -12,7 +12,7 @@ public class ConnectorPollingOptionsTests
         {
             Connection = "ConnectorNamespace",
             TriggerConfigName = "OnNewEmail",
-            BatchSize = 4,
+            MaxBatchSize = 4,
             Concurrency = 8,
         };
 
@@ -20,7 +20,7 @@ public class ConnectorPollingOptionsTests
 
         Assert.Equal("ConnectorNamespace", result.Connection);
         Assert.Equal("OnNewEmail", result.TriggerConfigName);
-        Assert.Equal(4, result.BatchSize);
+        Assert.Equal(4, result.MaxBatchSize);
         Assert.Equal(8, result.Concurrency);
     }
 
@@ -29,40 +29,40 @@ public class ConnectorPollingOptionsTests
     {
         var defaults = new ConnectorOptions
         {
-            DefaultBatchSize = 3,
+            DefaultMaxBatchSize = 3,
             DefaultConcurrency = 7,
         };
 
         var result = ConnectorPollingOptions.Create(new ConnectorTriggerAttribute(), defaults);
 
-        Assert.Equal(3, result.BatchSize);
+        Assert.Equal(3, result.MaxBatchSize);
         Assert.Equal(7, result.Concurrency);
     }
 
     [Theory]
     [InlineData(-1)]
     [InlineData(33)]
-    public void Create_Throws_WhenAttributeBatchSizeIsOutOfRange(int batchSize)
+    public void Create_Throws_WhenAttributeMaxBatchSizeIsOutOfRange(int maxBatchSize)
     {
-        var attribute = new ConnectorTriggerAttribute { BatchSize = batchSize };
+        var attribute = new ConnectorTriggerAttribute { MaxBatchSize = maxBatchSize };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             ConnectorPollingOptions.Create(attribute, new ConnectorOptions()));
 
-        Assert.Contains("BatchSize", exception.Message);
+        Assert.Contains("MaxBatchSize", exception.Message);
     }
 
     [Theory]
     [InlineData(0)]
     [InlineData(33)]
-    public void Create_Throws_WhenDefaultBatchSizeIsOutOfRange(int batchSize)
+    public void Create_Throws_WhenDefaultMaxBatchSizeIsOutOfRange(int maxBatchSize)
     {
-        var defaults = new ConnectorOptions { DefaultBatchSize = batchSize };
+        var defaults = new ConnectorOptions { DefaultMaxBatchSize = maxBatchSize };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             ConnectorPollingOptions.Create(new ConnectorTriggerAttribute(), defaults));
 
-        Assert.Contains("DefaultBatchSize", exception.Message);
+        Assert.Contains("DefaultMaxBatchSize", exception.Message);
     }
 
     [Fact]

@@ -15,7 +15,7 @@ public class ConnectorTriggerAttributeTests
         Assert.Equal(ConnectorTriggerDeliveryMode.Webhook, attribute.DeliveryMode);
         Assert.Null(attribute.Connection);
         Assert.Null(attribute.TriggerConfigName);
-        Assert.Equal(0, attribute.BatchSize);
+        Assert.Equal(0, attribute.MaxBatchSize);
         Assert.Equal(0, attribute.Concurrency);
     }
 
@@ -38,7 +38,7 @@ public class ConnectorTriggerAttributeTests
             DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
             Connection = "ConnectorNamespace",
             TriggerConfigName = "OnNewEmail",
-            BatchSize = 4,
+            MaxBatchSize = 4,
             Concurrency = 8,
         };
 
@@ -46,7 +46,7 @@ public class ConnectorTriggerAttributeTests
         Assert.Equal(ConnectorTriggerDeliveryMode.Poll, attribute.DeliveryMode);
         Assert.Equal("ConnectorNamespace", attribute.Connection);
         Assert.Equal("OnNewEmail", attribute.TriggerConfigName);
-        Assert.Equal(4, attribute.BatchSize);
+        Assert.Equal(4, attribute.MaxBatchSize);
         Assert.Equal(8, attribute.Concurrency);
     }
 }

@@ -10,7 +10,7 @@ public class ConnectorOptionsTests
     {
         var options = new ConnectorOptions();
 
-        Assert.Equal(1, options.DefaultBatchSize);
+        Assert.Equal(1, options.DefaultMaxBatchSize);
         Assert.Equal(16, options.DefaultConcurrency);
     }
 }

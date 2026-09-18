@@ -56,35 +56,37 @@ and the committed baseline builds with all existing tests passing.
 
 ## PR 1: Trigger Contract
 
-Replace the earlier public `MaxEvents` seam with the user-facing invocation
-controls:
+Replace the earlier public `MaxEvents` seam with independent batching and per-instance event-capacity controls:
 
 ```csharp
 [ConnectorTrigger(
     DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
     Connection = "ConnectorNamespace",
     TriggerConfigName = "%CONNECTOR_TRIGGER_CONFIG%",
-    BatchSize = 4,
+    MaxBatchSize = 4,
     Concurrency = 8)]
 ```
 
 Changes:
 
-- Add `BatchSize` and `Concurrency` to both host and isolated-worker
+- Add `MaxBatchSize` and `Concurrency` to both host and isolated-worker
   attributes.
 - Remove public `MaxEvents`.
 - Add host-level `ConnectorOptions`:
 
   ```csharp
-  public int DefaultBatchSize { get; set; } = 1;
+  public int DefaultMaxBatchSize { get; set; } = 1;
   public int DefaultConcurrency { get; set; } = 16;
   ```
 
 - Treat `0` on either attribute property as use-host-default.
-- Accept `BatchSize` values from `0` through `32` and require the effective
+- Accept `MaxBatchSize` values from `0` through `32` and require the effective
   value to be from `1` through `32`.
 - Accept non-negative `Concurrency` and require the effective value to be
   greater than zero.
+- Define `Concurrency` as the maximum concurrent function invocations per
+  worker instance.
+- Keep `MaxBatchSize` independent of scaling and map it to Connector Namespace `maxEvents`.
 - Preserve `Webhook` as the default.
 - Keep `Connection` literal; do not apply `%...%` name resolution to it.
 - Continue allowing `%...%` resolution for `TriggerConfigName`.
@@ -243,15 +245,15 @@ Requirements:
 - The declared concrete function parameter type is the conversion source of
   truth.
 - Scalar `T` and `ConnectorEvent<T>` bindings require an effective
-  `BatchSize` of exactly `1`.
+  `MaxBatchSize` of exactly `1`.
 - Array `T[]` and `ConnectorEvent<T>[]` bindings accept an effective
-  `BatchSize` of `1` or greater; a final invocation batch may contain fewer
+  `MaxBatchSize` of `1` or greater; a final invocation batch may contain fewer
   items.
-- Apply shape validation after resolving `DefaultBatchSize`, so a scalar
-  parameter with `BatchSize = 0` fails when the host default is greater than
+- Apply shape validation after resolving `DefaultMaxBatchSize`, so a scalar
+  parameter with `MaxBatchSize = 0` fails when the host default is greater than
   `1`.
 - Fail incompatible bindings during indexing or listener startup rather than
-  ignoring `BatchSize`, dropping events, or changing the parameter shape.
+  ignoring `MaxBatchSize`, dropping events, or changing the parameter shape.
 - Keep `Concurrency` independent of parameter shape.
 - Support closed generic payload types; reject unresolved open generic
   functions.
@@ -268,16 +270,21 @@ Replace the placeholder with a lifecycle-safe, capacity-aware message pump.
 Capacity calculation:
 
 ```csharp
-int availableSlots = effectiveConcurrency - activeInvocations;
-int maxEvents = Math.Min(32, availableSlots * effectiveBatchSize);
+int availableInvocationSlots =
+    effectiveConcurrency - activeInvocationCount;
+int availableMessageCapacity =
+    availableInvocationSlots * effectiveMaxBatchSize;
+int maxEvents = Math.Min(32, availableMessageCapacity);
 ```
 
 Requirements:
 
 - Receive only when `maxEvents > 0`.
-- Do not prefetch beyond immediate invocation capacity.
-- Partition received events into invocation batches of at most `BatchSize`.
-- Run no more than `Concurrency` function invocations per worker.
+- Do not prefetch beyond remaining invocation capacity.
+- Count an event as pending from Receive until acknowledgement completes or a failed attempt finishes without acknowledgement, including hydration and function execution.
+- Supply each Receive batch to one invocation.
+- Allow no more than `Concurrency` active function invocations per worker
+  instance.
 - Bound linked-output hydration and account for its time in the fixed
   two-minute lock budget.
 - Pass normalized payloads and per-event metadata through the worker binding.
@@ -318,12 +325,15 @@ Requirements:
   `approximateQueueDepthUri`.
 - Scale from approximate queue depth without treating it as an exact count or
   a prerequisite for Receive.
-- Calculate target workers from effective invocation concurrency. `BatchSize` is listener invocation grouping and must not affect the target:
+- Calculate target workers from effective invocation concurrency.
+  `MaxBatchSize` is listener invocation grouping and must not affect the
+  target:
 
   ```text
   ceil(pendingEvents / effectiveConcurrency)
   ```
 
+- Keep `MaxBatchSize` and Connector Namespace `maxEvents` independent of the scaling calculation.
 - Return conservative decisions when queue status is unavailable.
 - Validate scale from zero.
 - Add integration tests, samples, and final user documentation.
