@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Microsoft.Azure.WebJobs.Hosting;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -78,6 +79,16 @@ public class ConnectorOptionsBindingTests
 
         Assert.Contains("\"DefaultMaxBatchSize\": 4", formatted);
         Assert.Contains("\"DefaultConcurrency\": 8", formatted);
+    }
+
+    [Fact]
+    public void AddConnector_RegistersConnectionServices()
+    {
+        using IHost host = BuildHost(new Dictionary<string, string?>());
+
+        Assert.NotNull(host.Services.GetRequiredService<AzureComponentFactory>());
+        Assert.NotNull(
+            host.Services.GetRequiredService<IConnectorConnectionOptionsProvider>());
     }
 
     private static IHost BuildHost(

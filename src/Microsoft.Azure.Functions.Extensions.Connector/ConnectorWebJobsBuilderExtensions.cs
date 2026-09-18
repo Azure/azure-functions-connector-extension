@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Microsoft.Azure.WebJobs;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -38,6 +39,10 @@ public static class ConnectorWebJobsBuilderExtensions
 
         // Register the HTTP request processor as a singleton
         builder.Services.TryAddSingleton<ConnectorHttpRequestProcessor>();
+        builder.Services.AddAzureClientsCore();
+        builder.Services.TryAddSingleton<
+            IConnectorConnectionOptionsProvider,
+            ConnectorConnectionOptionsProvider>();
 
         // Register the extension config provider
         builder.AddExtension<ConnectorExtensionConfigProvider>()
