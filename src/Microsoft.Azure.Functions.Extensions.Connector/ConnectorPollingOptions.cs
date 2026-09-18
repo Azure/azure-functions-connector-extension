@@ -12,7 +12,7 @@ internal sealed record ConnectorPollingOptions(
     int MaxBatchSize,
     int Concurrency)
 {
-    internal const int MaximumBatchSize = 32;
+    internal const int MaximumBatchSize = ConnectorPollingProtocolLimits.MaximumBatchSize;
 
     internal static ConnectorPollingOptions Create(
         ConnectorTriggerAttribute attribute,
