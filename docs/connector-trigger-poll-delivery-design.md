@@ -392,8 +392,8 @@ The extension follows the standard Functions identity-based connection pattern u
 
 | Environment | Configuration | Behavior |
 |---|---|---|
-| Local development | Omit `credential` | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
-| Azure, system-assigned identity | `credential=managedidentity` | Use the Function App's system-assigned managed identity |
+| Local development | Omit `credential`, or use `credential=managedidentity` with an unavailable MI selector | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
+| Azure, system-assigned identity | `credential=managedidentity` | Use the Function App's system-assigned managed identity; if the managed identity endpoint reports authentication unavailable, the extension falls back to `DefaultAzureCredential` for local/private-stamp diagnostics |
 | Azure, user-assigned identity | `credential=managedidentity` plus `clientId` or `managedIdentityResourceId` | Use the selected user-assigned managed identity |
 
 Authentication uses two token audiences:

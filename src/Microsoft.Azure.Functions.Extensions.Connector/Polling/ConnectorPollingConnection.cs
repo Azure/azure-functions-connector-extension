@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Azure.Core;
+using Azure.Identity;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 
@@ -50,6 +51,11 @@ internal sealed class ConnectorPollingConnectionFactory : IConnectorPollingConne
         ValidateIdentitySelectors(section, connectionName);
         TokenCredential credential = (componentFactory ?? _componentFactory)
             .CreateTokenCredential(section);
+        if (string.Equals(section["credential"], "managedidentity", StringComparison.OrdinalIgnoreCase))
+        {
+            credential = new ManagedIdentityFallbackCredential(credential, ManagedIdentityFallbackCredential.CreateDefaultAzureCredential);
+        }
+
         return new ConnectorPollingConnection(connectionName, resourceId, credential);
     }
 
@@ -116,4 +122,40 @@ internal sealed class ConnectorPollingConnectionFactory : IConnectorPollingConne
         new(
             $"Connector Poll connection '{connectionName}' must define a resource-group-scoped Microsoft.Web/connectorGateways resource ID with a valid subscription GUID.",
             innerException);
+}
+
+internal sealed class ManagedIdentityFallbackCredential(
+    TokenCredential managedIdentityCredential,
+    Func<TokenCredential> fallbackCredentialFactory) : TokenCredential
+{
+    internal static Func<TokenCredential> CreateDefaultAzureCredential { get; set; } = () => new DefaultAzureCredential();
+
+    private readonly Lazy<TokenCredential> _fallbackCredential = new(fallbackCredentialFactory);
+
+    public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return managedIdentityCredential.GetToken(requestContext, cancellationToken);
+        }
+        catch (Exception exception) when (ShouldFallback(exception))
+        {
+            return _fallbackCredential.Value.GetToken(requestContext, cancellationToken);
+        }
+    }
+
+    public override async ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await managedIdentityCredential.GetTokenAsync(requestContext, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (ShouldFallback(exception))
+        {
+            return await _fallbackCredential.Value.GetTokenAsync(requestContext, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static bool ShouldFallback(Exception exception) =>
+        exception is CredentialUnavailableException or AuthenticationFailedException;
 }

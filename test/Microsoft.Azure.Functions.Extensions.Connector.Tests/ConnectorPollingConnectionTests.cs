@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using Azure.Core;
+using Azure.Identity;
 using Microsoft.Extensions.Configuration;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
@@ -19,14 +21,13 @@ public class ConnectorPollingConnectionTests
             ["ConnectorNamespace:clientId"] = "22222222-2222-2222-2222-222222222222",
         });
         var defaultFactory = new TestAzureComponentFactory(new TestTokenCredential("default"));
-        var selectedCredential = new TestTokenCredential("selected");
-        var selectedFactory = new TestAzureComponentFactory(selectedCredential);
+        var selectedFactory = new TestAzureComponentFactory(new TestTokenCredential("selected"));
         var factory = new ConnectorPollingConnectionFactory(configuration, defaultFactory);
 
         ConnectorPollingConnection connection = factory.Create("ConnectorNamespace", selectedFactory);
 
         Assert.Equal(ResourceId, connection.ResourceId.ToString());
-        Assert.Same(selectedCredential, connection.Credential);
+        Assert.IsType<ManagedIdentityFallbackCredential>(connection.Credential);
         IConfigurationSection selectedSection = Assert.IsAssignableFrom<IConfigurationSection>(selectedFactory.LastConfiguration!);
         Assert.Equal("ConnectorNamespace", selectedSection.Path);
         Assert.Equal("managedidentity", selectedSection["credential"]);
@@ -49,6 +50,40 @@ public class ConnectorPollingConnectionTests
         Assert.NotNull(result.Credential);
         Assert.Equal(1, defaultFactory.CreateCredentialCalls);
         Assert.Null(defaultFactory.LastConfiguration!["credential"]);
+    }
+
+    [Fact]
+    public void Create_WrapsManagedIdentityCredentialWithDefaultCredentialFallback()
+    {
+        IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["ConnectorNamespace:resourceId"] = ResourceId,
+            ["ConnectorNamespace:credential"] = "managedidentity",
+            ["ConnectorNamespace:managedIdentityResourceId"] = "/subscriptions/x/resourceGroups/y/providers/Microsoft.ManagedIdentity/userAssignedIdentities/z",
+        });
+        var managedIdentityCredential = new ThrowingTokenCredential(new CredentialUnavailableException("Identity not found"));
+        var fallbackCredential = new TestTokenCredential("fallback");
+        Func<TokenCredential> previousFactory = ManagedIdentityFallbackCredential.CreateDefaultAzureCredential;
+        ManagedIdentityFallbackCredential.CreateDefaultAzureCredential = () => fallbackCredential;
+
+        try
+        {
+            ConnectorPollingConnection connection = new ConnectorPollingConnectionFactory(
+                    configuration,
+                    new TestAzureComponentFactory(managedIdentityCredential))
+                .Create("ConnectorNamespace");
+
+            AccessToken token = connection.Credential.GetToken(
+                new TokenRequestContext(["https://management.azure.com/.default"]),
+                CancellationToken.None);
+
+            Assert.Equal("fallback", token.Token);
+            Assert.Single(fallbackCredential.RequestedScopes);
+        }
+        finally
+        {
+            ManagedIdentityFallbackCredential.CreateDefaultAzureCredential = previousFactory;
+        }
     }
 
     [Theory]

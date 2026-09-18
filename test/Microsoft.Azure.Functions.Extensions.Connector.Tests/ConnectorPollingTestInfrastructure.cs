@@ -21,6 +21,13 @@ internal sealed class TestTokenCredential(string token = "test-token") : TokenCr
         new(GetToken(requestContext, cancellationToken));
 }
 
+internal sealed class ThrowingTokenCredential(Exception exception) : TokenCredential
+{
+    public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken) => throw exception;
+
+    public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken) => throw exception;
+}
+
 internal sealed class TestAzureComponentFactory(TokenCredential credential) : AzureComponentFactory
 {
     public IConfiguration? LastConfiguration { get; private set; }
