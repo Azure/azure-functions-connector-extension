@@ -24,7 +24,8 @@ public class ConnectorListenerTests
         _configProvider = new ConnectorExtensionConfigProvider(
             httpRequestProcessor,
             loggerFactory,
-            Options.Create(new ConnectorOptions()));
+            Options.Create(new ConnectorOptions()),
+            new StubConnectorConnectionOptionsProvider());
     }
 
     [Fact]

@@ -7,8 +7,8 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 /// Immutable configuration for a Connector Namespace Poll trigger.
 /// </summary>
 internal sealed record ConnectorPollingOptions(
-    string? Connection,
-    string? TriggerConfigName,
+    string Connection,
+    string TriggerConfigName,
     int MaxBatchSize,
     int Concurrency)
 {
@@ -20,6 +20,18 @@ internal sealed record ConnectorPollingOptions(
     {
         ArgumentNullException.ThrowIfNull(attribute);
         ArgumentNullException.ThrowIfNull(defaults);
+
+        if (string.IsNullOrWhiteSpace(attribute.Connection))
+        {
+            throw new InvalidOperationException(
+                "Connector trigger Connection is required for Poll delivery.");
+        }
+
+        if (string.IsNullOrWhiteSpace(attribute.TriggerConfigName))
+        {
+            throw new InvalidOperationException(
+                "Connector trigger TriggerConfigName is required for Poll delivery.");
+        }
 
         int maxBatchSize = ResolveMaxBatchSize(attribute.MaxBatchSize, defaults.DefaultMaxBatchSize);
         int concurrency = ResolveConcurrency(attribute.Concurrency, defaults.DefaultConcurrency);

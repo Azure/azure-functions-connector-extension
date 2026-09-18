@@ -12,15 +12,19 @@ internal sealed class ConnectorPollingListener : IListener
 {
     internal ConnectorPollingListener(
         ConnectorFunctionRegistration registration,
-        ConnectorPollingOptions options)
+        ConnectorPollingOptions options,
+        ConnectorConnectionOptions connectionOptions)
     {
         Registration = registration ?? throw new ArgumentNullException(nameof(registration));
         Options = options ?? throw new ArgumentNullException(nameof(options));
+        ConnectionOptions = connectionOptions ?? throw new ArgumentNullException(nameof(connectionOptions));
     }
 
     internal ConnectorFunctionRegistration Registration { get; }
 
     internal ConnectorPollingOptions Options { get; }
+
+    internal ConnectorConnectionOptions ConnectionOptions { get; }
 
     public Task StartAsync(CancellationToken cancellationToken) =>
         throw new NotSupportedException(
