@@ -352,6 +352,9 @@ ConnectorNamespace__resourceId=/subscriptions/{subscription}/resourceGroups/{res
 ConnectorNamespace__credential=managedidentity
 ConnectorNamespace__clientId={optional-user-assigned-managed-identity-client-id}
 ConnectorNamespace__managedIdentityResourceId={optional-user-assigned-managed-identity-resource-id}
+ConnectorNamespace__token={debug-only-token-for-all-audiences}
+ConnectorNamespace__managementToken={debug-only-arm-token}
+ConnectorNamespace__apiHubToken={debug-only-apihub-token}
 ```
 
 `TriggerConfigName` remains trigger metadata because it identifies the event source within the namespace. It should support Functions name resolution so environment-specific configuration is not embedded in attributes.
@@ -395,6 +398,7 @@ The extension follows the standard Functions identity-based connection pattern u
 | Local development | Omit `credential`, or use `credential=managedidentity` with an unavailable MI selector | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
 | Azure, system-assigned identity | `credential=managedidentity` | Use the Function App's system-assigned managed identity; if the managed identity endpoint reports authentication unavailable, the extension falls back to `DefaultAzureCredential` for local/private-stamp diagnostics |
 | Azure, user-assigned identity | `credential=managedidentity` plus `clientId` or `managedIdentityResourceId` | Use the selected user-assigned managed identity |
+| Private-stamp diagnostics only | `token`, or `managementToken` plus `apiHubToken` | Bypass SDK credential creation and use caller-provided bearer token strings without logging them |
 
 Authentication uses two token audiences:
 
@@ -404,6 +408,8 @@ Authentication uses two token audiences:
 | Receive, acknowledge, and query queue status | `https://apihub.azure.com/.default` |
 
 The request URI identifies the target Connector Namespace; the credential does not receive or infer that target resource ID. ARM and Connector Namespace authorize the caller represented by the bearer token against the requested resource.
+
+The debug token override is intentionally for private-stamp diagnostics. A single `ConnectorNamespace__token` is returned for every requested scope, but normal scaling uses different ARM and API Hub audiences; use `ConnectorNamespace__managementToken` and `ConnectorNamespace__apiHubToken` when testing both endpoint discovery and queue-depth calls with copied tokens. The extension parses JWT `exp` for the returned `AccessToken` expiry when present; otherwise it treats the configured token as a short-lived five-minute diagnostic token. The token setting can also be supplied with a single underscore, such as `ConnectorNamespace_token`, for environments where hierarchical app settings are inconvenient.
 
 ARM endpoint discovery requires the following control-plane action:
 

@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using System.Text.Json;
 using Azure.Core;
 using Azure.Identity;
 using Microsoft.Extensions.Azure;
@@ -48,6 +49,11 @@ internal sealed class ConnectorPollingConnectionFactory : IConnectorPollingConne
         }
 
         ResourceIdentifier resourceId = ParseResourceId(resourceIdValue, connectionName);
+        if (TryCreateDebugTokenCredential(connectionName, section, out TokenCredential? debugCredential))
+        {
+            return new ConnectorPollingConnection(connectionName, resourceId, debugCredential!);
+        }
+
         ValidateIdentitySelectors(section, connectionName);
         TokenCredential credential = (componentFactory ?? _componentFactory)
             .CreateTokenCredential(section);
@@ -116,12 +122,114 @@ internal sealed class ConnectorPollingConnectionFactory : IConnectorPollingConne
         }
     }
 
+    private bool TryCreateDebugTokenCredential(
+        string connectionName,
+        IConfigurationSection section,
+        out TokenCredential? credential)
+    {
+        string? token = GetDebugSetting(connectionName, section, "token");
+        string? managementToken = GetDebugSetting(connectionName, section, "managementToken");
+        string? apiHubToken = GetDebugSetting(connectionName, section, "apiHubToken");
+        if (string.IsNullOrWhiteSpace(token) &&
+            string.IsNullOrWhiteSpace(managementToken) &&
+            string.IsNullOrWhiteSpace(apiHubToken))
+        {
+            credential = null;
+            return false;
+        }
+
+        credential = new DebugBearerTokenCredential(token, managementToken, apiHubToken);
+        return true;
+    }
+
+    private string? GetDebugSetting(
+        string connectionName,
+        IConfigurationSection section,
+        string key) =>
+        section[key] ?? _configuration[$"{connectionName}_{key}"];
+
     private static InvalidOperationException InvalidResourceId(
         string connectionName,
         Exception? innerException = null) =>
         new(
             $"Connector Poll connection '{connectionName}' must define a resource-group-scoped Microsoft.Web/connectorGateways resource ID with a valid subscription GUID.",
             innerException);
+}
+
+internal sealed class DebugBearerTokenCredential(
+    string? token,
+    string? managementToken,
+    string? apiHubToken) : TokenCredential
+{
+    private static readonly TimeSpan DefaultTokenLifetime = TimeSpan.FromMinutes(5);
+
+    public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken) =>
+        CreateAccessToken(SelectToken(requestContext));
+
+    public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken) =>
+        new(GetToken(requestContext, cancellationToken));
+
+    private string SelectToken(TokenRequestContext requestContext)
+    {
+        foreach (string scope in requestContext.Scopes)
+        {
+            if (IsScope(scope, ConnectorPollingEndpointResolver.ArmScope) && !string.IsNullOrWhiteSpace(managementToken))
+            {
+                return managementToken;
+            }
+
+            if (IsScope(scope, ConnectorQueueDepthClient.ApiHubScope) && !string.IsNullOrWhiteSpace(apiHubToken))
+            {
+                return apiHubToken;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            return token;
+        }
+
+        throw new CredentialUnavailableException(
+            "Connector debug token settings did not include a token for the requested audience.");
+    }
+
+    private static bool IsScope(string scope, string expectedScope) =>
+        string.Equals(scope, expectedScope, StringComparison.OrdinalIgnoreCase);
+
+    private static AccessToken CreateAccessToken(string token) =>
+        new(token, TryGetJwtExpiresOn(token) ?? DateTimeOffset.UtcNow.Add(DefaultTokenLifetime));
+
+    private static DateTimeOffset? TryGetJwtExpiresOn(string token)
+    {
+        string[] parts = token.Split('.');
+        if (parts.Length < 2)
+        {
+            return null;
+        }
+
+        try
+        {
+            byte[] payload = Base64UrlDecode(parts[1]);
+            using JsonDocument document = JsonDocument.Parse(payload);
+            if (document.RootElement.TryGetProperty("exp", out JsonElement expElement) &&
+                expElement.TryGetInt64(out long exp))
+            {
+                return DateTimeOffset.FromUnixTimeSeconds(exp);
+            }
+        }
+        catch (Exception exception) when (exception is FormatException or JsonException or ArgumentException)
+        {
+        }
+
+        return null;
+    }
+
+    private static byte[] Base64UrlDecode(string value)
+    {
+        string padded = value.Replace('-', '+').Replace('_', '/');
+        padded = padded.PadRight(padded.Length + ((4 - (padded.Length % 4)) % 4), '=');
+        return Convert.FromBase64String(padded);
+    }
 }
 
 internal sealed class ManagedIdentityFallbackCredential(

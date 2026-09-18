@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using System.Text;
 using Azure.Core;
 using Azure.Identity;
 using Microsoft.Extensions.Configuration;
@@ -50,6 +51,90 @@ public class ConnectorPollingConnectionTests
         Assert.NotNull(result.Credential);
         Assert.Equal(1, defaultFactory.CreateCredentialCalls);
         Assert.Null(defaultFactory.LastConfiguration!["credential"]);
+    }
+
+    [Fact]
+    public void Create_UsesDebugTokenWithoutCreatingConfiguredCredential()
+    {
+        IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["ConnectorNamespace:resourceId"] = ResourceId,
+            ["ConnectorNamespace:credential"] = "managedidentity",
+            ["ConnectorNamespace:managedIdentityResourceId"] = "/subscriptions/x/resourceGroups/y/providers/Microsoft.ManagedIdentity/userAssignedIdentities/z",
+            ["ConnectorNamespace:token"] = "debug-token",
+        });
+        var defaultFactory = new TestAzureComponentFactory(new TestTokenCredential());
+
+        ConnectorPollingConnection connection = new ConnectorPollingConnectionFactory(configuration, defaultFactory)
+            .Create("ConnectorNamespace");
+
+        AccessToken token = connection.Credential.GetToken(
+            new TokenRequestContext([ConnectorPollingEndpointResolver.ArmScope]),
+            CancellationToken.None);
+        Assert.Equal("debug-token", token.Token);
+        Assert.Equal(0, defaultFactory.CreateCredentialCalls);
+    }
+
+    [Fact]
+    public void Create_UsesScopedDebugTokensForRequestedAudience()
+    {
+        IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["ConnectorNamespace:resourceId"] = ResourceId,
+            ["ConnectorNamespace:managementToken"] = "arm-token",
+            ["ConnectorNamespace:apiHubToken"] = "apihub-token",
+        });
+
+        ConnectorPollingConnection connection = new ConnectorPollingConnectionFactory(
+                configuration,
+                new TestAzureComponentFactory(new TestTokenCredential()))
+            .Create("ConnectorNamespace");
+
+        AccessToken armToken = connection.Credential.GetToken(
+            new TokenRequestContext([ConnectorPollingEndpointResolver.ArmScope]),
+            CancellationToken.None);
+        AccessToken apiHubToken = connection.Credential.GetToken(
+            new TokenRequestContext([ConnectorQueueDepthClient.ApiHubScope]),
+            CancellationToken.None);
+
+        Assert.Equal("arm-token", armToken.Token);
+        Assert.Equal("apihub-token", apiHubToken.Token);
+    }
+
+    [Fact]
+    public void Create_UsesSingleUnderscoreDebugTokenSetting()
+    {
+        IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["ConnectorNamespace:resourceId"] = ResourceId,
+            ["ConnectorNamespace_token"] = "legacy-debug-token",
+        });
+
+        ConnectorPollingConnection connection = new ConnectorPollingConnectionFactory(
+                configuration,
+                new TestAzureComponentFactory(new TestTokenCredential()))
+            .Create("ConnectorNamespace");
+
+        AccessToken token = connection.Credential.GetToken(
+            new TokenRequestContext([ConnectorQueueDepthClient.ApiHubScope]),
+            CancellationToken.None);
+
+        Assert.Equal("legacy-debug-token", token.Token);
+    }
+
+    [Fact]
+    public void DebugBearerTokenCredential_UsesJwtExpirationWhenPresent()
+    {
+        DateTimeOffset expiresOn = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddMinutes(20).ToUnixTimeSeconds());
+        string jwt = CreateTestJwt(expiresOn);
+        var credential = new DebugBearerTokenCredential(jwt, null, null);
+
+        AccessToken token = credential.GetToken(
+            new TokenRequestContext([ConnectorQueueDepthClient.ApiHubScope]),
+            CancellationToken.None);
+
+        Assert.Equal(jwt, token.Token);
+        Assert.Equal(expiresOn, token.ExpiresOn);
     }
 
     [Fact]
@@ -132,6 +217,19 @@ public class ConnectorPollingConnectionTests
             new ConnectorPollingConnectionFactory(configuration, new TestAzureComponentFactory(new TestTokenCredential()))
                 .Create("ConnectorNamespace"));
     }
+
+    private static string CreateTestJwt(DateTimeOffset expiresOn)
+    {
+        string header = Base64UrlEncode("{}");
+        string payload = Base64UrlEncode($"{{\"exp\":{expiresOn.ToUnixTimeSeconds()}}}");
+        return $"{header}.{payload}.signature";
+    }
+
+    private static string Base64UrlEncode(string value) =>
+        Convert.ToBase64String(Encoding.UTF8.GetBytes(value))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
 
     private static IConfiguration BuildConfiguration(IDictionary<string, string?> settings) =>
         new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
