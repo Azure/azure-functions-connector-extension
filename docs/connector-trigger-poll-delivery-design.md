@@ -178,8 +178,7 @@ A Receive response may contain both inline and linked messages:
       "messageId": "d61b1a2c-...",
       "lockToken": "<opaque-lock-token>",
       "outputsLink": {
-        "uri": "https://<service-endpoint>/.../contents/triggerOutputs?<signed-parameters>",
-        "contentSize": 5242880
+        "uri": "https://<service-endpoint>/.../contents/triggerOutputs?<signed-parameters>"
       }
     }
   ]
@@ -201,9 +200,10 @@ between inline and linked delivery.
 
 Linked-output processing:
 
-1. Validate `outputsLink.uri` and `contentSize`.
+1. Validate `outputsLink.uri`.
 2. Download the complete trigger outputs.
-3. Enforce configured and absolute byte limits while streaming the response.
+3. Enforce configured and absolute byte limits while streaming the response,
+   with an absolute maximum of 100 MiB (104,857,600 bytes).
 4. Validate that the downloaded content is complete JSON in the expected
    trigger-output shape.
 5. Pass the normalized outputs through the same payload conversion used for
@@ -222,16 +222,34 @@ The signed `outputsLink.uri` is sensitive:
 - Never include its query string in exception messages or telemetry.
 - Require an absolute HTTPS URI.
 - Reject user information and fragments.
-- Do not attach the API Hub bearer token unless the service contract requires
-  it.
-- Do not follow redirects unless redirect behavior and valid target hosts are
-  explicitly defined and validated.
+- Do not attach the API Hub bearer token; the URI signature fully authorizes
+  the GET.
+- Do not follow redirects. The content endpoint does not return
+  application-level redirects.
 - Dispose download responses and streams promptly.
 
-The implementation must enforce payload-size limits before and during the
-download. `contentSize` is useful for admission control but is not sufficient
-as the only protection. The extension must count actual bytes read and stop
-when the configured maximum is exceeded.
+The service does not return `contentSize`. The implementation must count
+actual bytes read and stop when the configured or absolute 100 MiB maximum is
+exceeded. The service limit is calculated from compact, uncompressed UTF-8
+JSON. Linked-content responses are `application/json; charset=utf-8` and do
+not use gzip or Brotli transfer encoding.
+
+The signed GET returns the complete `outputs` object directly, including
+`headers` and `body`. Repeating the GET is safe and idempotent while the link
+is valid and the content remains available. No public ETag, checksum, or
+content hash is currently returned.
+
+Signed links remain valid for three to four hours; the exact expiration is
+encoded in the URI. The service signs the link on every Receive, although the
+text can remain identical within the same expiration hour. The lock token is
+always renewed on redelivery. Acknowledgement removes the queue message but
+does not invalidate an issued link. Linked content is normally deleted by
+eight-day retention cleanup, or earlier if the trigger or Connector Namespace
+is deleted.
+
+The outputs-link authority can vary by cloud, region, scale unit, and
+environment. Treat the absolute HTTPS URI as opaque rather than allow-listing
+a hostname or Azure domain.
 
 The first implementation may buffer one complete hydrated output in memory
 because existing worker conversion is JSON-based, but it must not download all
@@ -727,12 +745,15 @@ Implementation guidance:
 - Merge `maxEvents` into an existing query string safely.
 - Treat endpoint URLs as opaque.
 - Use explicit JSON models and `System.Text.Json`.
+- Deserialize into nullable wire DTOs, then validate once into immutable protocol models.
 - Model `outputs` and `outputsLink` as mutually exclusive content sources.
+- Preserve inline `outputs` as owned `BinaryData`; do not retain a borrowed `JsonElement` or deserialize into connector-specific models.
 - Normalize linked content to the same logical `outputs` representation used
   by inline messages.
-- Apply declared-size and actual-bytes-read limits to linked outputs.
+- Apply actual-bytes-read limits to linked outputs, capped at 100 MiB.
 - Never log bearer tokens, lock tokens, or payload bodies.
 - Never log signed outputs-link URLs.
+- Preserve unknown acknowledgement statuses as unsuccessful extensible string values so a future service status does not break the entire response.
 - Expose enough response metadata for listener decisions and diagnostics.
 
 Avoid automatic HTTP retries for Receive and Acknowledge:
@@ -880,7 +901,7 @@ scale-controller integration. Reusable extension-side patterns include:
   signature.
 - Reading trigger metadata and host-level `ConnectorOptions` inside the scaler
   provider.
-- Calculating target workers from approximate pending events and effective
+- Calculating target workers from approximate queue depth and effective
   invocation concurrency:
 
   ```text
@@ -895,7 +916,7 @@ Do not reuse the Connector Namespace side of #26:
 - Its positional `connectorNamespace` and `triggerName` attribute contract.
 - Its Namespace API paths, request/response models, or authentication
   assumptions.
-- Its mock pending-events provider.
+- Its mock queue-depth provider.
 - Any metadata names that conflict with the current `Connection` and
   `TriggerConfigName` contract.
 
@@ -982,7 +1003,8 @@ Record without payload or token content:
 - Mixed inline and linked message deserialization.
 - Exactly one of `outputs` and `outputsLink` is required.
 - Signed outputs-link URI validation and log redaction.
-- Declared and actual content-size limit enforcement.
+- Configured and absolute actual-bytes-read limit enforcement, including the
+  104,857,600-byte boundary and over-limit behavior.
 - Linked-output download response parsing.
 - Linked-output retrieval does not attach an unintended bearer token.
 - Redirect behavior follows the finalized service contract.
@@ -1146,20 +1168,6 @@ Names and file boundaries are preliminary and should follow repository conventio
 7. Should a long-running execution be allowed to finish after the two-minute lock budget, or should the extension cancel it?
 8. When should endpoint cache entries be refreshed?
 9. What evidence would justify extracting the internal protocol client into a separate public package?
-10. Is `outputsLink.uri` fully authorized by its signed parameters, or must the client also attach the API Hub bearer token?
-11. How long is the signed outputs link valid, and is it guaranteed to remain valid for the full two-minute message lock?
-12. On redelivery, does the service return a newly signed `outputsLink` along with the new `lockToken`?
-13. What is the maximum supported `outputsLink.contentSize`?
-14. Does `contentSize` represent the exact uncompressed trigger-output JSON byte count or the transmitted response size?
-15. Does `GET outputsLink.uri` return the complete `outputs` object directly, including `headers` and `body`, or an envelope such as `{ "outputs": ... }`?
-16. Is the linked-content response always `application/json; charset=utf-8`?
-17. Can linked-content responses use transport compression such as gzip or Brotli?
-18. Can an outputs link return an HTTP redirect? If so, which redirect target hosts are valid?
-19. Is repeating a GET against the same signed outputs link safe and idempotent after a transient network failure?
-20. When retrieving complete trigger outputs through `outputsLink.uri`, does the response provide an integrity value such as SHA-256, `Content-MD5`, CRC, `Digest`, or an ETag? This question applies to the downloaded `outputs` bytes, not to `messageId`, `lockToken`, the full Receive response, or the original upstream event.
-21. When is linked content deleted: after acknowledgement, signed-link expiry, or queue TTL?
-22. Does acknowledging a message immediately make its linked content unavailable?
-23. Can the outputs-link authority vary, or can clients validate it against a documented Azure hostname or domain?
 
 ## Supporting Information: Provisioning a Poll Trigger Configuration
 

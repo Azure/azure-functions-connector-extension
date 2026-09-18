@@ -96,7 +96,9 @@ public class ConnectorPollingEndpointResolverTests
         TokenCredential credential,
         string triggerName) =>
         new(
-            new ConnectorPollingConnection("ConnectorNamespace", new ResourceIdentifier(ResourceId), credential),
+            new ConnectorConnectionOptions(
+                new ResourceIdentifier(ResourceId),
+                credential),
             credential,
             triggerName,
             new TestHttpClientFactory(handler),

@@ -52,7 +52,13 @@ public static class ConnectorWebJobsBuilderExtensions
         builder.Services.AddHttpClient(
             ConnectorQueueDepthClient.HttpClientName,
             client => client.Timeout = TimeSpan.FromSeconds(10));
-        builder.Services.TryAddSingleton<IConnectorPollingConnectionFactory, ConnectorPollingConnectionFactory>();
+        builder.Services.TryAddSingleton<ConnectorConnectionOptionsProvider>();
+        builder.Services.TryAddSingleton<IConnectorConnectionOptionsProvider>(
+            serviceProvider =>
+                serviceProvider.GetRequiredService<ConnectorConnectionOptionsProvider>());
+        builder.Services.TryAddSingleton<
+            IConnectorScaleConnectionOptionsProvider,
+            ConnectorScaleConnectionOptionsProvider>();
         builder.Services.TryAddSingleton<IConnectorPollingEndpointResolverFactory, ConnectorPollingEndpointResolverFactory>();
         builder.Services.TryAddSingleton<IConnectorQueueDepthClientFactory, ConnectorQueueDepthClientFactory>();
 

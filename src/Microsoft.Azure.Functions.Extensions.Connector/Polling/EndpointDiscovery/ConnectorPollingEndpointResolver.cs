@@ -18,7 +18,7 @@ internal interface IConnectorPollingEndpointResolver
 internal interface IConnectorPollingEndpointResolverFactory
 {
     IConnectorPollingEndpointResolver Create(
-        ConnectorPollingConnection connection,
+        ConnectorConnectionOptions connection,
         TokenCredential credential,
         string triggerConfigName);
 }
@@ -37,7 +37,7 @@ internal sealed class ConnectorPollingEndpointResolverFactory : IConnectorPollin
     }
 
     public IConnectorPollingEndpointResolver Create(
-        ConnectorPollingConnection connection,
+        ConnectorConnectionOptions connection,
         TokenCredential credential,
         string triggerConfigName) =>
         new ConnectorPollingEndpointResolver(
@@ -54,7 +54,7 @@ internal sealed class ConnectorPollingEndpointResolver : IConnectorPollingEndpoi
     internal const string ArmScope = "https://management.azure.com/.default";
     internal const string ApiVersion = "2026-05-01-preview";
 
-    private readonly ConnectorPollingConnection _connection;
+    private readonly ConnectorConnectionOptions _connection;
     private readonly TokenCredential _credential;
     private readonly string _triggerConfigName;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -64,7 +64,7 @@ internal sealed class ConnectorPollingEndpointResolver : IConnectorPollingEndpoi
     private Task<ConnectorPollingEndpoints>? _refreshResolution;
 
     public ConnectorPollingEndpointResolver(
-        ConnectorPollingConnection connection,
+        ConnectorConnectionOptions connection,
         TokenCredential credential,
         string triggerConfigName,
         IHttpClientFactory httpClientFactory,
@@ -194,8 +194,8 @@ internal sealed class ConnectorPollingEndpointResolver : IConnectorPollingEndpoi
         {
             _logger.LogError(
                 exception,
-                "Failed to resolve Connector Poll endpoints for connection {Connection} and trigger configuration {TriggerConfigName}.",
-                _connection.Name,
+                "Failed to resolve Connector Poll endpoints for resource {ResourceId} and trigger configuration {TriggerConfigName}.",
+                _connection.ResourceId,
                 _triggerConfigName);
             throw;
         }

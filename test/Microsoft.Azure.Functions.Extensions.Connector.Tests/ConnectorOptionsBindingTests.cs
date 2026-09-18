@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Microsoft.Azure.WebJobs.Hosting;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -85,9 +86,12 @@ public class ConnectorOptionsBindingTests
     {
         using IHost host = BuildHost(new Dictionary<string, string?>());
 
-        Assert.NotNull(host.Services.GetRequiredService<Microsoft.Extensions.Azure.AzureComponentFactory>());
+        Assert.NotNull(host.Services.GetRequiredService<AzureComponentFactory>());
         Assert.NotNull(host.Services.GetRequiredService<IHttpClientFactory>());
-        Assert.NotNull(host.Services.GetRequiredService<IConnectorPollingConnectionFactory>());
+        Assert.NotNull(
+            host.Services.GetRequiredService<IConnectorConnectionOptionsProvider>());
+        Assert.NotNull(
+            host.Services.GetRequiredService<IConnectorScaleConnectionOptionsProvider>());
         Assert.NotNull(host.Services.GetRequiredService<IConnectorPollingEndpointResolverFactory>());
         Assert.NotNull(host.Services.GetRequiredService<IConnectorQueueDepthClientFactory>());
     }

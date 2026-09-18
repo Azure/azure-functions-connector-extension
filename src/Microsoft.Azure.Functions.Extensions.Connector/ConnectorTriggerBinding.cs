@@ -18,17 +18,21 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
     private readonly ConnectorExtensionConfigProvider _configProvider;
     private readonly ConnectorTriggerAttribute _attribute;
     private readonly ConnectorOptions _options;
+    private readonly IConnectorConnectionOptionsProvider _connectionOptionsProvider;
 
     public ConnectorTriggerBinding(
         ParameterInfo parameter,
         ConnectorExtensionConfigProvider configProvider,
         ConnectorTriggerAttribute attribute,
-        ConnectorOptions options)
+        ConnectorOptions options,
+        IConnectorConnectionOptionsProvider connectionOptionsProvider)
     {
         _parameter = parameter ?? throw new ArgumentNullException(nameof(parameter));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _attribute = attribute ?? throw new ArgumentNullException(nameof(attribute));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _connectionOptionsProvider = connectionOptionsProvider
+            ?? throw new ArgumentNullException(nameof(connectionOptionsProvider));
     }
 
     public Type TriggerValueType => typeof(string);
@@ -53,14 +57,23 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
         IListener listener = _attribute.DeliveryMode switch
         {
             ConnectorTriggerDeliveryMode.Webhook => new ConnectorListener(_configProvider, registration),
-            ConnectorTriggerDeliveryMode.Poll => new ConnectorPollingListener(
-                registration,
-                ConnectorPollingOptions.Create(_attribute, _options)),
+            ConnectorTriggerDeliveryMode.Poll => CreatePollingListener(registration),
             _ => throw new InvalidOperationException(
                 $"Unsupported Connector trigger delivery mode '{_attribute.DeliveryMode}'."),
         };
 
         return Task.FromResult(listener);
+    }
+
+    private ConnectorPollingListener CreatePollingListener(
+        ConnectorFunctionRegistration registration)
+    {
+        ConnectorPollingOptions options =
+            ConnectorPollingOptions.Create(_attribute, _options);
+        ConnectorConnectionOptions connectionOptions =
+            _connectionOptionsProvider.Get(options.Connection);
+
+        return new ConnectorPollingListener(registration, options, connectionOptions);
     }
 
     public ParameterDescriptor ToParameterDescriptor() => new TriggerParameterDescriptor

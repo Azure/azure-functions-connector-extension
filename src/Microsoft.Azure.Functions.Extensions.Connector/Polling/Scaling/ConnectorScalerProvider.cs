@@ -37,15 +37,18 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
                 ?? throw new InvalidOperationException($"TriggerMetadata.Properties['{nameof(AzureComponentFactory)}'] must be an AzureComponentFactory.");
         }
 
-        ConnectorPollingConnection connection = serviceProvider
-            .GetRequiredService<IConnectorPollingConnectionFactory>()
-            .Create(connectionName, injectedComponentFactory);
-        TokenCredential armCredential = connection.HasDebugTokenOverride
-            ? connection.Credential
-            : GetInjectedTokenCredential(triggerMetadata, ConnectorScaleCredentialProperties.ArmTokenCredential) ?? connection.Credential;
-        TokenCredential apiHubCredential = connection.HasDebugTokenOverride
-            ? connection.Credential
-            : GetInjectedTokenCredential(triggerMetadata, ConnectorScaleCredentialProperties.ApiHubTokenCredential) ?? connection.Credential;
+        ConnectorScaleConnectionOptions scaleConnection = serviceProvider
+            .GetRequiredService<IConnectorScaleConnectionOptionsProvider>()
+            .Get(connectionName, injectedComponentFactory);
+        TokenCredential armCredential = scaleConnection.HasDebugTokenOverride
+            ? scaleConnection.Credential
+            : GetInjectedTokenCredential(triggerMetadata, ConnectorScaleCredentialProperties.ArmTokenCredential) ?? scaleConnection.Credential;
+        TokenCredential apiHubCredential = scaleConnection.HasDebugTokenOverride
+            ? scaleConnection.Credential
+            : GetInjectedTokenCredential(triggerMetadata, ConnectorScaleCredentialProperties.ApiHubTokenCredential) ?? scaleConnection.Credential;
+        var connection = new ConnectorConnectionOptions(
+            scaleConnection.ResourceId,
+            scaleConnection.Credential);
         IConnectorPollingEndpointResolver endpointResolver = serviceProvider
             .GetRequiredService<IConnectorPollingEndpointResolverFactory>()
             .Create(connection, armCredential, triggerConfigName);

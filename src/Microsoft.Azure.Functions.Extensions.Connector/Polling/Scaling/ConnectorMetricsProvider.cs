@@ -11,7 +11,7 @@ internal sealed class ConnectorMetricsProvider
     private readonly string _functionName;
     private readonly string _triggerConfigName;
     private readonly ILogger _logger;
-    private int _lastKnownGoodDepth = -1;
+    private long _lastKnownGoodDepth = -1;
 
     public ConnectorMetricsProvider(IConnectorQueueDepthClient depthClient, string functionName, string triggerConfigName, ILogger logger)
     {
@@ -27,13 +27,13 @@ internal sealed class ConnectorMetricsProvider
     {
         try
         {
-            int depth = await _depthClient.GetApproximateQueueDepthAsync(cancellationToken).ConfigureAwait(false);
+            long depth = await _depthClient.GetApproximateQueueDepthAsync(cancellationToken).ConfigureAwait(false);
             Interlocked.Exchange(ref _lastKnownGoodDepth, depth);
             return new ConnectorTriggerMetrics(depth, DateTime.UtcNow);
         }
         catch (Exception exception)
         {
-            int lastKnownGoodDepth = Volatile.Read(ref _lastKnownGoodDepth);
+            long lastKnownGoodDepth = Volatile.Read(ref _lastKnownGoodDepth);
             if (lastKnownGoodDepth >= 0)
             {
                 _logger.LogWarning(exception, "Failed to query Connector queue depth for function {FunctionName} and trigger configuration {TriggerConfigName}; preserving last known good depth {Depth}.", _functionName, _triggerConfigName, lastKnownGoodDepth);

@@ -3,7 +3,6 @@
 
 using System.Net;
 using System.Net.Http.Headers;
-using System.Text.Json;
 using Azure.Core;
 using Microsoft.Extensions.Logging;
 
@@ -11,7 +10,7 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 
 internal interface IConnectorQueueDepthClient
 {
-    Task<int> GetApproximateQueueDepthAsync(CancellationToken cancellationToken = default);
+    Task<long> GetApproximateQueueDepthAsync(CancellationToken cancellationToken = default);
 }
 
 internal interface IConnectorQueueDepthClientFactory
@@ -80,7 +79,7 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<int> GetApproximateQueueDepthAsync(
+    public async Task<long> GetApproximateQueueDepthAsync(
         CancellationToken cancellationToken = default)
     {
         ConnectorPollingEndpoints endpoints = await _endpointResolver
@@ -106,7 +105,9 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
         }
     }
 
-    private async Task<int> GetDepthCoreAsync(Uri endpoint, CancellationToken cancellationToken)
+    private async Task<long> GetDepthCoreAsync(
+        Uri endpoint,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -129,16 +130,12 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
 
             await using Stream content = await response.Content
                 .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            using JsonDocument document = await JsonDocument.ParseAsync(
-                content,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (!document.RootElement.TryGetProperty("approximateQueueDepth", out JsonElement depthElement) ||
-                !depthElement.TryGetInt32(out int depth) ||
-                depth < 0)
-            {
-                throw new ConnectorQueueDepthException(
-                    "Connector approximate queue depth response did not contain a non-negative integer.");
-            }
+            BinaryData responseContent = await BinaryData
+                .FromStreamAsync(content, cancellationToken)
+                .ConfigureAwait(false);
+            long depth =
+                ConnectorPollingProtocol.DeserializeApproximateQueueDepth(
+                    responseContent);
 
             _logger.LogDebug(
                 "Connector approximate queue depth for function {FunctionName} and trigger configuration {TriggerConfigName} is {Depth}.",

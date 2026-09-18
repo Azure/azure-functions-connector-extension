@@ -148,19 +148,24 @@ ConnectorMessageLock
 ConnectorReceiveResult
 ConnectorAcknowledgeResult
 ConnectorAcknowledgeItemResult
+ConnectorAcknowledgeStatus
 ConnectorQueueStatus
 ```
 
 Requirements:
 
-- Use explicit `System.Text.Json` mappings.
+- Use nullable internal wire DTOs with explicit `System.Text.Json` mappings, then validate into immutable protocol models.
+- Use a source-generated JSON context so wire names and supported payloads are explicit.
 - Require non-empty message IDs and lock tokens.
 - Require exactly one of `outputs` and `outputsLink`.
-- Validate linked-output URI and declared content size.
-- Parse mixed acknowledgement results: `Acknowledged`, `NotFound`, and
-  `Failed`.
+- Preserve inline `outputs` as owned `BinaryData`; do not retain a borrowed `JsonElement` or deserialize into connector-specific types.
+- Validate the linked-output URI. The Receive contract does not include a
+  declared content size.
+- Parse mixed acknowledgement results and preserve unknown future statuses with an extensible string-backed value. Known values are `Acknowledged`, `NotFound`, and `Failed`; only `Acknowledged` is successful.
 - Never expose or log lock tokens or signed output URLs.
+- Use secret-safe `ToString()` implementations for token- and signed-URI-bearing models.
 - Keep generated `Azure.Connectors.Sdk` types out of the host protocol layer.
+- Keep wire parsing, protocol validation, status interpretation, and URI redaction independent of WebJobs types so they can move to a future Connectors Polling SDK.
 
 ## PR 4: ARM Endpoint Resolver
 
@@ -211,10 +216,15 @@ Add a dedicated linked-output client or narrowly scoped collaborator:
 
 - Require an absolute HTTPS URI with no user information or fragment.
 - Never log or persist the complete signed URI.
-- Do not attach an API Hub token unless the service confirms it is required.
-- Enforce both declared `contentSize` and actual bytes read.
-- Bound buffering, download concurrency, and redirects according to the
-  finalized service contract.
+- Do not attach an API Hub token; the URI signature fully authorizes the GET.
+- Disable redirects and automatic decompression.
+- Require `application/json; charset=utf-8`.
+- Enforce actual bytes read with an absolute 100 MiB (104,857,600-byte)
+  maximum.
+- Allow bounded retries because repeated signed GETs are safe and idempotent
+  while the link and content remain valid.
+- Treat the HTTPS authority as opaque; it varies by cloud, region, scale unit,
+  and environment.
 - Normalize downloaded content to the same complete `outputs` JSON used by
   inline messages.
 
@@ -364,9 +374,10 @@ Final smoke test:
 8. Confirm queue depth returns to zero.
 9. Stop the host and restore the trigger to its disabled state.
 
-## Open Service Dependencies
+## Confirmed Linked-Output Service Contract
 
-The design document tracks the authoritative open questions for linked-output
-authentication, lifetime, redelivery, maximum size, response shape,
-compression, redirects, retry safety, integrity metadata, deletion, and valid
-hosts. PR 5 must not guess those service semantics.
+The Connector Namespace team confirmed the linked-output authentication,
+lifetime, redelivery, 100 MiB maximum, response shape, content type,
+compression, redirects, retry safety, integrity metadata, deletion, and
+authority behavior. PR 5 must implement the contract recorded in the design
+document.

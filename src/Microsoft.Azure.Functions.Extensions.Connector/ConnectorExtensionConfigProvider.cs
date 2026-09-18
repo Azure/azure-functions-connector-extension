@@ -27,12 +27,14 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
     private readonly ILogger _consoleLogger;
     private readonly ConnectorHttpRequestProcessor _httpRequestProcessor;
     private readonly ConnectorOptions _options;
+    private readonly IConnectorConnectionOptionsProvider _connectionOptionsProvider;
     private readonly ConcurrentDictionary<string, ConnectorFunctionRegistration> _functions = new(StringComparer.OrdinalIgnoreCase);
 
     public ConnectorExtensionConfigProvider(
         ConnectorHttpRequestProcessor httpRequestProcessor,
         ILoggerFactory loggerFactory,
-        IOptions<ConnectorOptions> options)
+        IOptions<ConnectorOptions> options,
+        IConnectorConnectionOptionsProvider connectionOptionsProvider)
     {
         _httpRequestProcessor = httpRequestProcessor ?? throw new ArgumentNullException(nameof(httpRequestProcessor));
         _logger = loggerFactory?.CreateLogger<ConnectorExtensionConfigProvider>()
@@ -40,6 +42,8 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         _consoleLogger = loggerFactory?.CreateLogger("Host.Function.Console")
             ?? throw new ArgumentNullException(nameof(loggerFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _connectionOptionsProvider = connectionOptionsProvider
+            ?? throw new ArgumentNullException(nameof(connectionOptionsProvider));
     }
 
     internal void RegisterFunction(ConnectorFunctionRegistration registration)
@@ -61,7 +65,10 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
 
         context
             .AddBindingRule<ConnectorTriggerAttribute>()
-            .BindToTrigger(new ConnectorTriggerBindingProvider(this, _options));
+            .BindToTrigger(new ConnectorTriggerBindingProvider(
+                this,
+                _options,
+                _connectionOptionsProvider));
     }
 
     public async Task<HttpResponseMessage> ConvertAsync(HttpRequestMessage input, CancellationToken cancellationToken)

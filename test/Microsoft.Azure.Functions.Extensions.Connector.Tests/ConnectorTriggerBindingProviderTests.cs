@@ -21,22 +21,42 @@ public class ConnectorTriggerBindingProviderTests
         _configProvider = new ConnectorExtensionConfigProvider(
             httpRequestProcessor,
             loggerFactory,
-            Options.Create(new ConnectorOptions()));
-        _provider = new ConnectorTriggerBindingProvider(_configProvider, new ConnectorOptions());
+            Options.Create(new ConnectorOptions()),
+            new StubConnectorConnectionOptionsProvider());
+        _provider = new ConnectorTriggerBindingProvider(
+            _configProvider,
+            new ConnectorOptions(),
+            new StubConnectorConnectionOptionsProvider());
     }
 
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenConfigProviderIsNull()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new ConnectorTriggerBindingProvider(null!, new ConnectorOptions()));
+            new ConnectorTriggerBindingProvider(
+                null!,
+                new ConnectorOptions(),
+                new StubConnectorConnectionOptionsProvider()));
     }
 
     [Fact]
     public void Constructor_ThrowsArgumentNullException_WhenOptionsIsNull()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new ConnectorTriggerBindingProvider(_configProvider, null!));
+            new ConnectorTriggerBindingProvider(
+                _configProvider,
+                null!,
+                new StubConnectorConnectionOptionsProvider()));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentNullException_WhenConnectionOptionsProviderIsNull()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new ConnectorTriggerBindingProvider(
+                _configProvider,
+                new ConnectorOptions(),
+                null!));
     }
 
     [Fact]

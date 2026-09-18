@@ -3,4 +3,6 @@
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
-internal sealed record ConnectorTriggerMetrics(int PendingEvents, DateTime SampledAtUtc);
+internal sealed record ConnectorTriggerMetrics(
+    long ApproximateQueueDepth,
+    DateTime SampledAtUtc);

@@ -47,6 +47,20 @@ public class ConnectorTargetScalerTests
     }
 
     [Fact]
+    public async Task GetScaleResultAsync_CapsInt64DepthAtMaximumWorkerCount()
+    {
+        ConnectorTargetScaler scaler = CreateScaler(
+            new SequenceDepthClient(long.MaxValue),
+            1,
+            new ConnectorOptions());
+
+        TargetScalerResult result =
+            await scaler.GetScaleResultAsync(new TargetScalerContext());
+
+        Assert.Equal(int.MaxValue, result.TargetWorkerCount);
+    }
+
+    [Fact]
     public async Task MetricsProvider_PreservesLastKnownGoodDepthOnTransientFailure()
     {
         var depthClient = new SequenceDepthClient(12, new HttpRequestException("transient"));
@@ -55,8 +69,8 @@ public class ConnectorTargetScalerTests
         ConnectorTriggerMetrics first = await provider.GetMetricsAsync();
         ConnectorTriggerMetrics second = await provider.GetMetricsAsync();
 
-        Assert.Equal(12, first.PendingEvents);
-        Assert.Equal(12, second.PendingEvents);
+        Assert.Equal(12, first.ApproximateQueueDepth);
+        Assert.Equal(12, second.ApproximateQueueDepth);
     }
 
     [Fact]

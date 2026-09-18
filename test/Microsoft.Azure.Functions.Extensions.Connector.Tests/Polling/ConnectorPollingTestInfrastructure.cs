@@ -114,24 +114,35 @@ internal sealed class SequenceDepthClient(params object[] results) : IConnectorQ
     private int _index;
     public int CallCount { get; private set; }
 
-    public Task<int> GetApproximateQueueDepthAsync(CancellationToken cancellationToken = default)
+    public Task<long> GetApproximateQueueDepthAsync(CancellationToken cancellationToken = default)
     {
         CallCount++;
         object result = results[Math.Min(_index++, results.Length - 1)];
         return result is Exception exception
-            ? Task.FromException<int>(exception)
-            : Task.FromResult((int)result);
+            ? Task.FromException<long>(exception)
+            : Task.FromResult(Convert.ToInt64(result));
     }
 }
 
-internal sealed class TestConnectionFactory(Func<string, AzureComponentFactory?, ConnectorPollingConnection> create) : IConnectorPollingConnectionFactory
+internal sealed class TestScaleConnectionOptionsProvider(
+    Func<string, AzureComponentFactory?, ConnectorScaleConnectionOptions> get) :
+    IConnectorScaleConnectionOptionsProvider
 {
-    public ConnectorPollingConnection Create(string connectionName, AzureComponentFactory? componentFactory = null) => create(connectionName, componentFactory);
+    public ConnectorScaleConnectionOptions Get(
+        string connectionName,
+        AzureComponentFactory? componentFactory = null) =>
+        get(connectionName, componentFactory);
 }
 
-internal sealed class TestResolverFactory(Func<ConnectorPollingConnection, TokenCredential, string, IConnectorPollingEndpointResolver> create) : IConnectorPollingEndpointResolverFactory
+internal sealed class TestResolverFactory(
+    Func<ConnectorConnectionOptions, TokenCredential, string, IConnectorPollingEndpointResolver> create) :
+    IConnectorPollingEndpointResolverFactory
 {
-    public IConnectorPollingEndpointResolver Create(ConnectorPollingConnection connection, TokenCredential credential, string triggerConfigName) => create(connection, credential, triggerConfigName);
+    public IConnectorPollingEndpointResolver Create(
+        ConnectorConnectionOptions connection,
+        TokenCredential credential,
+        string triggerConfigName) =>
+        create(connection, credential, triggerConfigName);
 }
 
 internal sealed class TestDepthClientFactory(Func<IConnectorPollingEndpointResolver, TokenCredential, string, string, IConnectorQueueDepthClient> create) : IConnectorQueueDepthClientFactory

@@ -33,7 +33,7 @@ public class ConnectorPollingOptionsTests
             DefaultConcurrency = 7,
         };
 
-        var result = ConnectorPollingOptions.Create(new ConnectorTriggerAttribute(), defaults);
+        var result = ConnectorPollingOptions.Create(CreateValidAttribute(), defaults);
 
         Assert.Equal(3, result.MaxBatchSize);
         Assert.Equal(7, result.Concurrency);
@@ -44,7 +44,8 @@ public class ConnectorPollingOptionsTests
     [InlineData(33)]
     public void Create_Throws_WhenAttributeMaxBatchSizeIsOutOfRange(int maxBatchSize)
     {
-        var attribute = new ConnectorTriggerAttribute { MaxBatchSize = maxBatchSize };
+        ConnectorTriggerAttribute attribute = CreateValidAttribute();
+        attribute.MaxBatchSize = maxBatchSize;
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             ConnectorPollingOptions.Create(attribute, new ConnectorOptions()));
@@ -60,7 +61,7 @@ public class ConnectorPollingOptionsTests
         var defaults = new ConnectorOptions { DefaultMaxBatchSize = maxBatchSize };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            ConnectorPollingOptions.Create(new ConnectorTriggerAttribute(), defaults));
+            ConnectorPollingOptions.Create(CreateValidAttribute(), defaults));
 
         Assert.Contains("DefaultMaxBatchSize", exception.Message);
     }
@@ -68,7 +69,8 @@ public class ConnectorPollingOptionsTests
     [Fact]
     public void Create_Throws_WhenAttributeConcurrencyIsNegative()
     {
-        var attribute = new ConnectorTriggerAttribute { Concurrency = -1 };
+        ConnectorTriggerAttribute attribute = CreateValidAttribute();
+        attribute.Concurrency = -1;
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             ConnectorPollingOptions.Create(attribute, new ConnectorOptions()));
@@ -82,7 +84,7 @@ public class ConnectorPollingOptionsTests
         var defaults = new ConnectorOptions { DefaultConcurrency = 0 };
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            ConnectorPollingOptions.Create(new ConnectorTriggerAttribute(), defaults));
+            ConnectorPollingOptions.Create(CreateValidAttribute(), defaults));
 
         Assert.Contains("DefaultConcurrency", exception.Message);
     }
@@ -98,6 +100,42 @@ public class ConnectorPollingOptionsTests
     public void Create_Throws_WhenDefaultsAreNull()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            ConnectorPollingOptions.Create(new ConnectorTriggerAttribute(), null!));
+            ConnectorPollingOptions.Create(CreateValidAttribute(), null!));
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void Create_Throws_WhenConnectionIsMissing(string? connection)
+    {
+        ConnectorTriggerAttribute attribute = CreateValidAttribute();
+        attribute.Connection = connection;
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ConnectorPollingOptions.Create(attribute, new ConnectorOptions()));
+
+        Assert.Contains("Connection", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void Create_Throws_WhenTriggerConfigNameIsMissing(string? triggerConfigName)
+    {
+        ConnectorTriggerAttribute attribute = CreateValidAttribute();
+        attribute.TriggerConfigName = triggerConfigName;
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ConnectorPollingOptions.Create(attribute, new ConnectorOptions()));
+
+        Assert.Contains("TriggerConfigName", exception.Message);
+    }
+
+    private static ConnectorTriggerAttribute CreateValidAttribute() => new()
+    {
+        Connection = "ConnectorNamespace",
+        TriggerConfigName = "OnNewEmail",
+    };
 }

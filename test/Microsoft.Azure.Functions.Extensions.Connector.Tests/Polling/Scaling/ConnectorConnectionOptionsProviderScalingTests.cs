@@ -8,7 +8,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
-public class ConnectorPollingConnectionTests
+public class ConnectorConnectionOptionsProviderScalingTests
 {
     private const string ResourceId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/gateway";
 
@@ -23,9 +23,11 @@ public class ConnectorPollingConnectionTests
         });
         var defaultFactory = new TestAzureComponentFactory(new TestTokenCredential("default"));
         var selectedFactory = new TestAzureComponentFactory(new TestTokenCredential("selected"));
-        var factory = new ConnectorPollingConnectionFactory(configuration, defaultFactory);
+        ConnectorScaleConnectionOptionsProvider provider =
+            CreateProvider(configuration, defaultFactory);
 
-        ConnectorPollingConnection connection = factory.Create("ConnectorNamespace", selectedFactory);
+        ConnectorScaleConnectionOptions connection =
+            provider.Get("ConnectorNamespace", selectedFactory);
 
         Assert.Equal(ResourceId, connection.ResourceId.ToString());
         Assert.IsType<ManagedIdentityFallbackCredential>(connection.Credential);
@@ -45,8 +47,9 @@ public class ConnectorPollingConnectionTests
         });
         var defaultFactory = new TestAzureComponentFactory(new TestTokenCredential());
 
-        ConnectorPollingConnection result = new ConnectorPollingConnectionFactory(configuration, defaultFactory)
-            .Create("ConnectorNamespace");
+        ConnectorScaleConnectionOptions result =
+            CreateProvider(configuration, defaultFactory)
+            .Get("ConnectorNamespace");
 
         Assert.NotNull(result.Credential);
         Assert.Equal(1, defaultFactory.CreateCredentialCalls);
@@ -65,8 +68,9 @@ public class ConnectorPollingConnectionTests
         });
         var defaultFactory = new TestAzureComponentFactory(new TestTokenCredential());
 
-        ConnectorPollingConnection connection = new ConnectorPollingConnectionFactory(configuration, defaultFactory)
-            .Create("ConnectorNamespace");
+        ConnectorScaleConnectionOptions connection =
+            CreateProvider(configuration, defaultFactory)
+            .Get("ConnectorNamespace");
 
         AccessToken token = connection.Credential.GetToken(
             new TokenRequestContext([ConnectorPollingEndpointResolver.ArmScope]),
@@ -85,10 +89,10 @@ public class ConnectorPollingConnectionTests
             ["ConnectorNamespace:apiHubToken"] = "apihub-token",
         });
 
-        ConnectorPollingConnection connection = new ConnectorPollingConnectionFactory(
+        ConnectorScaleConnectionOptions connection = CreateProvider(
                 configuration,
                 new TestAzureComponentFactory(new TestTokenCredential()))
-            .Create("ConnectorNamespace");
+            .Get("ConnectorNamespace");
 
         AccessToken armToken = connection.Credential.GetToken(
             new TokenRequestContext([ConnectorPollingEndpointResolver.ArmScope]),
@@ -110,10 +114,10 @@ public class ConnectorPollingConnectionTests
             ["ConnectorNamespace_token"] = "legacy-debug-token",
         });
 
-        ConnectorPollingConnection connection = new ConnectorPollingConnectionFactory(
+        ConnectorScaleConnectionOptions connection = CreateProvider(
                 configuration,
                 new TestAzureComponentFactory(new TestTokenCredential()))
-            .Create("ConnectorNamespace");
+            .Get("ConnectorNamespace");
 
         AccessToken token = connection.Credential.GetToken(
             new TokenRequestContext([ConnectorQueueDepthClient.ApiHubScope]),
@@ -153,10 +157,10 @@ public class ConnectorPollingConnectionTests
 
         try
         {
-            ConnectorPollingConnection connection = new ConnectorPollingConnectionFactory(
+            ConnectorScaleConnectionOptions connection = CreateProvider(
                     configuration,
                     new TestAzureComponentFactory(managedIdentityCredential))
-                .Create("ConnectorNamespace");
+                .Get("ConnectorNamespace");
 
             AccessToken token = connection.Credential.GetToken(
                 new TokenRequestContext(["https://management.azure.com/.default"]),
@@ -184,8 +188,10 @@ public class ConnectorPollingConnectionTests
         });
 
         Assert.Throws<InvalidOperationException>(() =>
-            new ConnectorPollingConnectionFactory(configuration, new TestAzureComponentFactory(new TestTokenCredential()))
-                .Create("ConnectorNamespace"));
+            CreateProvider(
+                configuration,
+                new TestAzureComponentFactory(new TestTokenCredential()))
+                .Get("ConnectorNamespace"));
     }
 
     [Fact]
@@ -198,8 +204,10 @@ public class ConnectorPollingConnectionTests
         });
 
         Assert.Throws<InvalidOperationException>(() =>
-            new ConnectorPollingConnectionFactory(configuration, new TestAzureComponentFactory(new TestTokenCredential()))
-                .Create("ConnectorNamespace"));
+            CreateProvider(
+                configuration,
+                new TestAzureComponentFactory(new TestTokenCredential()))
+                .Get("ConnectorNamespace"));
     }
 
     [Fact]
@@ -214,8 +222,10 @@ public class ConnectorPollingConnectionTests
         });
 
         Assert.Throws<InvalidOperationException>(() =>
-            new ConnectorPollingConnectionFactory(configuration, new TestAzureComponentFactory(new TestTokenCredential()))
-                .Create("ConnectorNamespace"));
+            CreateProvider(
+                configuration,
+                new TestAzureComponentFactory(new TestTokenCredential()))
+                .Get("ConnectorNamespace"));
     }
 
     private static string CreateTestJwt(DateTimeOffset expiresOn)
@@ -233,4 +243,13 @@ public class ConnectorPollingConnectionTests
 
     private static IConfiguration BuildConfiguration(IDictionary<string, string?> settings) =>
         new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+
+    private static ConnectorScaleConnectionOptionsProvider CreateProvider(
+        IConfiguration configuration,
+        TestAzureComponentFactory componentFactory) =>
+        new(
+            configuration,
+            new ConnectorConnectionOptionsProvider(
+                configuration,
+                componentFactory));
 }

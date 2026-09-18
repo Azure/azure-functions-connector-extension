@@ -18,7 +18,7 @@ public class ConnectorQueueDepthClientTests
         var handler = new SequenceHttpMessageHandler(_ => JsonResponse(HttpStatusCode.OK, "{\"approximateQueueDepth\":37}"));
         var client = CreateClient(resolver, credential, handler);
 
-        int depth = await client.GetApproximateQueueDepthAsync();
+        long depth = await client.GetApproximateQueueDepthAsync();
 
         Assert.Equal(37, depth);
         Assert.Equal(new[] { ConnectorQueueDepthClient.ApiHubScope }, Assert.Single(credential.RequestedScopes));
@@ -36,11 +36,30 @@ public class ConnectorQueueDepthClientTests
             _ => JsonResponse(HttpStatusCode.OK, "{\"approximateQueueDepth\":9}"));
         var client = CreateClient(resolver, new TestTokenCredential(), handler);
 
-        int depth = await client.GetApproximateQueueDepthAsync();
+        long depth = await client.GetApproximateQueueDepthAsync();
 
         Assert.Equal(9, depth);
         Assert.Equal(1, resolver.RefreshCalls);
         Assert.Equal(new[] { "old.test", "new.test" }, handler.Requests.Select(r => r.RequestUri!.Host));
+    }
+
+    [Fact]
+    public async Task GetApproximateQueueDepthAsync_SupportsInt64Depth()
+    {
+        var resolver = new StubEndpointResolver(
+            Endpoints("https://runtime.test/depth"));
+        var handler = new SequenceHttpMessageHandler(_ =>
+            JsonResponse(
+                HttpStatusCode.OK,
+                "{\"approximateQueueDepth\":2147483648}"));
+        var client = CreateClient(
+            resolver,
+            new TestTokenCredential(),
+            handler);
+
+        long depth = await client.GetApproximateQueueDepthAsync();
+
+        Assert.Equal(2147483648L, depth);
     }
 
     [Fact]
