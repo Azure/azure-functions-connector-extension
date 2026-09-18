@@ -23,7 +23,7 @@ public sealed class ConnectorOptions : IOptionsFormatter
     public int DefaultMaxBatchSize { get; set; } = 1;
 
     /// <summary>
-    /// Gets or sets the default maximum number of pending events per worker instance.
+    /// Gets or sets the default maximum number of concurrent function invocations per worker instance.
     /// The value must be greater than zero.
     /// </summary>
     public int DefaultConcurrency { get; set; } = 16;
