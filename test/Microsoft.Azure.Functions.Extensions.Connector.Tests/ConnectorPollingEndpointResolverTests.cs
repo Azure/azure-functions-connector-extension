@@ -97,6 +97,7 @@ public class ConnectorPollingEndpointResolverTests
         string triggerName) =>
         new(
             new ConnectorPollingConnection("ConnectorNamespace", new ResourceIdentifier(ResourceId), credential),
+            credential,
             triggerName,
             new TestHttpClientFactory(handler),
             NullLogger<ConnectorPollingEndpointResolver>.Instance);

@@ -25,7 +25,7 @@ public class ConnectorScalerProviderTests
         var connectionFactory = new TestConnectionFactory((name, _) =>
             new ConnectorPollingConnection(name, new ResourceIdentifier(ResourceId), credential));
         var resolvers = new List<IConnectorPollingEndpointResolver>();
-        var resolverFactory = new TestResolverFactory((_, _) =>
+        var resolverFactory = new TestResolverFactory((_, _, _) =>
         {
             var resolver = new StubEndpointResolver(Endpoints());
             resolvers.Add(resolver);
@@ -58,7 +58,7 @@ public class ConnectorScalerProviderTests
             selectedFactory = factory;
             return new ConnectorPollingConnection(name, new ResourceIdentifier(ResourceId), new TestTokenCredential());
         });
-        var resolverFactory = new TestResolverFactory((_, _) => new StubEndpointResolver(Endpoints()));
+        var resolverFactory = new TestResolverFactory((_, _, _) => new StubEndpointResolver(Endpoints()));
         var depthFactory = new TestDepthClientFactory((_, _, _, _) => new SequenceDepthClient(0));
         TriggerMetadata metadata = Metadata("Function", "trigger", 1);
         metadata.Properties[nameof(AzureComponentFactory)] = injectedFactory;
@@ -66,6 +66,66 @@ public class ConnectorScalerProviderTests
         _ = new ConnectorScalerProvider(BuildServices(connectionFactory, resolverFactory, depthFactory), metadata);
 
         Assert.Same(injectedFactory, selectedFactory);
+    }
+
+    [Fact]
+    public void Provider_UsesDedicatedScaleControllerCredentialsForArmAndApiHub()
+    {
+        var defaultCredential = new TestTokenCredential("default");
+        var armCredential = new TestTokenCredential("arm");
+        var apiHubCredential = new TestTokenCredential("apihub");
+        TokenCredential? resolverCredential = null;
+        TokenCredential? depthCredential = null;
+        var connectionFactory = new TestConnectionFactory((name, _) =>
+            new ConnectorPollingConnection(name, new ResourceIdentifier(ResourceId), defaultCredential));
+        var resolverFactory = new TestResolverFactory((_, credential, _) =>
+        {
+            resolverCredential = credential;
+            return new StubEndpointResolver(Endpoints());
+        });
+        var depthFactory = new TestDepthClientFactory((_, credential, _, _) =>
+        {
+            depthCredential = credential;
+            return new SequenceDepthClient(0);
+        });
+        TriggerMetadata metadata = Metadata("Function", "trigger", 1);
+        metadata.Properties[ConnectorScaleCredentialProperties.ArmTokenCredential] = armCredential;
+        metadata.Properties[ConnectorScaleCredentialProperties.ApiHubTokenCredential] = apiHubCredential;
+
+        _ = new ConnectorScalerProvider(BuildServices(connectionFactory, resolverFactory, depthFactory), metadata);
+
+        Assert.Same(armCredential, resolverCredential);
+        Assert.Same(apiHubCredential, depthCredential);
+    }
+
+    [Fact]
+    public void Provider_DebugTokenOverrideTakesPrecedenceOverScaleControllerCredentials()
+    {
+        var debugCredential = new TestTokenCredential("debug");
+        var armCredential = new TestTokenCredential("arm");
+        var apiHubCredential = new TestTokenCredential("apihub");
+        TokenCredential? resolverCredential = null;
+        TokenCredential? depthCredential = null;
+        var connectionFactory = new TestConnectionFactory((name, _) =>
+            new ConnectorPollingConnection(name, new ResourceIdentifier(ResourceId), debugCredential, HasDebugTokenOverride: true));
+        var resolverFactory = new TestResolverFactory((_, credential, _) =>
+        {
+            resolverCredential = credential;
+            return new StubEndpointResolver(Endpoints());
+        });
+        var depthFactory = new TestDepthClientFactory((_, credential, _, _) =>
+        {
+            depthCredential = credential;
+            return new SequenceDepthClient(0);
+        });
+        TriggerMetadata metadata = Metadata("Function", "trigger", 1);
+        metadata.Properties[ConnectorScaleCredentialProperties.ArmTokenCredential] = armCredential;
+        metadata.Properties[ConnectorScaleCredentialProperties.ApiHubTokenCredential] = apiHubCredential;
+
+        _ = new ConnectorScalerProvider(BuildServices(connectionFactory, resolverFactory, depthFactory), metadata);
+
+        Assert.Same(debugCredential, resolverCredential);
+        Assert.Same(debugCredential, depthCredential);
     }
 
     [Fact]

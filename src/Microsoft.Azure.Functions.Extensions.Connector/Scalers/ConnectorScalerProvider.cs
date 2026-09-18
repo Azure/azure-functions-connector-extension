@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using Azure.Core;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Azure.WebJobs.Host.Scale;
@@ -39,12 +40,18 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
         ConnectorPollingConnection connection = serviceProvider
             .GetRequiredService<IConnectorPollingConnectionFactory>()
             .Create(connectionName, injectedComponentFactory);
+        TokenCredential armCredential = connection.HasDebugTokenOverride
+            ? connection.Credential
+            : GetInjectedTokenCredential(triggerMetadata, ConnectorScaleCredentialProperties.ArmTokenCredential) ?? connection.Credential;
+        TokenCredential apiHubCredential = connection.HasDebugTokenOverride
+            ? connection.Credential
+            : GetInjectedTokenCredential(triggerMetadata, ConnectorScaleCredentialProperties.ApiHubTokenCredential) ?? connection.Credential;
         IConnectorPollingEndpointResolver endpointResolver = serviceProvider
             .GetRequiredService<IConnectorPollingEndpointResolverFactory>()
-            .Create(connection, triggerConfigName);
+            .Create(connection, armCredential, triggerConfigName);
         IConnectorQueueDepthClient depthClient = serviceProvider
             .GetRequiredService<IConnectorQueueDepthClientFactory>()
-            .Create(endpointResolver, connection.Credential, functionName, triggerConfigName);
+            .Create(endpointResolver, apiHubCredential, functionName, triggerConfigName);
 
         ILoggerFactory loggerFactory = serviceProvider.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance;
         var metricsProvider = new ConnectorMetricsProvider(
@@ -62,6 +69,17 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
     }
 
     public ITargetScaler GetTargetScaler() => _targetScaler;
+
+    private static TokenCredential? GetInjectedTokenCredential(TriggerMetadata metadata, string propertyName)
+    {
+        if (metadata.Properties?.TryGetValue(propertyName, out object? value) == true)
+        {
+            return value as TokenCredential
+                ?? throw new InvalidOperationException($"TriggerMetadata.Properties['{propertyName}'] must be a TokenCredential.");
+        }
+
+        return null;
+    }
 
     private static string GetRequiredMetadata(TriggerMetadata triggerMetadata, string propertyName)
     {

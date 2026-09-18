@@ -19,6 +19,7 @@ internal interface IConnectorPollingEndpointResolverFactory
 {
     IConnectorPollingEndpointResolver Create(
         ConnectorPollingConnection connection,
+        TokenCredential credential,
         string triggerConfigName);
 }
 
@@ -37,9 +38,11 @@ internal sealed class ConnectorPollingEndpointResolverFactory : IConnectorPollin
 
     public IConnectorPollingEndpointResolver Create(
         ConnectorPollingConnection connection,
+        TokenCredential credential,
         string triggerConfigName) =>
         new ConnectorPollingEndpointResolver(
             connection,
+            credential,
             triggerConfigName,
             _httpClientFactory,
             _loggerFactory.CreateLogger<ConnectorPollingEndpointResolver>());
@@ -52,6 +55,7 @@ internal sealed class ConnectorPollingEndpointResolver : IConnectorPollingEndpoi
     internal const string ApiVersion = "2026-05-01-preview";
 
     private readonly ConnectorPollingConnection _connection;
+    private readonly TokenCredential _credential;
     private readonly string _triggerConfigName;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger _logger;
@@ -61,11 +65,13 @@ internal sealed class ConnectorPollingEndpointResolver : IConnectorPollingEndpoi
 
     public ConnectorPollingEndpointResolver(
         ConnectorPollingConnection connection,
+        TokenCredential credential,
         string triggerConfigName,
         IHttpClientFactory httpClientFactory,
         ILogger logger)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
+        _credential = credential ?? throw new ArgumentNullException(nameof(credential));
         ArgumentException.ThrowIfNullOrWhiteSpace(triggerConfigName);
         _triggerConfigName = triggerConfigName;
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
@@ -157,7 +163,7 @@ internal sealed class ConnectorPollingEndpointResolver : IConnectorPollingEndpoi
     {
         try
         {
-            AccessToken token = await _connection.Credential.GetTokenAsync(
+            AccessToken token = await _credential.GetTokenAsync(
                 new TokenRequestContext([ArmScope]),
                 cancellationToken).ConfigureAwait(false);
             string requestUri =

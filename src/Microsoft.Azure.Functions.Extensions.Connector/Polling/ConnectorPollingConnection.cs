@@ -12,7 +12,8 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 internal sealed record ConnectorPollingConnection(
     string Name,
     ResourceIdentifier ResourceId,
-    TokenCredential Credential);
+    TokenCredential Credential,
+    bool HasDebugTokenOverride = false);
 
 internal interface IConnectorPollingConnectionFactory
 {
@@ -51,7 +52,7 @@ internal sealed class ConnectorPollingConnectionFactory : IConnectorPollingConne
         ResourceIdentifier resourceId = ParseResourceId(resourceIdValue, connectionName);
         if (TryCreateDebugTokenCredential(connectionName, section, out TokenCredential? debugCredential))
         {
-            return new ConnectorPollingConnection(connectionName, resourceId, debugCredential!);
+            return new ConnectorPollingConnection(connectionName, resourceId, debugCredential!, HasDebugTokenOverride: true);
         }
 
         ValidateIdentitySelectors(section, connectionName);

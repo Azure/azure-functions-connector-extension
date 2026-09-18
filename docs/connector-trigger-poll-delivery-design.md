@@ -409,6 +409,8 @@ Authentication uses two token audiences:
 
 The request URI identifies the target Connector Namespace; the credential does not receive or infer that target resource ID. ARM and Connector Namespace authorize the caller represented by the bearer token against the requested resource.
 
+When Scale Controller hosts the scaler, it may inject dedicated app-identity credentials for ARM and API Hub through `ConnectorScaleCredentialProperties`. The extension routes ARM discovery to the former and queue-depth operations to the latter. This lets Scale Controller use its existing fixed-audience `ManagedIdentityTokenCredential` without making the extension impersonate the Function App.
+
 The debug token override is intentionally for private-stamp diagnostics. A single `ConnectorNamespace__token` is returned for every requested scope, but normal scaling uses different ARM and API Hub audiences; use `ConnectorNamespace__managementToken` and `ConnectorNamespace__apiHubToken` when testing both endpoint discovery and queue-depth calls with copied tokens. The extension parses JWT `exp` for the returned `AccessToken` expiry when present; otherwise it treats the configured token as a short-lived five-minute diagnostic token. The token setting can also be supplied with a single underscore, such as `ConnectorNamespace_token`, for environments where hierarchical app settings are inconvenient.
 
 ARM endpoint discovery requires the following control-plane action:

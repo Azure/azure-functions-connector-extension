@@ -12,6 +12,11 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 /// <summary>
 /// Extension methods for Connector integration with Azure Functions.
 /// </summary>
+public static class ConnectorScaleCredentialProperties
+{
+    public const string ArmTokenCredential = "Connector.ArmTokenCredential";
+    public const string ApiHubTokenCredential = "Connector.ApiHubTokenCredential";
+}
 public static class ConnectorWebJobsBuilderExtensions
 {
     /// <summary>

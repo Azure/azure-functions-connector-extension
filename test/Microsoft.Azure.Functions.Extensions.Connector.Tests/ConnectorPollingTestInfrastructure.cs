@@ -129,9 +129,9 @@ internal sealed class TestConnectionFactory(Func<string, AzureComponentFactory?,
     public ConnectorPollingConnection Create(string connectionName, AzureComponentFactory? componentFactory = null) => create(connectionName, componentFactory);
 }
 
-internal sealed class TestResolverFactory(Func<ConnectorPollingConnection, string, IConnectorPollingEndpointResolver> create) : IConnectorPollingEndpointResolverFactory
+internal sealed class TestResolverFactory(Func<ConnectorPollingConnection, TokenCredential, string, IConnectorPollingEndpointResolver> create) : IConnectorPollingEndpointResolverFactory
 {
-    public IConnectorPollingEndpointResolver Create(ConnectorPollingConnection connection, string triggerConfigName) => create(connection, triggerConfigName);
+    public IConnectorPollingEndpointResolver Create(ConnectorPollingConnection connection, TokenCredential credential, string triggerConfigName) => create(connection, credential, triggerConfigName);
 }
 
 internal sealed class TestDepthClientFactory(Func<IConnectorPollingEndpointResolver, TokenCredential, string, string, IConnectorQueueDepthClient> create) : IConnectorQueueDepthClientFactory
