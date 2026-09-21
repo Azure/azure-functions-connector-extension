@@ -51,8 +51,10 @@ internal sealed class ConnectorQueueDepthClientFactory : IConnectorQueueDepthCli
 
 internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
 {
-    internal const string HttpClientName = "ConnectorPollingRuntime";
-    internal const string ApiHubScope = "https://apihub.azure.com/.default";
+    internal const string HttpClientName =
+        ConnectorPollDeliveryClient.HttpClientName;
+    internal const string ApiHubScope =
+        ConnectorPollDeliveryClient.ApiHubScope;
 
     private readonly IConnectorPollingEndpointResolver _endpointResolver;
     private readonly TokenCredential _credential;

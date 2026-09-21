@@ -311,6 +311,8 @@ Both values are approximate and must not be treated as prerequisites for Receive
 - Queue message TTL is fixed at seven days and is not caller-configurable.
 - Ordering is not guaranteed.
 - Consumers must use `messageId` as the deduplication key.
+- The current design assumes `messageId` is unique across Poll deliveries.
+  Connector Namespace confirmation of the exact uniqueness scope is pending.
 
 ## Proposed User Contract
 
@@ -452,6 +454,11 @@ Connector Namespace
 ```
 
 Obtaining a token for `https://apihub.azure.com/.default` authenticates the identity, and the connection access policy authorizes that identity to use the Poll runtime endpoints.
+
+A service-backed queue-status authorization test confirmed this separation:
+the same API Hub token and endpoint returned `200 OK` with the connection
+access policy, `403 Forbidden` after the policy was removed, and `200 OK`
+after the policy was restored.
 
 ### Ordering Guidance
 

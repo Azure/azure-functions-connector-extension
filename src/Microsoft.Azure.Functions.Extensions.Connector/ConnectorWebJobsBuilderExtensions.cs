@@ -50,8 +50,20 @@ public static class ConnectorWebJobsBuilderExtensions
             ConnectorPollingEndpointResolver.HttpClientName,
             client => client.Timeout = TimeSpan.FromSeconds(10));
         builder.Services.AddHttpClient(
-            ConnectorQueueDepthClient.HttpClientName,
-            client => client.Timeout = TimeSpan.FromSeconds(10));
+            ConnectorPollDeliveryClient.HttpClientName,
+            client =>
+                client.Timeout = ConnectorPollingHttpConstants.RuntimeTimeout);
+        builder.Services.AddHttpClient(
+            ConnectorLinkedOutputClient.HttpClientName,
+            client =>
+                client.Timeout =
+                    ConnectorPollingHttpConstants.LinkedOutputTimeout)
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false,
+                AutomaticDecompression = System.Net.DecompressionMethods.None,
+            })
+            .RemoveAllLoggers();
         builder.Services.TryAddSingleton<ConnectorConnectionOptionsProvider>();
         builder.Services.TryAddSingleton<IConnectorConnectionOptionsProvider>(
             serviceProvider =>
@@ -61,6 +73,8 @@ public static class ConnectorWebJobsBuilderExtensions
             ConnectorScaleConnectionOptionsProvider>();
         builder.Services.TryAddSingleton<IConnectorPollingEndpointResolverFactory, ConnectorPollingEndpointResolverFactory>();
         builder.Services.TryAddSingleton<IConnectorQueueDepthClientFactory, ConnectorQueueDepthClientFactory>();
+        builder.Services.TryAddSingleton<IConnectorPollDeliveryClientFactory, ConnectorPollDeliveryClientFactory>();
+        builder.Services.TryAddSingleton<IConnectorLinkedOutputClient, ConnectorLinkedOutputClient>();
 
         // Register the extension config provider
         builder.AddExtension<ConnectorExtensionConfigProvider>()

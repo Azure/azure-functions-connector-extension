@@ -162,6 +162,8 @@ Requirements:
 - Validate the linked-output URI. The Receive contract does not include a
   declared content size.
 - Parse mixed acknowledgement results and preserve unknown future statuses with an extensible string-backed value. Known values are `Acknowledged`, `NotFound`, and `Failed`; only `Acknowledged` is successful.
+- Treat Poll `messageId` as unique for the current implementation while
+  Connector Namespace confirms its exact uniqueness scope.
 - Never expose or log lock tokens or signed output URLs.
 - Use secret-safe `ToString()` implementations for token- and signed-URI-bearing models.
 - Keep generated `Azure.Connectors.Sdk` types out of the host protocol layer.
@@ -204,7 +206,9 @@ Requirements:
 
 - Authenticate runtime operations with the API Hub scope.
 - Require the Function identity to have an access policy on the connection referenced by the trigger config.
-- Add a service-backed authorization test for the connection access policy.
+- Preserve the service-backed authorization evidence: the same API Hub token
+  and queue-status endpoint returned `200 OK` with the connection access
+  policy, `403 Forbidden` without it, and `200 OK` after restoration.
 - Preserve existing endpoint query parameters.
 - Explicitly send `maxEvents` in the range 1-32.
 - Parse `x-ms-more-messages-available`.
