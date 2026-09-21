@@ -21,6 +21,10 @@ internal interface IConnectorPollDeliveryClient
         IReadOnlyList<ConnectorMessageLock> messages,
         CancellationToken cancellationToken);
 
+    Task<bool> HasMessagesAsync(
+        ConnectorPollingEndpoints endpoints,
+        CancellationToken cancellationToken);
+
     Task<ConnectorQueueStatus> GetQueueStatusAsync(
         ConnectorPollingEndpoints endpoints,
         CancellationToken cancellationToken);
@@ -200,6 +204,19 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
         return ConnectorPollingProtocol.DeserializeQueueStatus(
             await hasMessagesTask.ConfigureAwait(false),
             await depthTask.ConfigureAwait(false));
+    }
+
+    public async Task<bool> HasMessagesAsync(
+        ConnectorPollingEndpoints endpoints,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+
+        BinaryData content = await GetSafeOperationContentAsync(
+            endpoints.HasMessagesUri,
+            "HasMessages",
+            cancellationToken).ConfigureAwait(false);
+        return ConnectorPollingProtocol.DeserializeHasMessages(content);
     }
 
     private async Task<BinaryData> GetSafeOperationContentAsync(

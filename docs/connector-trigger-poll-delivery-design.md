@@ -1107,6 +1107,20 @@ preserve Webhook behavior and pass its focused build and tests.
 - Avoid transparent retries for lease-sensitive Receive and acknowledgement
   operations.
 
+### Interim PR: First runnable Poll package
+
+- Replace the placeholder listener with a minimal message pump.
+- Require `MaxBatchSize = 1` while honoring configurable `Concurrency`.
+- Resolve endpoints, check queue status, receive only up to available
+  invocation capacity, normalize inline and linked outputs, and dispatch one
+  event per invocation through the existing string binding.
+- Acknowledge only successful invocations.
+- Add cancellation-aware polling backoff, bounded shutdown, package-consumption
+  validation, and an explicit preview limitations document.
+- Defer metadata-rich binding, batch invocation, endpoint refresh, poison
+  handling, and full lock-budget telemetry to the planned worker-binding and
+  listener PRs.
+
 ### PR 6: Worker binding
 
 - Add the deferred-binding transport needed to preserve per-event metadata.

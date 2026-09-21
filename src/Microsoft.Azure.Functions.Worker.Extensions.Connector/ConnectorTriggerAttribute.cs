@@ -30,6 +30,7 @@ public sealed class ConnectorTriggerAttribute : TriggerBindingAttribute
     /// <summary>
     /// Gets or sets the maximum number of events supplied to one function invocation.
     /// Valid values are zero through 32. A value of zero uses the host-level default.
+    /// The initial Poll listener preview requires the effective value to be one.
     /// </summary>
     public int MaxBatchSize { get; set; }
 

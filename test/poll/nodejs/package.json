@@ -1,0 +1,20 @@
+{
+  "name": "connector-poll-sample-nodejs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/functions/*.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && func start"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@azure/functions": "4.15.1-preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

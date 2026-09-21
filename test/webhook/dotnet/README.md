@@ -25,7 +25,7 @@ This sample demonstrates how to use the Connector Extension with .NET isolated w
 
    dotnet build .\test\webhook\dotnet\SampleApp.csproj `
        --configuration Release `
-       -p:ConnectorPackageVersion=0.2.0-alpha.dev `
+       -p:ConnectorPackageVersion=0.3.0-alpha.dev `
        -p:RestoreAdditionalProjectSources="$PWD\out\pkg"
    ```
 

@@ -19,13 +19,15 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
     private readonly ConnectorTriggerAttribute _attribute;
     private readonly ConnectorOptions _options;
     private readonly IConnectorConnectionOptionsProvider _connectionOptionsProvider;
+    private readonly IConnectorPollingListenerFactory _pollingListenerFactory;
 
     public ConnectorTriggerBinding(
         ParameterInfo parameter,
         ConnectorExtensionConfigProvider configProvider,
         ConnectorTriggerAttribute attribute,
         ConnectorOptions options,
-        IConnectorConnectionOptionsProvider connectionOptionsProvider)
+        IConnectorConnectionOptionsProvider connectionOptionsProvider,
+        IConnectorPollingListenerFactory pollingListenerFactory)
     {
         _parameter = parameter ?? throw new ArgumentNullException(nameof(parameter));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
@@ -33,6 +35,8 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _connectionOptionsProvider = connectionOptionsProvider
             ?? throw new ArgumentNullException(nameof(connectionOptionsProvider));
+        _pollingListenerFactory = pollingListenerFactory
+            ?? throw new ArgumentNullException(nameof(pollingListenerFactory));
     }
 
     public Type TriggerValueType => typeof(string);
@@ -73,7 +77,10 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
         ConnectorConnectionOptions connectionOptions =
             _connectionOptionsProvider.Get(options.Connection);
 
-        return new ConnectorPollingListener(registration, options, connectionOptions);
+        return _pollingListenerFactory.Create(
+            registration,
+            options,
+            connectionOptions);
     }
 
     public ParameterDescriptor ToParameterDescriptor() => new TriggerParameterDescriptor

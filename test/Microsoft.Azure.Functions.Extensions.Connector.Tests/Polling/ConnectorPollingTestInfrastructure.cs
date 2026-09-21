@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Azure.Core;
+using Microsoft.Azure.WebJobs;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 
@@ -143,6 +144,19 @@ internal sealed class TestResolverFactory(
         TokenCredential credential,
         string triggerConfigName) =>
         create(connection, credential, triggerConfigName);
+}
+
+internal sealed class TestPollDeliveryClientFactory(
+    Func<TokenCredential, IConnectorPollDeliveryClient> create) :
+    IConnectorPollDeliveryClientFactory
+{
+    public IConnectorPollDeliveryClient Create(TokenCredential credential) =>
+        create(credential);
+}
+
+internal sealed class TestNameResolver(Func<string, string?> resolve) : INameResolver
+{
+    public string? Resolve(string name) => resolve(name);
 }
 
 internal sealed class TestDepthClientFactory(Func<IConnectorPollingEndpointResolver, TokenCredential, string, string, IConnectorQueueDepthClient> create) : IConnectorQueueDepthClientFactory

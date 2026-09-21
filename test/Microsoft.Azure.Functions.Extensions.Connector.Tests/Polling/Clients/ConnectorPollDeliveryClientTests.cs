@@ -373,6 +373,31 @@ public class ConnectorPollDeliveryClientTests
     }
 
     [Fact]
+    public async Task HasMessagesAsync_DoesNotCallApproximateQueueDepth()
+    {
+        var handler = new RoutingHttpMessageHandler(request =>
+            request.RequestUri!.AbsolutePath.EndsWith(
+                "/has",
+                StringComparison.Ordinal)
+                ? JsonResponse(
+                    HttpStatusCode.OK,
+                    """{"hasMessages":true}""")
+                : JsonResponse(
+                    HttpStatusCode.InternalServerError,
+                    "{}"));
+        ConnectorPollDeliveryClient client = CreateClient(
+            new TestTokenCredential(),
+            handler);
+
+        bool result = await client.HasMessagesAsync(
+            Endpoints(),
+            CancellationToken.None);
+
+        Assert.True(result);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
     public async Task GetQueueStatusAsync_RetriesOnlySafeTransientOperation()
     {
         int depthAttempts = 0;

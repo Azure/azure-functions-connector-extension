@@ -1,23 +1,114 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Host.Executors;
+using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Azure.WebJobs.Host.Listeners;
+using Microsoft.Extensions.Logging;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
-/// <summary>
-/// Placeholder listener for Connector Namespace Poll delivery.
-/// </summary>
-internal sealed class ConnectorPollingListener : IListener
+internal interface IConnectorPollingListenerFactory
 {
-    internal ConnectorPollingListener(
+    ConnectorPollingListener Create(
+        ConnectorFunctionRegistration registration,
+        ConnectorPollingOptions options,
+        ConnectorConnectionOptions connectionOptions);
+}
+
+internal sealed class ConnectorPollingListenerFactory(
+    IConnectorPollingEndpointResolverFactory endpointResolverFactory,
+    IConnectorPollDeliveryClientFactory deliveryClientFactory,
+    IConnectorLinkedOutputClient linkedOutputClient,
+    INameResolver nameResolver,
+    ILoggerFactory loggerFactory) : IConnectorPollingListenerFactory
+{
+    private readonly IConnectorPollingEndpointResolverFactory _endpointResolverFactory =
+        endpointResolverFactory ?? throw new ArgumentNullException(nameof(endpointResolverFactory));
+    private readonly IConnectorPollDeliveryClientFactory _deliveryClientFactory =
+        deliveryClientFactory ?? throw new ArgumentNullException(nameof(deliveryClientFactory));
+    private readonly IConnectorLinkedOutputClient _linkedOutputClient =
+        linkedOutputClient ?? throw new ArgumentNullException(nameof(linkedOutputClient));
+    private readonly INameResolver _nameResolver =
+        nameResolver ?? throw new ArgumentNullException(nameof(nameResolver));
+    private readonly ILoggerFactory _loggerFactory =
+        loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+
+    public ConnectorPollingListener Create(
         ConnectorFunctionRegistration registration,
         ConnectorPollingOptions options,
         ConnectorConnectionOptions connectionOptions)
     {
+        ArgumentNullException.ThrowIfNull(registration);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(connectionOptions);
+
+        string? triggerConfigName =
+            _nameResolver.ResolveWholeString(options.TriggerConfigName);
+        if (string.IsNullOrWhiteSpace(triggerConfigName))
+        {
+            throw new InvalidOperationException(
+                "Connector Poll TriggerConfigName resolved to an empty value.");
+        }
+
+        ConnectorPollingOptions resolvedOptions =
+            options with { TriggerConfigName = triggerConfigName };
+        return new ConnectorPollingListener(
+            registration,
+            resolvedOptions,
+            connectionOptions,
+            _endpointResolverFactory.Create(
+                connectionOptions,
+                connectionOptions.Credential,
+                resolvedOptions.TriggerConfigName),
+            _deliveryClientFactory.Create(connectionOptions.Credential),
+            _linkedOutputClient,
+            _loggerFactory.CreateLogger<ConnectorPollingListener>());
+    }
+}
+
+/// <summary>
+/// Minimal Connector Namespace Poll listener supporting concurrent,
+/// single-message function invocations.
+/// </summary>
+internal sealed class ConnectorPollingListener : IListener
+{
+    private static readonly TimeSpan EmptyQueueDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan FailureDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MaximumJitter = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(30);
+
+    private readonly IConnectorPollingEndpointResolver _endpointResolver;
+    private readonly IConnectorPollDeliveryClient _deliveryClient;
+    private readonly IConnectorLinkedOutputClient _linkedOutputClient;
+    private readonly ILogger<ConnectorPollingListener> _logger;
+    private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
+    private readonly object _lifecycleLock = new();
+
+    private CancellationTokenSource? _receiveCancellation;
+    private CancellationTokenSource? _processingCancellation;
+    private Task? _messagePump;
+    private bool _disposed;
+
+    internal ConnectorPollingListener(
+        ConnectorFunctionRegistration registration,
+        ConnectorPollingOptions options,
+        ConnectorConnectionOptions connectionOptions,
+        IConnectorPollingEndpointResolver endpointResolver,
+        IConnectorPollDeliveryClient deliveryClient,
+        IConnectorLinkedOutputClient linkedOutputClient,
+        ILogger<ConnectorPollingListener> logger,
+        Func<TimeSpan, CancellationToken, Task>? delayAsync = null)
+    {
         Registration = registration ?? throw new ArgumentNullException(nameof(registration));
         Options = options ?? throw new ArgumentNullException(nameof(options));
         ConnectionOptions = connectionOptions ?? throw new ArgumentNullException(nameof(connectionOptions));
+        _endpointResolver = endpointResolver ?? throw new ArgumentNullException(nameof(endpointResolver));
+        _deliveryClient = deliveryClient ?? throw new ArgumentNullException(nameof(deliveryClient));
+        _linkedOutputClient = linkedOutputClient ?? throw new ArgumentNullException(nameof(linkedOutputClient));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _delayAsync = delayAsync ?? DelayWithJitterAsync;
     }
 
     internal ConnectorFunctionRegistration Registration { get; }
@@ -26,17 +117,303 @@ internal sealed class ConnectorPollingListener : IListener
 
     internal ConnectorConnectionOptions ConnectionOptions { get; }
 
-    public Task StartAsync(CancellationToken cancellationToken) =>
-        throw new NotSupportedException(
-            "Connector trigger Poll delivery is not implemented yet.");
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        if (Options.MaxBatchSize != 1)
+        {
+            throw new InvalidOperationException(
+                "This preview Connector Poll listener requires MaxBatchSize to be 1.");
+        }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        CancellationTokenSource receiveCancellation;
+        CancellationTokenSource processingCancellation;
+        lock (_lifecycleLock)
+        {
+            if (_messagePump is not null || _receiveCancellation is not null)
+            {
+                return;
+            }
+
+            receiveCancellation = new CancellationTokenSource();
+            processingCancellation = new CancellationTokenSource();
+            _receiveCancellation = receiveCancellation;
+            _processingCancellation = processingCancellation;
+        }
+
+        bool started = false;
+        try
+        {
+            using var startupCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    receiveCancellation.Token);
+            ConnectorPollingEndpoints endpoints =
+                await _endpointResolver.ResolveAsync(
+                    startupCancellation.Token).ConfigureAwait(false);
+
+            lock (_lifecycleLock)
+            {
+                ThrowIfDisposed();
+                if (receiveCancellation.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                _messagePump = RunMessagePumpAsync(
+                    endpoints,
+                    receiveCancellation.Token,
+                    processingCancellation.Token);
+                started = true;
+            }
+        }
+        catch (OperationCanceledException)
+            when (receiveCancellation.IsCancellationRequested &&
+                !cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (!started)
+            {
+                CleanupCancelledStartup(
+                    receiveCancellation,
+                    processingCancellation);
+            }
+        }
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        Task? messagePump;
+        CancellationTokenSource? processingCancellation;
+        lock (_lifecycleLock)
+        {
+            _receiveCancellation?.Cancel();
+            messagePump = _messagePump;
+            processingCancellation = _processingCancellation;
+        }
+
+        if (messagePump is null)
+        {
+            return;
+        }
+
+        Task timeout = Task.Delay(ShutdownTimeout, cancellationToken);
+        if (await Task.WhenAny(messagePump, timeout).ConfigureAwait(false) != messagePump)
+        {
+            processingCancellation?.Cancel();
+        }
+
+        await messagePump.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     public void Cancel()
     {
+        lock (_lifecycleLock)
+        {
+            _receiveCancellation?.Cancel();
+            _processingCancellation?.Cancel();
+        }
     }
 
     public void Dispose()
     {
+        lock (_lifecycleLock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _receiveCancellation?.Cancel();
+            _processingCancellation?.Cancel();
+            _receiveCancellation?.Dispose();
+            _processingCancellation?.Dispose();
+        }
+    }
+
+    private async Task RunMessagePumpAsync(
+        ConnectorPollingEndpoints endpoints,
+        CancellationToken receiveCancellationToken,
+        CancellationToken processingCancellationToken)
+    {
+        var activeInvocations = new HashSet<Task>();
+        try
+        {
+            while (!receiveCancellationToken.IsCancellationRequested)
+            {
+                activeInvocations.RemoveWhere(static task => task.IsCompleted);
+                int availableInvocationSlots =
+                    Options.Concurrency - activeInvocations.Count;
+                if (availableInvocationSlots <= 0)
+                {
+                    await Task.WhenAny(activeInvocations)
+                        .WaitAsync(receiveCancellationToken)
+                        .ConfigureAwait(false);
+                    continue;
+                }
+
+                try
+                {
+                    bool hasMessages =
+                        await _deliveryClient.HasMessagesAsync(
+                            endpoints,
+                            receiveCancellationToken).ConfigureAwait(false);
+                    if (!hasMessages)
+                    {
+                        await _delayAsync(
+                            EmptyQueueDelay,
+                            receiveCancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    int maxEvents = Math.Min(
+                        ConnectorPollingProtocolLimits.MaximumBatchSize,
+                        availableInvocationSlots);
+                    ConnectorReceiveResult receiveResult =
+                        await _deliveryClient.ReceiveAsync(
+                            endpoints,
+                            maxEvents,
+                            receiveCancellationToken).ConfigureAwait(false);
+                    if (receiveResult.Messages.Count > maxEvents)
+                    {
+                        throw new ConnectorPollDeliveryException(
+                            $"Connector Receive returned {receiveResult.Messages.Count} messages when at most {maxEvents} were requested.");
+                    }
+
+                    foreach (ConnectorPollMessage message in receiveResult.Messages)
+                    {
+                        activeInvocations.Add(ProcessMessageAsync(
+                            endpoints,
+                            message,
+                            processingCancellationToken));
+                    }
+
+                    if (receiveResult.Messages.Count == 0 ||
+                        !receiveResult.MoreMessagesAvailable)
+                    {
+                        await _delayAsync(
+                            EmptyQueueDelay,
+                            receiveCancellationToken).ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException)
+                    when (receiveCancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogError(
+                        exception,
+                        "Connector Poll listener cycle failed for function {FunctionName}.",
+                        Registration.FunctionName);
+                    await _delayAsync(
+                        FailureDelay,
+                        receiveCancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+            when (receiveCancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            await Task.WhenAll(activeInvocations).ConfigureAwait(false);
+        }
+    }
+
+    private async Task ProcessMessageAsync(
+        ConnectorPollingEndpoints endpoints,
+        ConnectorPollMessage message,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            BinaryData outputs = message.Outputs ??
+                await _linkedOutputClient.DownloadAsync(
+                    message.OutputsLink!,
+                    ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes,
+                    cancellationToken).ConfigureAwait(false);
+            var triggerData = new TriggeredFunctionData
+            {
+                TriggerValue = outputs.ToString(),
+            };
+            FunctionResult result = await Registration.Executor.TryExecuteAsync(
+                triggerData,
+                cancellationToken).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                _logger.LogError(
+                    result.Exception,
+                    "Connector Poll function {FunctionName} failed; the message will not be acknowledged.",
+                    Registration.FunctionName);
+                return;
+            }
+
+            ConnectorAcknowledgeResult acknowledgeResult =
+                await _deliveryClient.AcknowledgeAsync(
+                    endpoints,
+                    [message.MessageLock],
+                    cancellationToken).ConfigureAwait(false);
+            ConnectorAcknowledgeItemResult itemResult =
+                acknowledgeResult.Results.Single();
+            if (!itemResult.IsAcknowledged)
+            {
+                _logger.LogWarning(
+                    "Connector Poll acknowledgement returned status {Status} for function {FunctionName}.",
+                    itemResult.Status.IsKnown ? itemResult.Status.ToString() : "Unknown",
+                    Registration.FunctionName);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogDebug(
+                "Connector Poll message processing was cancelled for function {FunctionName}.",
+                Registration.FunctionName);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Connector Poll message processing failed for function {FunctionName}; the message will not be acknowledged.",
+                Registration.FunctionName);
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
+    private void CleanupCancelledStartup(
+        CancellationTokenSource receiveCancellation,
+        CancellationTokenSource processingCancellation)
+    {
+        lock (_lifecycleLock)
+        {
+            if (ReferenceEquals(_receiveCancellation, receiveCancellation) &&
+                _messagePump is null)
+            {
+                _receiveCancellation = null;
+                _processingCancellation = null;
+            }
+        }
+
+        receiveCancellation.Dispose();
+        processingCancellation.Dispose();
+    }
+
+    private static Task DelayWithJitterAsync(
+        TimeSpan delay,
+        CancellationToken cancellationToken)
+    {
+        int maximumJitterMilliseconds = checked((int)MaximumJitter.TotalMilliseconds);
+        TimeSpan jitter = TimeSpan.FromMilliseconds(
+            Random.Shared.Next(maximumJitterMilliseconds + 1));
+        return Task.Delay(delay + jitter, cancellationToken);
     }
 }

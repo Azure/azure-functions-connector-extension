@@ -281,6 +281,18 @@ Requirements:
 
 Replace the placeholder with a lifecycle-safe, capacity-aware message pump.
 
+Before the complete listener, publish an interim runnable package that uses
+the existing string binding with these deliberate constraints:
+
+- Require the effective `MaxBatchSize` to be one.
+- Honor `Concurrency` as concurrent one-message invocations.
+- Resolve endpoints, query queue status, and receive no more than available
+  invocation slots.
+- Normalize inline and linked outputs before dispatch.
+- Acknowledge only successful invocations.
+- Document that metadata-rich binding, batch invocation, endpoint refresh,
+  poison handling, and complete lock-budget telemetry remain deferred.
+
 Capacity calculation:
 
 ```csharp

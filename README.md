@@ -14,7 +14,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://dev.azure.com/azfunc/public/_apis/build/status/1710?branchName=main)](https://dev.azure.com/azfunc/public/_build?definitionId=1710&branchName=main)
 
-An Azure Functions trigger extension for receiving webhook callbacks from Connector Namespace managed connectors (Office 365, Teams, SharePoint, etc.).
+An Azure Functions trigger extension for receiving Webhook and preview Poll
+events from Connector Namespace managed connectors (Office 365, Teams,
+SharePoint, etc.).
 
 - [Learn Documentation](https://learn.microsoft.com/azure/azure-functions/functions-connectors-overview)
 - [Try Samples](https://aka.ms/functions-connectors-samples)
@@ -130,9 +132,18 @@ The underlying Connector SDKs provide typed models:
 - `string` - raw JSON body
 - POCO/model types - strongly-typed SDK models (see individual SDK docs for available types)
 
+### Poll delivery preview
+
+The first runnable Poll package supports concurrent single-event invocations
+with `MaxBatchSize = 1`. See
+[Connector Trigger Poll Preview](./docs/connector-trigger-poll-preview.md) for
+local package instructions, Function App configuration, and the current
+limitations.
+
 ## Documentation
 
 - **[Operations to Functions Signature Mapping](./docs/operations-functions-match.md)** - Complete reference of all connector trigger operations and their Azure Functions signatures across .NET, Python, and TypeScript SDKs
+- **[Connector Trigger Poll Preview](./docs/connector-trigger-poll-preview.md)** - Build and run the first Poll-capable NuGet package and review its limitations
 
 ## Copilot Skills
 
@@ -153,6 +164,7 @@ This repository includes [Copilot Skills](https://docs.github.com/en/copilot/cus
 These samples build and reference local extension code and are meant for extension testing:
 
 - **[Webhook delivery](./test/webhook)** - .NET isolated, Node.js, and Python Webhook samples
+- **[Poll delivery](./test/poll)** - Dedicated .NET, TypeScript, and Python Poll preview samples
 
 ## Project Structure
 
@@ -173,6 +185,7 @@ azure-functions-connector-extension/
 │       ├── ConnectorTriggerAttribute.cs                         #   Trigger attribute
 │       └── Converters/                                          #   Type converters
 ├── test/
+│   ├── poll/                                                    # Poll preview samples for all supported workers
 │   ├── webhook/                                                 # Webhook samples for all supported workers
 │   ├── test-requests.http                                       # HTTP test requests
 │   └── Microsoft.Azure.Functions.Extensions.Connector.Tests/    # Unit tests

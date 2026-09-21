@@ -25,7 +25,8 @@ public class ConnectorListenerTests
             httpRequestProcessor,
             loggerFactory,
             Options.Create(new ConnectorOptions()),
-            new StubConnectorConnectionOptionsProvider());
+            new StubConnectorConnectionOptionsProvider(),
+            new StubConnectorPollingListenerFactory());
     }
 
     [Fact]

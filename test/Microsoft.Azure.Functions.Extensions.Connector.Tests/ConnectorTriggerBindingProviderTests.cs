@@ -22,11 +22,13 @@ public class ConnectorTriggerBindingProviderTests
             httpRequestProcessor,
             loggerFactory,
             Options.Create(new ConnectorOptions()),
-            new StubConnectorConnectionOptionsProvider());
+            new StubConnectorConnectionOptionsProvider(),
+            new StubConnectorPollingListenerFactory());
         _provider = new ConnectorTriggerBindingProvider(
             _configProvider,
             new ConnectorOptions(),
-            new StubConnectorConnectionOptionsProvider());
+            new StubConnectorConnectionOptionsProvider(),
+            new StubConnectorPollingListenerFactory());
     }
 
     [Fact]
@@ -36,7 +38,8 @@ public class ConnectorTriggerBindingProviderTests
             new ConnectorTriggerBindingProvider(
                 null!,
                 new ConnectorOptions(),
-                new StubConnectorConnectionOptionsProvider()));
+                new StubConnectorConnectionOptionsProvider(),
+                new StubConnectorPollingListenerFactory()));
     }
 
     [Fact]
@@ -46,7 +49,8 @@ public class ConnectorTriggerBindingProviderTests
             new ConnectorTriggerBindingProvider(
                 _configProvider,
                 null!,
-                new StubConnectorConnectionOptionsProvider()));
+                new StubConnectorConnectionOptionsProvider(),
+                new StubConnectorPollingListenerFactory()));
     }
 
     [Fact]
@@ -56,6 +60,18 @@ public class ConnectorTriggerBindingProviderTests
             new ConnectorTriggerBindingProvider(
                 _configProvider,
                 new ConnectorOptions(),
+                null!,
+                new StubConnectorPollingListenerFactory()));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentNullException_WhenPollingListenerFactoryIsNull()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new ConnectorTriggerBindingProvider(
+                _configProvider,
+                new ConnectorOptions(),
+                new StubConnectorConnectionOptionsProvider(),
                 null!));
     }
 

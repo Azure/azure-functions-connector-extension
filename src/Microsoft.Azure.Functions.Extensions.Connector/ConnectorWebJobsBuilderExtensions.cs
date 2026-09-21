@@ -75,6 +75,7 @@ public static class ConnectorWebJobsBuilderExtensions
         builder.Services.TryAddSingleton<IConnectorQueueDepthClientFactory, ConnectorQueueDepthClientFactory>();
         builder.Services.TryAddSingleton<IConnectorPollDeliveryClientFactory, ConnectorPollDeliveryClientFactory>();
         builder.Services.TryAddSingleton<IConnectorLinkedOutputClient, ConnectorLinkedOutputClient>();
+        builder.Services.TryAddSingleton<IConnectorPollingListenerFactory, ConnectorPollingListenerFactory>();
 
         // Register the extension config provider
         builder.AddExtension<ConnectorExtensionConfigProvider>()

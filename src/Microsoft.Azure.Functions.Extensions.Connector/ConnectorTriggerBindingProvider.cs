@@ -14,16 +14,20 @@ internal sealed class ConnectorTriggerBindingProvider : ITriggerBindingProvider
     private readonly ConnectorExtensionConfigProvider _configProvider;
     private readonly ConnectorOptions _options;
     private readonly IConnectorConnectionOptionsProvider _connectionOptionsProvider;
+    private readonly IConnectorPollingListenerFactory _pollingListenerFactory;
 
     public ConnectorTriggerBindingProvider(
         ConnectorExtensionConfigProvider configProvider,
         ConnectorOptions options,
-        IConnectorConnectionOptionsProvider connectionOptionsProvider)
+        IConnectorConnectionOptionsProvider connectionOptionsProvider,
+        IConnectorPollingListenerFactory pollingListenerFactory)
     {
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _connectionOptionsProvider = connectionOptionsProvider
             ?? throw new ArgumentNullException(nameof(connectionOptionsProvider));
+        _pollingListenerFactory = pollingListenerFactory
+            ?? throw new ArgumentNullException(nameof(pollingListenerFactory));
     }
 
     public Task<ITriggerBinding?> TryCreateAsync(TriggerBindingProviderContext context)
@@ -43,7 +47,8 @@ internal sealed class ConnectorTriggerBindingProvider : ITriggerBindingProvider
             _configProvider,
             attribute,
             _options,
-            _connectionOptionsProvider);
+            _connectionOptionsProvider,
+            _pollingListenerFactory);
         return Task.FromResult<ITriggerBinding?>(binding);
     }
 }

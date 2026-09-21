@@ -24,7 +24,8 @@ public class ConnectorExtensionConfigProviderTests
             _httpRequestProcessor,
             loggerFactory,
             Options.Create(new ConnectorOptions()),
-            new StubConnectorConnectionOptionsProvider());
+            new StubConnectorConnectionOptionsProvider(),
+            new StubConnectorPollingListenerFactory());
     }
 
     [Fact]
@@ -36,7 +37,8 @@ public class ConnectorExtensionConfigProviderTests
                 null!,
                 loggerFactory,
                 Options.Create(new ConnectorOptions()),
-                new StubConnectorConnectionOptionsProvider()));
+                new StubConnectorConnectionOptionsProvider(),
+                new StubConnectorPollingListenerFactory()));
     }
 
     [Fact]
@@ -47,7 +49,8 @@ public class ConnectorExtensionConfigProviderTests
                 _httpRequestProcessor,
                 null!,
                 Options.Create(new ConnectorOptions()),
-                new StubConnectorConnectionOptionsProvider()));
+                new StubConnectorConnectionOptionsProvider(),
+                new StubConnectorPollingListenerFactory()));
     }
 
     [Fact]
@@ -58,7 +61,8 @@ public class ConnectorExtensionConfigProviderTests
                 _httpRequestProcessor,
                 NullLoggerFactory.Instance,
                 null!,
-                new StubConnectorConnectionOptionsProvider()));
+                new StubConnectorConnectionOptionsProvider(),
+                new StubConnectorPollingListenerFactory()));
     }
 
     [Fact]
@@ -69,6 +73,19 @@ public class ConnectorExtensionConfigProviderTests
                 _httpRequestProcessor,
                 NullLoggerFactory.Instance,
                 Options.Create(new ConnectorOptions()),
+                null!,
+                new StubConnectorPollingListenerFactory()));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentNullException_WhenPollingListenerFactoryIsNull()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new ConnectorExtensionConfigProvider(
+                _httpRequestProcessor,
+                NullLoggerFactory.Instance,
+                Options.Create(new ConnectorOptions()),
+                new StubConnectorConnectionOptionsProvider(),
                 null!));
     }
 

@@ -14,6 +14,7 @@ public class ConnectorTriggerBindingTests
     private readonly ConnectorTriggerAttribute _attribute;
     private readonly ConnectorOptions _options;
     private readonly IConnectorConnectionOptionsProvider _connectionOptionsProvider;
+    private readonly IConnectorPollingListenerFactory _pollingListenerFactory;
 
     public ConnectorTriggerBindingTests()
     {
@@ -26,13 +27,15 @@ public class ConnectorTriggerBindingTests
             httpRequestProcessor,
             loggerFactory,
             Options.Create(_options),
-            new StubConnectorConnectionOptionsProvider());
+            new StubConnectorConnectionOptionsProvider(),
+            new StubConnectorPollingListenerFactory());
         var connectionOptions = new ConnectorConnectionOptions(
             new ResourceIdentifier(
                 "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns"),
             Mock.Of<TokenCredential>());
         _connectionOptionsProvider =
             new StubConnectorConnectionOptionsProvider(connectionOptions);
+        _pollingListenerFactory = new StubConnectorPollingListenerFactory();
         _attribute = new ConnectorTriggerAttribute();
     }
 
@@ -45,7 +48,8 @@ public class ConnectorTriggerBindingTests
                 _configProvider,
                 _attribute,
                 _options,
-                _connectionOptionsProvider));
+                _connectionOptionsProvider,
+                _pollingListenerFactory));
     }
 
     [Fact]
@@ -62,7 +66,8 @@ public class ConnectorTriggerBindingTests
                 null!,
                 _attribute,
                 _options,
-                _connectionOptionsProvider));
+                _connectionOptionsProvider,
+                _pollingListenerFactory));
     }
 
     [Fact]
@@ -79,7 +84,8 @@ public class ConnectorTriggerBindingTests
                 _configProvider,
                 null!,
                 _options,
-                _connectionOptionsProvider));
+                _connectionOptionsProvider,
+                _pollingListenerFactory));
     }
 
     [Fact]
@@ -94,7 +100,8 @@ public class ConnectorTriggerBindingTests
                 _configProvider,
                 _attribute,
                 null!,
-                _connectionOptionsProvider));
+                _connectionOptionsProvider,
+                _pollingListenerFactory));
     }
 
     [Fact]
@@ -109,6 +116,23 @@ public class ConnectorTriggerBindingTests
                 _configProvider,
                 _attribute,
                 _options,
+                null!,
+                _pollingListenerFactory));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentNullException_WhenPollingListenerFactoryIsNull()
+    {
+        var parameter = typeof(TestFunctions).GetMethod(nameof(TestFunctions.SampleFunction))!
+            .GetParameters()[0];
+
+        Assert.Throws<ArgumentNullException>(() =>
+            new ConnectorTriggerBinding(
+                parameter,
+                _configProvider,
+                _attribute,
+                _options,
+                _connectionOptionsProvider,
                 null!));
     }
 
@@ -123,7 +147,8 @@ public class ConnectorTriggerBindingTests
             _configProvider,
             _attribute,
             _options,
-            _connectionOptionsProvider);
+            _connectionOptionsProvider,
+            _pollingListenerFactory);
 
         // Assert: string as trigger value (raw JSON for worker)
         Assert.Equal(typeof(string), binding.TriggerValueType);
@@ -140,7 +165,8 @@ public class ConnectorTriggerBindingTests
             _configProvider,
             _attribute,
             _options,
-            _connectionOptionsProvider);
+            _connectionOptionsProvider,
+            _pollingListenerFactory);
 
         // Assert: empty binding contract
         var contract = binding.BindingDataContract;
@@ -158,7 +184,8 @@ public class ConnectorTriggerBindingTests
             _configProvider,
             _attribute,
             _options,
-            _connectionOptionsProvider);
+            _connectionOptionsProvider,
+            _pollingListenerFactory);
 
         var jsonBody = "{\"test\": 123}";
 
@@ -185,7 +212,8 @@ public class ConnectorTriggerBindingTests
             _configProvider,
             _attribute,
             _options,
-            _connectionOptionsProvider);
+            _connectionOptionsProvider,
+            _pollingListenerFactory);
 
         // Act
         var descriptor = binding.ToParameterDescriptor();
@@ -206,7 +234,8 @@ public class ConnectorTriggerBindingTests
             _configProvider,
             _attribute,
             _options,
-            _connectionOptionsProvider);
+            _connectionOptionsProvider,
+            _pollingListenerFactory);
 
         var mockExecutor = new Mock<Microsoft.Azure.WebJobs.Host.Executors.ITriggeredFunctionExecutor>();
 
@@ -245,7 +274,8 @@ public class ConnectorTriggerBindingTests
             _configProvider,
             attribute,
             _options,
-            _connectionOptionsProvider);
+            _connectionOptionsProvider,
+            _pollingListenerFactory);
         var mockExecutor = new Mock<Microsoft.Azure.WebJobs.Host.Executors.ITriggeredFunctionExecutor>();
         var descriptor = new TestFunctionDescriptor { ShortName = "TestFunction" };
         var listenerContext = new Microsoft.Azure.WebJobs.Host.Listeners.ListenerFactoryContext(
@@ -288,7 +318,8 @@ public class ConnectorTriggerBindingTests
             _configProvider,
             attribute,
             options,
-            _connectionOptionsProvider);
+            _connectionOptionsProvider,
+            _pollingListenerFactory);
         var mockExecutor = new Mock<Microsoft.Azure.WebJobs.Host.Executors.ITriggeredFunctionExecutor>();
         var descriptor = new TestFunctionDescriptor { ShortName = "TestFunction" };
         var listenerContext = new Microsoft.Azure.WebJobs.Host.Listeners.ListenerFactoryContext(
@@ -318,7 +349,8 @@ public class ConnectorTriggerBindingTests
             _configProvider,
             attribute,
             _options,
-            _connectionOptionsProvider);
+            _connectionOptionsProvider,
+            _pollingListenerFactory);
         var mockExecutor = new Mock<Microsoft.Azure.WebJobs.Host.Executors.ITriggeredFunctionExecutor>();
         var descriptor = new TestFunctionDescriptor { ShortName = "TestFunction" };
         var listenerContext = new Microsoft.Azure.WebJobs.Host.Listeners.ListenerFactoryContext(
@@ -342,7 +374,8 @@ public class ConnectorTriggerBindingTests
             _configProvider,
             _attribute,
             _options,
-            _connectionOptionsProvider);
+            _connectionOptionsProvider,
+            _pollingListenerFactory);
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentNullException>(() =>
