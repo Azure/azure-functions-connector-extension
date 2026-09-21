@@ -26,7 +26,9 @@
         </_InjectBlock>
     </PropertyGroup>
 
-    <Target Name="FixWorkerExtensionsProject" BeforeTargets="_WorkerExtensionsRestore" Condition="Exists('$(_WorkerExtensionsPath)')">
+    <Target Name="FixWorkerExtensionsProject"
+            BeforeTargets="_WorkerExtensionsRestore"
+            Condition="'$(ConnectorPackageVersion)' == '' AND Exists('$(_WorkerExtensionsPath)')">
         <PropertyGroup>
             <_Text>$([System.IO.File]::ReadAllText('$(_WorkerExtensionsPath)'))</_Text>
             <_Text>$([System.Text.RegularExpressions.Regex]::Replace('$(_Text)', '$(_PkgBlockRegex)', ''))</_Text>

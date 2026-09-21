@@ -10,11 +10,23 @@ This sample demonstrates how to use the Connector Extension with .NET isolated w
 
 ## Setup
 
-1. **Build the solution** (from repo root):
+1. **Build the solution** (from the repository root):
 
-   ```bash
-   cd samples/dotnet-isolated
-   dotnet build
+   ```powershell
+   dotnet build .\test\webhook\dotnet\SampleApp.csproj
+   ```
+
+   To verify the packed NuGet instead of project references:
+
+   ```powershell
+   dotnet pack .\Microsoft.Azure.Functions.Extensions.Connector.sln `
+       --configuration Release `
+       --output .\out\pkg
+
+   dotnet build .\test\webhook\dotnet\SampleApp.csproj `
+       --configuration Release `
+       -p:ConnectorPackageVersion=0.2.0-alpha.dev `
+       -p:RestoreAdditionalProjectSources="$PWD\out\pkg"
    ```
 
 2. **Start Azurite** (in another terminal):

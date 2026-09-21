@@ -15,7 +15,7 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
 1. **Build the extension** (from repo root):
 
    ```bash
-   cd samples/python
+   cd test/webhook/python
    dotnet build extensions.csproj
    ```
 

@@ -15,7 +15,7 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
 1. **Install dependencies:**
 
    ```bash
-   cd samples/nodejs
+   cd test/webhook/nodejs
    npm install
    ```
 

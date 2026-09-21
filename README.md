@@ -152,9 +152,7 @@ This repository includes [Copilot Skills](https://docs.github.com/en/copilot/cus
 
 These samples build and reference local extension code and are meant for extension testing:
 
-- **[.NET Isolated](./test/dotnet)** - .NET isolated worker sample
-- **[Node.js](./test/nodejs)** - Node.js v4 with blob output
-- **[Python](./test/python)** - Python v2
+- **[Webhook delivery](./test/webhook)** - .NET isolated, Node.js, and Python Webhook samples
 
 ## Project Structure
 
@@ -175,9 +173,7 @@ azure-functions-connector-extension/
 │       ├── ConnectorTriggerAttribute.cs                         #   Trigger attribute
 │       └── Converters/                                          #   Type converters
 ├── test/
-│   ├── dotnet/                                                  # .NET isolated worker test app
-│   ├── nodejs/                                                  # Node.js sample with blob output
-│   ├── python/                                                  # Python sample with blob output
+│   ├── webhook/                                                 # Webhook samples for all supported workers
 │   ├── test-requests.http                                       # HTTP test requests
 │   └── Microsoft.Azure.Functions.Extensions.Connector.Tests/    # Unit tests
 └── eng/                                                         # Build and CI infrastructure
