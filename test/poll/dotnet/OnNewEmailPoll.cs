@@ -16,13 +16,17 @@ public sealed class OnNewEmailPoll(ILogger<OnNewEmailPoll> logger)
             DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
             Connection = "ConnectorNamespace",
             TriggerConfigName = "%ConnectorTriggerConfigName%",
-            MaxBatchSize = 1,
+            IsBatched = true,
+            MaxBatchSize = 4,
             Concurrency = 4)]
-        ConnectorEvent<Office365OnNewEmailTriggerPayload> email)
+        ConnectorEvent<Office365OnNewEmailTriggerPayload>[] emails)
     {
-        logger.LogInformation(
-            "Poll email trigger message {MessageId} received: {Payload}",
-            email.MessageId,
-            System.Text.Json.JsonSerializer.Serialize(email.Data));
+        foreach (ConnectorEvent<Office365OnNewEmailTriggerPayload> email in emails)
+        {
+            logger.LogInformation(
+                "Poll email trigger message {MessageId} received: {Payload}",
+                email.MessageId,
+                System.Text.Json.JsonSerializer.Serialize(email.Data));
+        }
     }
 }

@@ -60,17 +60,9 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
         var bindingData = new Dictionary<string, object?>(
             StringComparer.OrdinalIgnoreCase);
         string payloadJson = triggerInput.ToPayloadJson();
-        IValueProvider valueProvider =
-            _parameter.ParameterType == typeof(ParameterBindingData)
-                ? new ConnectorTriggerInputValueProvider(
-                    ConnectorExtensionConfigProvider
-                        .ConvertTriggerInputToBindingData(triggerInput),
-                    typeof(ParameterBindingData),
-                    payloadJson)
-                : new ConnectorTriggerInputValueProvider(
-                    payloadJson,
-                    typeof(string),
-                    payloadJson);
+        ConnectorTriggerInputValueProvider valueProvider = CreateValueProvider(
+            triggerInput,
+            payloadJson);
         return Task.FromResult<ITriggerData>(
             new TriggerData(valueProvider, bindingData));
     }
@@ -99,7 +91,10 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
         ConnectorFunctionRegistration registration)
     {
         ConnectorPollingOptions options =
-            ConnectorPollingOptions.Create(_attribute, _options);
+            ConnectorPollingOptions.Create(
+                _attribute,
+                _options,
+                IsBatchedParameter(_parameter.ParameterType));
         ConnectorConnectionOptions connectionOptions =
             _connectionOptionsProvider.Get(options.Connection);
 
@@ -108,6 +103,56 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
             options,
             connectionOptions);
     }
+
+    private ConnectorTriggerInputValueProvider CreateValueProvider(
+        ConnectorTriggerInput triggerInput,
+        string payloadJson)
+    {
+        bool usesDeferredBinding =
+            _parameter.ParameterType == typeof(ParameterBindingData) ||
+            _parameter.ParameterType == typeof(ParameterBindingData[]);
+        if (usesDeferredBinding)
+        {
+            if (triggerInput.IsBatched)
+            {
+                ParameterBindingData[] values = triggerInput.Events
+                    .Select(ConnectorExtensionConfigProvider
+                        .ConvertTriggerEventToBindingData)
+                    .ToArray();
+                return new ConnectorTriggerInputValueProvider(
+                    values,
+                    typeof(ParameterBindingData[]),
+                    payloadJson);
+            }
+
+            return new ConnectorTriggerInputValueProvider(
+                ConnectorExtensionConfigProvider
+                    .ConvertTriggerEventToBindingData(
+                        triggerInput.Events.Single()),
+                typeof(ParameterBindingData),
+                payloadJson);
+        }
+
+        if (triggerInput.IsBatched)
+        {
+            string[] values = triggerInput.Events
+                .Select(static connectorEvent =>
+                    connectorEvent.Outputs.ToString())
+                .ToArray();
+            return new ConnectorTriggerInputValueProvider(
+                values,
+                typeof(string[]),
+                payloadJson);
+        }
+
+        return new ConnectorTriggerInputValueProvider(
+            payloadJson,
+            typeof(string),
+            payloadJson);
+    }
+
+    private static bool IsBatchedParameter(Type parameterType) =>
+        parameterType.IsArray && parameterType != typeof(byte[]);
 
     public ParameterDescriptor ToParameterDescriptor() =>
         new TriggerParameterDescriptor

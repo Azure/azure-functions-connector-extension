@@ -13,12 +13,16 @@ Each sample uses:
 DeliveryMode = Poll
 Connection = ConnectorNamespace
 TriggerConfigName = %ConnectorTriggerConfigName%
-MaxBatchSize = 1
+Cardinality = Many
+MaxBatchSize = 4
 Concurrency = 4
 ```
 
-The current Poll listener supports one event per invocation, so all binding
-shapes require an effective `MaxBatchSize` of `1`.
+The samples enable batched invocation. .NET isolated uses `IsBatched = true`;
+Node.js uses `cardinality: 'many'`; and Python uses
+`cardinality=func.Cardinality.MANY`. Omitting batching or using cardinality
+`one` supplies one event per invocation and requires an effective
+`MaxBatchSize` of `1`.
 
 The local settings files are intentionally untracked. Configure:
 

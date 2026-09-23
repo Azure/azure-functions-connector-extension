@@ -68,8 +68,8 @@ internal sealed class ConnectorPollingListenerFactory(
 }
 
 /// <summary>
-/// Minimal Connector Namespace Poll listener supporting concurrent,
-/// single-message function invocations.
+/// Connector Namespace Poll listener supporting bounded concurrent
+/// single-message or batched function invocations.
 /// </summary>
 internal sealed class ConnectorPollingListener : IListener
 {
@@ -115,11 +115,6 @@ internal sealed class ConnectorPollingListener : IListener
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        if (Options.MaxBatchSize != 1)
-        {
-            throw new InvalidOperationException(
-                "This preview Connector Poll listener requires MaxBatchSize to be 1.");
-        }
 
         CancellationTokenSource receiveCancellation;
         CancellationTokenSource processingCancellation;
@@ -252,9 +247,9 @@ internal sealed class ConnectorPollingListener : IListener
 
                 try
                 {
-                    int maxEvents = Math.Min(
-                        ConnectorPollingProtocolLimits.MaximumBatchSize,
-                        availableInvocationSlots);
+                    int maxEvents = CalculateMaxEvents(
+                        availableInvocationSlots,
+                        Options.MaxBatchSize);
                     ConnectorReceiveResult receiveResult =
                         await _deliveryClient.ReceiveAsync(
                             endpoints,
@@ -266,11 +261,12 @@ internal sealed class ConnectorPollingListener : IListener
                             $"Connector Receive returned {receiveResult.Messages.Count} messages when at most {maxEvents} were requested.");
                     }
 
-                    foreach (ConnectorPollMessage message in receiveResult.Messages)
+                    foreach (ConnectorPollMessage[] batch in
+                        receiveResult.Messages.Chunk(Options.MaxBatchSize))
                     {
-                        activeInvocations.Add(ProcessMessageAsync(
+                        activeInvocations.Add(ProcessBatchAsync(
                             endpoints,
-                            message,
+                            batch,
                             processingCancellationToken));
                     }
 
@@ -309,8 +305,92 @@ internal sealed class ConnectorPollingListener : IListener
         }
     }
 
-    private async Task ProcessMessageAsync(
+    private async Task ProcessBatchAsync(
         ConnectorPollingEndpoints endpoints,
+        IReadOnlyList<ConnectorPollMessage> messages,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var preparedMessages = new List<PreparedMessage>(messages.Count);
+            foreach (ConnectorPollMessage message in messages)
+            {
+                PreparedMessage? preparedMessage =
+                    await PrepareMessageAsync(
+                        message,
+                        cancellationToken).ConfigureAwait(false);
+                if (preparedMessage is not null)
+                {
+                    preparedMessages.Add(preparedMessage);
+                }
+            }
+
+            if (preparedMessages.Count == 0)
+            {
+                return;
+            }
+
+            var triggerData = new TriggeredFunctionData
+            {
+                TriggerValue = Options.IsBatched
+                    ? ConnectorTriggerInput.FromBatch(
+                        preparedMessages
+                            .Select(static item => item.Input)
+                            .ToArray())
+                    : ConnectorTriggerInput.FromSingle(
+                        preparedMessages[0].Input.Outputs,
+                        preparedMessages[0].Input.MessageId,
+                        ConnectorTriggerDeliveryMode.Poll),
+            };
+            FunctionResult result = await Registration.Executor.TryExecuteAsync(
+                triggerData,
+                cancellationToken).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                _logger.LogError(
+                    result.Exception,
+                    "Connector Poll function {FunctionName} failed; {MessageCount} messages will not be acknowledged.",
+                    Registration.FunctionName,
+                    preparedMessages.Count);
+                return;
+            }
+
+            ConnectorMessageLock[] messageLocks = preparedMessages
+                .Select(static item => item.MessageLock)
+                .ToArray();
+            ConnectorAcknowledgeResult acknowledgeResult =
+                await _deliveryClient.AcknowledgeAsync(
+                    endpoints,
+                    messageLocks,
+                    cancellationToken).ConfigureAwait(false);
+            foreach (ConnectorAcknowledgeItemResult itemResult in
+                acknowledgeResult.Results)
+            {
+                if (!itemResult.IsAcknowledged)
+                {
+                    _logger.LogWarning(
+                        "Connector Poll acknowledgement returned status {Status} for function {FunctionName}.",
+                        itemResult.Status.IsKnown ? itemResult.Status.ToString() : "Unknown",
+                        Registration.FunctionName);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogDebug(
+                "Connector Poll batch processing was cancelled for function {FunctionName}.",
+                Registration.FunctionName);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Connector Poll batch processing failed for function {FunctionName}; the messages will not be acknowledged.",
+                Registration.FunctionName);
+        }
+    }
+
+    private async Task<PreparedMessage?> PrepareMessageAsync(
         ConnectorPollMessage message,
         CancellationToken cancellationToken)
     {
@@ -321,52 +401,25 @@ internal sealed class ConnectorPollingListener : IListener
                     message.OutputsLink!,
                     ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes,
                     cancellationToken).ConfigureAwait(false);
-            var triggerData = new TriggeredFunctionData
-            {
-                TriggerValue = ConnectorTriggerInput.FromSingle(
+            return new PreparedMessage(
+                new ConnectorTriggerEventInput(
                     outputs,
                     message.MessageId,
                     ConnectorTriggerDeliveryMode.Poll),
-            };
-            FunctionResult result = await Registration.Executor.TryExecuteAsync(
-                triggerData,
-                cancellationToken).ConfigureAwait(false);
-            if (!result.Succeeded)
-            {
-                _logger.LogError(
-                    result.Exception,
-                    "Connector Poll function {FunctionName} failed; the message will not be acknowledged.",
-                    Registration.FunctionName);
-                return;
-            }
-
-            ConnectorAcknowledgeResult acknowledgeResult =
-                await _deliveryClient.AcknowledgeAsync(
-                    endpoints,
-                    [message.MessageLock],
-                    cancellationToken).ConfigureAwait(false);
-            ConnectorAcknowledgeItemResult itemResult =
-                acknowledgeResult.Results.Single();
-            if (!itemResult.IsAcknowledged)
-            {
-                _logger.LogWarning(
-                    "Connector Poll acknowledgement returned status {Status} for function {FunctionName}.",
-                    itemResult.Status.IsKnown ? itemResult.Status.ToString() : "Unknown",
-                    Registration.FunctionName);
-            }
+                message.MessageLock);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogDebug(
-                "Connector Poll message processing was cancelled for function {FunctionName}.",
-                Registration.FunctionName);
+            throw;
         }
         catch (Exception exception)
         {
             _logger.LogError(
                 exception,
-                "Connector Poll message processing failed for function {FunctionName}; the message will not be acknowledged.",
+                "Connector Poll message hydration failed for function {FunctionName}; the message will not be acknowledged.",
                 Registration.FunctionName);
+            return null;
         }
     }
 
@@ -402,4 +455,20 @@ internal sealed class ConnectorPollingListener : IListener
             Random.Shared.Next(maximumJitterMilliseconds + 1));
         return Task.Delay(delay + jitter, cancellationToken);
     }
+
+    private static int CalculateMaxEvents(
+        int availableInvocationSlots,
+        int maxBatchSize)
+    {
+        int maximumBatchSize =
+            ConnectorPollingProtocolLimits.MaximumBatchSize;
+        return availableInvocationSlots >=
+            (maximumBatchSize + maxBatchSize - 1) / maxBatchSize
+                ? maximumBatchSize
+                : availableInvocationSlots * maxBatchSize;
+    }
+
+    private sealed record PreparedMessage(
+        ConnectorTriggerEventInput Input,
+        ConnectorMessageLock MessageLock);
 }

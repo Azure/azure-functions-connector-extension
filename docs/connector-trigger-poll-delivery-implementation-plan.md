@@ -21,9 +21,9 @@
 Deliver production Poll support through a stacked PR sequence while preserving
 existing Webhook behavior. The stack now includes the trigger contract,
 configuration, protocol models, target scaler, runtime clients, a concurrent
-single-event listener, and the worker binding. This document tracks the
-remaining implementation boundaries, dependencies, and completion criteria;
-the authoritative behavioral and architectural decisions are in
+listener with invocation batching, and the worker binding. This document
+tracks the remaining implementation boundaries, dependencies, and completion
+criteria; the authoritative behavioral and architectural decisions are in
 `connector-trigger-poll-delivery-design.md`.
 
 ## Verified Baseline
@@ -66,6 +66,7 @@ Replace the earlier public `MaxEvents` seam with independent batching and per-in
     DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
     Connection = "ConnectorNamespace",
     TriggerConfigName = "%CONNECTOR_TRIGGER_CONFIG%",
+    IsBatched = true,
     MaxBatchSize = 4,
     Concurrency = 8)]
 ```
@@ -83,13 +84,14 @@ Changes:
   ```
 
 - Treat `0` on either attribute property as use-host-default.
-- Accept `MaxBatchSize` values from `0` through `32` and require the effective
-  value to be from `1` through `32`.
+- Accept `MaxBatchSize` as `0` for the host default or from `1` through `32`,
+  and require the effective value to be from `1` through `32`.
 - Accept non-negative `Concurrency` and require the effective value to be
   greater than zero.
 - Define `Concurrency` as the maximum concurrent function invocations per
   worker instance.
-- Keep `MaxBatchSize` independent of scaling and map it to Connector Namespace `maxEvents`.
+- Keep `MaxBatchSize` independent of scaling and use it with remaining
+  invocation capacity to calculate Connector Namespace `maxEvents`.
 - Preserve `Webhook` as the default.
 - Keep `Connection` literal; do not apply `%...%` name resolution to it.
 - Continue allowing `%...%` resolution for `TriggerConfigName`.
@@ -198,17 +200,32 @@ Requirements:
 
 Deferred endpoint-contract follow-up:
 
-- Replace `resourceId`-based ARM discovery with the customer-provided
-  `ConnectorNamespace__endpoint`.
-- Decide whether `TriggerConfigName` remains a separate setting or the
-  configured endpoint includes the trigger-configuration identity.
+- Replace `resourceId`-based ARM discovery with the customer-provided opaque
+  polling base URL that the service will expose as
+  `pollingEndpoints.baseUrl` in each Trigger Config's properties.
+- Add a `PollingEndpoint` binding property whose value can use Functions app
+  setting resolution, for example `%OnNewEmail_Endpoint%`.
+- Continue sharing one `Connection` prefix across Functions that use the same
+  Connector Namespace. Endpoint settings remain per Function because each
+  Trigger Config has a different base URL.
+- Treat the base URL as trigger-specific. Do not share it across a Connector
+  Namespace or derive it from the namespace name; it may contain a gateway
+  GUID.
+- Define the current transitional base as `pollingEndpoints.receiveUri` with
+  only its final `/receive` path segment removed after strict HTTPS URI and
+  path validation. Do not use unrestricted string replacement.
+- The base includes `/triggerConfigs/<triggerConfigName>`. Append only the
+  fixed `/receive`, `/acknowledge`, and `/approximateQueueDepth` operations.
+- Remove `TriggerConfigName` from the Poll runtime contract when
+  `PollingEndpoint` replaces ARM discovery.
 - Treat the configured endpoint as authoritative and remove the ARM resolver,
   and endpoint cache.
 - When the configured endpoint is unreachable or a derived Poll route returns
   `404 Not Found` or `410 Gone`, surface an explicit configured-endpoint error;
   do not attempt ARM discovery.
-- Confirm that the service contract guarantees endpoint stability before
-  adopting this behavior.
+- Preserve compatibility with existing APIM polling URLs when the service
+  moves to DNS.
+- Keep this follow-up blocked until the Trigger Config property is deployed.
 - Do not finalize the public Function configuration shape until these contract
   decisions are complete.
 
@@ -305,26 +322,26 @@ Implementation status:
 - The host-to-worker deferred transport and scalar/array converters are
   implemented.
 - `CollectionModelBindingData` conversion is covered independently.
-- The current listener still dispatches one event per invocation, so
-  end-to-end multi-event collection binding and array-specific
-  `MaxBatchSize > 1` validation remain part of PR 7.
+- End-to-end multi-event collection binding is implemented.
+- Cardinality-one bindings reject an effective `MaxBatchSize` greater than
+  one; cardinality-many bindings accept values through the protocol limit of
+  32.
 
 ## PR 7: Poll Listener
 
-Complete the lifecycle-safe, capacity-aware message pump with true invocation
-batching.
+Invocation batching is implemented in the lifecycle-safe, capacity-aware
+message pump. Poison handling and complete lock-budget telemetry remain for a
+later PR.
 
-The interim listener is runnable with these deliberate constraints:
+The listener now:
 
-- Require the effective `MaxBatchSize` to be one.
-- Honor `Concurrency` as concurrent one-message invocations.
-- Resolve endpoints and receive no more than available
-  invocation slots.
-- Normalize inline and linked outputs before dispatch.
-- Acknowledge only successful invocations.
-- Pass metadata-rich values through the worker binding.
-- Document that batch invocation, poison handling, and complete lock-budget
-  telemetry remain deferred.
+- Honors explicit one/many cardinality independently from `MaxBatchSize`.
+- Resolves endpoints and receives no more than the remaining invocation
+  capacity multiplied by `MaxBatchSize`, capped at 32.
+- Partitions Receive results into invocation batches.
+- Normalizes inline and linked outputs before dispatch.
+- Acknowledges all prepared messages only after a successful invocation.
+- Passes metadata-rich scalar and collection values through the worker binding.
 
 Capacity calculation:
 
@@ -341,7 +358,8 @@ Requirements:
 - Receive only when `maxEvents > 0`.
 - Do not prefetch beyond remaining invocation capacity.
 - Count an event as pending from Receive until acknowledgement completes or a failed attempt finishes without acknowledgement, including hydration and function execution.
-- Supply each Receive batch to one invocation.
+- Partition each Receive result into invocation batches containing at most
+  `MaxBatchSize` events.
 - Allow no more than `Concurrency` active function invocations per worker
   instance.
 - Bound linked-output hydration and account for its time in the fixed

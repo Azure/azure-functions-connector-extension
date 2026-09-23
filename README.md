@@ -137,9 +137,25 @@ The underlying Connector SDKs provide typed models:
 
 ### Poll delivery
 
-The current Poll listener requires an effective `MaxBatchSize` of `1` for
-scalar and array bindings. Array binding shapes are available now so
-applications can adopt them before multi-event invocation batching is added.
+Poll triggers use one event per invocation by default. Enable batched
+invocations explicitly, then set `MaxBatchSize` to the maximum number of
+events supplied to one invocation:
+
+- .NET isolated: set `IsBatched = true`.
+- Node.js and TypeScript: set `cardinality: "many"`.
+- Python: set `cardinality=func.Cardinality.MANY`.
+- Generic `function.json` bindings, including PowerShell: set `cardinality`
+  to `"many"`.
+
+Scalar cardinality requires an effective `MaxBatchSize` of `1`. Batched
+cardinality supports effective values from `1` through `32`; a final
+invocation may contain fewer events. See the [Poll test samples](./test/poll)
+for language-specific examples.
+
+An omitted or zero `MaxBatchSize` uses
+`extensions.connector.defaultMaxBatchSize` from `host.json`; the built-in
+default is `1`. The resolved value supplied to the listener is always between
+`1` and `32`.
 
 ## Documentation
 

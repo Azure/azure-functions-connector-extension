@@ -132,6 +132,47 @@ public class ConnectorTriggerBindingTests
             binding.CreateListenerAsync(null!));
     }
 
+    [Fact]
+    public async Task CreateListenerAsync_RejectsBatchSizeForScalarParameter()
+    {
+        ConnectorTriggerBinding binding = CreateBinding(
+            GetParameter(),
+            new ConnectorTriggerAttribute
+            {
+                DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
+                Connection = "ConnectorNamespace",
+                TriggerConfigName = "OnNewEmail",
+                MaxBatchSize = 2,
+            });
+
+        InvalidOperationException exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                binding.CreateListenerAsync(CreateListenerContext()));
+
+        Assert.Contains("cardinality", exception.Message);
+    }
+
+    [Fact]
+    public async Task CreateListenerAsync_AllowsBatchSizeForArrayParameter()
+    {
+        ConnectorTriggerBinding binding = CreateBinding(
+            GetArrayParameter(),
+            new ConnectorTriggerAttribute
+            {
+                DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
+                Connection = "ConnectorNamespace",
+                TriggerConfigName = "OnNewEmail",
+                MaxBatchSize = 2,
+            });
+
+        ConnectorPollingListener listener =
+            Assert.IsType<ConnectorPollingListener>(
+                await binding.CreateListenerAsync(CreateListenerContext()));
+
+        Assert.True(listener.Options.IsBatched);
+        Assert.Equal(2, listener.Options.MaxBatchSize);
+    }
+
     private ConnectorTriggerBinding CreateBinding(
         ParameterInfo parameter,
         ConnectorTriggerAttribute attribute) =>
@@ -148,6 +189,11 @@ public class ConnectorTriggerBindingTests
             .GetMethod(nameof(TestFunctions.Function))!
             .GetParameters()[0];
 
+    private static ParameterInfo GetArrayParameter() =>
+        typeof(TestFunctions)
+            .GetMethod(nameof(TestFunctions.ArrayFunction))!
+            .GetParameters()[0];
+
     private static ListenerFactoryContext CreateListenerContext() =>
         new(
             new TestFunctionDescriptor { ShortName = "TestFunction" },
@@ -157,6 +203,10 @@ public class ConnectorTriggerBindingTests
     private static class TestFunctions
     {
         public static void Function([ConnectorTrigger] string body)
+        {
+        }
+
+        public static void ArrayFunction([ConnectorTrigger] string[] body)
         {
         }
     }

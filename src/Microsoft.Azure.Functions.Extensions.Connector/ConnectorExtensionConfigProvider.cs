@@ -139,8 +139,8 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         };
     }
 
-    internal static ParameterBindingData ConvertTriggerInputToBindingData(
-        ConnectorTriggerInput input)
+    internal static ParameterBindingData ConvertTriggerEventToBindingData(
+        ConnectorTriggerEventInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
 

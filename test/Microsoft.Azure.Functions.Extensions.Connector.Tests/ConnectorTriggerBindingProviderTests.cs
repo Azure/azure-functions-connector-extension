@@ -176,6 +176,55 @@ public class ConnectorTriggerBindingProviderTests
     }
 
     [Fact]
+    public async Task Binding_ReturnsPayloadArrayForBatchedGenericWorker()
+    {
+        ITriggerBinding binding = await CreateBindingAsync(
+            nameof(TestFunctions.BatchedStringFunction));
+        ConnectorTriggerInput input = CreateBatchInput();
+
+        ITriggerData result = await binding.BindAsync(
+            input,
+            CreateValueBindingContext());
+
+        Assert.Equal(
+            ["""{"value":1}""", """{"value":2}"""],
+            Assert.IsType<string[]>(
+                await result.ValueProvider.GetValueAsync()));
+        Assert.Equal(typeof(string[]), result.ValueProvider.Type);
+        Assert.Equal(
+            """[{"value":1},{"value":2}]""",
+            result.ValueProvider.ToInvokeString());
+    }
+
+    [Fact]
+    public async Task Binding_ReturnsDeferredBindingDataArrayForBatchedWorker()
+    {
+        ITriggerBinding binding = await CreateBindingAsync(
+            nameof(TestFunctions.BatchedDeferredBindingFunction));
+        ConnectorTriggerInput input = CreateBatchInput();
+
+        ITriggerData result = await binding.BindAsync(
+            input,
+            CreateValueBindingContext());
+
+        ParameterBindingData[] bindingData =
+            Assert.IsType<ParameterBindingData[]>(
+                await result.ValueProvider.GetValueAsync());
+        Assert.Equal(2, bindingData.Length);
+        Assert.Equal(
+            ["message-1", "message-2"],
+            bindingData.Select(value =>
+            {
+                using JsonDocument content =
+                    JsonDocument.Parse(value.Content.ToString());
+                return content.RootElement
+                    .GetProperty("messageId")
+                    .GetString();
+            }));
+        Assert.Equal(typeof(ParameterBindingData[]), result.ValueProvider.Type);
+    }
+
+    [Fact]
     public async Task Binding_ConvertsDashboardString()
     {
         ITriggerBinding binding = await CreateBindingAsync(
@@ -234,6 +283,7 @@ public class ConnectorTriggerBindingProviderTests
         Assert.Equal("OnNewEmail", pollingListener.Options.TriggerConfigName);
         Assert.Equal(2, pollingListener.Options.MaxBatchSize);
         Assert.Equal(6, pollingListener.Options.Concurrency);
+        Assert.True(pollingListener.Options.IsBatched);
     }
 
     [Fact]
@@ -269,6 +319,19 @@ public class ConnectorTriggerBindingProviderTests
             null!,
             CancellationToken.None).Object;
 
+    private static ConnectorTriggerInput CreateBatchInput() =>
+        ConnectorTriggerInput.FromBatch(
+        [
+            new ConnectorTriggerEventInput(
+                BinaryData.FromString("""{"value":1}"""),
+                "message-1",
+                ConnectorTriggerDeliveryMode.Poll),
+            new ConnectorTriggerEventInput(
+                BinaryData.FromString("""{"value":2}"""),
+                "message-2",
+                ConnectorTriggerDeliveryMode.Poll),
+        ]);
+
     private static ListenerFactoryContext CreateListenerContext(
         string functionName) =>
         new(
@@ -288,12 +351,22 @@ public class ConnectorTriggerBindingProviderTests
         {
         }
 
+        public static void BatchedStringFunction(
+            [ConnectorTrigger] string[] body)
+        {
+        }
+
+        public static void BatchedDeferredBindingFunction(
+            [ConnectorTrigger] ParameterBindingData[] body)
+        {
+        }
+
         public static void PollFunction(
             [ConnectorTrigger(
                 DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
                 Connection = "ConnectorNamespace",
                 TriggerConfigName = "OnNewEmail")]
-            string body)
+            string[] body)
         {
         }
 

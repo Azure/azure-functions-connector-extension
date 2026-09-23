@@ -10,15 +10,17 @@ app = func.FunctionApp()
 
 @app.function_name(name="OnNewEmailPoll")
 @app.generic_trigger(
-    arg_name="payload",
+    arg_name="payloads",
     type="connectorTrigger",
     deliveryMode="Poll",
     connection="ConnectorNamespace",
     triggerConfigName="%ConnectorTriggerConfigName%",
-    maxBatchSize=1,
+    cardinality=func.Cardinality.MANY,
+    maxBatchSize=4,
     concurrency=4,
 )
-def on_new_email_poll(payload: str) -> None:
-    """Log one Connector Namespace Poll event."""
-    message = json.loads(payload) if isinstance(payload, str) else payload
-    logging.info("Poll connector payload: %s", message)
+def on_new_email_poll(payloads: list[str]) -> None:
+    """Log a batch of Connector Namespace Poll events."""
+    for payload in payloads:
+        message = json.loads(payload) if isinstance(payload, str) else payload
+        logging.info("Poll connector payload: %s", message)

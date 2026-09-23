@@ -16,12 +16,16 @@ public class ConnectorPollingOptionsTests
             Concurrency = 8,
         };
 
-        var result = ConnectorPollingOptions.Create(attribute, new ConnectorOptions());
+        var result = ConnectorPollingOptions.Create(
+            attribute,
+            new ConnectorOptions(),
+            isBatched: true);
 
         Assert.Equal("ConnectorNamespace", result.Connection);
         Assert.Equal("OnNewEmail", result.TriggerConfigName);
         Assert.Equal(4, result.MaxBatchSize);
         Assert.Equal(8, result.Concurrency);
+        Assert.True(result.IsBatched);
     }
 
     [Fact]
@@ -33,10 +37,30 @@ public class ConnectorPollingOptionsTests
             DefaultConcurrency = 7,
         };
 
-        var result = ConnectorPollingOptions.Create(CreateValidAttribute(), defaults);
+        var result = ConnectorPollingOptions.Create(
+            CreateValidAttribute(),
+            defaults,
+            isBatched: true);
 
         Assert.Equal(3, result.MaxBatchSize);
         Assert.Equal(7, result.Concurrency);
+        Assert.True(result.IsBatched);
+    }
+
+    [Fact]
+    public void Create_Throws_WhenCardinalityOneUsesBatchSizeGreaterThanOne()
+    {
+        ConnectorTriggerAttribute attribute = CreateValidAttribute();
+        attribute.MaxBatchSize = 2;
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                ConnectorPollingOptions.Create(
+                    attribute,
+                    new ConnectorOptions(),
+                    isBatched: false));
+
+        Assert.Contains("cardinality", exception.Message);
     }
 
     [Theory]

@@ -26,7 +26,7 @@ Registers polling trigger configs on a Connector Namespace so that connector eve
 
 ### Extension Webhook Endpoint
 
-The connector extension (`Microsoft.Azure.Functions.Worker.Extensions.Connector` for isolated worker — recommended; `Microsoft.Azure.Functions.Extensions.Connector` for in-process) registers a webhook route on the Function App:
+The connector extension (`Microsoft.Azure.Functions.Worker.Extensions.Connector`) registers a webhook route on the Function App:
 
 ```text
 POST /runtime/webhooks/connector?functionName={FunctionName}&code={connector_extension_key}
@@ -100,8 +100,6 @@ dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector --prere
 # Connector SDK (typed payloads and action clients)
 dotnet add package Azure.Connectors.Sdk --prerelease
 ```
-
-> **In-proc customers only:** if you are still on the .NET in-process model, replace `Microsoft.Azure.Functions.Worker.Extensions.Connector` with `Microsoft.Azure.Functions.Extensions.Connector`. The isolated worker (above) is the recommended path for new projects.
 
 #### Python
 
@@ -500,4 +498,3 @@ The Connector Namespace polls the connector every 1-5 minutes. After polling det
 ## Reference
 
 For a complete mapping of trigger operations to function signatures across .NET, Python, and TypeScript (including which typed payload to use and how to specify the function), see [Operations to Functions Signature Match](https://github.com/Azure/azure-functions-connector-extension/blob/main/docs/operations-functions-match.md).
-
