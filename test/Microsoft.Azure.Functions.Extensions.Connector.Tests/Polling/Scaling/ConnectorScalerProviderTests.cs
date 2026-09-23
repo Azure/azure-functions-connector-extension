@@ -25,8 +25,7 @@ public class ConnectorScalerProviderTests
         var connectionProvider = new TestScaleConnectionOptionsProvider((_, _) =>
             new ConnectorScaleConnectionOptions(
                 new ResourceIdentifier(ResourceId),
-                credential,
-                HasDebugTokenOverride: false));
+                credential));
         var resolvers = new List<IConnectorPollingEndpointResolver>();
         var resolverFactory = new TestResolverFactory((_, _, _) =>
         {
@@ -61,8 +60,7 @@ public class ConnectorScalerProviderTests
             selectedFactory = factory;
             return new ConnectorScaleConnectionOptions(
                 new ResourceIdentifier(ResourceId),
-                new TestTokenCredential(),
-                HasDebugTokenOverride: false);
+                new TestTokenCredential());
         });
         var resolverFactory = new TestResolverFactory((_, _, _) => new StubEndpointResolver(Endpoints()));
         var depthFactory = new TestDepthClientFactory((_, _, _, _) => new SequenceDepthClient(0));
@@ -85,8 +83,7 @@ public class ConnectorScalerProviderTests
         var connectionProvider = new TestScaleConnectionOptionsProvider((_, _) =>
             new ConnectorScaleConnectionOptions(
                 new ResourceIdentifier(ResourceId),
-                defaultCredential,
-                HasDebugTokenOverride: false));
+                defaultCredential));
         var resolverFactory = new TestResolverFactory((_, credential, _) =>
         {
             resolverCredential = credential;
@@ -105,39 +102,6 @@ public class ConnectorScalerProviderTests
 
         Assert.Same(armCredential, resolverCredential);
         Assert.Same(apiHubCredential, depthCredential);
-    }
-
-    [Fact]
-    public void Provider_DebugTokenOverrideTakesPrecedenceOverScaleControllerCredentials()
-    {
-        var debugCredential = new TestTokenCredential("debug");
-        var armCredential = new TestTokenCredential("arm");
-        var apiHubCredential = new TestTokenCredential("apihub");
-        TokenCredential? resolverCredential = null;
-        TokenCredential? depthCredential = null;
-        var connectionProvider = new TestScaleConnectionOptionsProvider((_, _) =>
-            new ConnectorScaleConnectionOptions(
-                new ResourceIdentifier(ResourceId),
-                debugCredential,
-                HasDebugTokenOverride: true));
-        var resolverFactory = new TestResolverFactory((_, credential, _) =>
-        {
-            resolverCredential = credential;
-            return new StubEndpointResolver(Endpoints());
-        });
-        var depthFactory = new TestDepthClientFactory((_, credential, _, _) =>
-        {
-            depthCredential = credential;
-            return new SequenceDepthClient(0);
-        });
-        TriggerMetadata metadata = Metadata("Function", "trigger", 1);
-        metadata.Properties[ConnectorScaleCredentialProperties.ArmTokenCredential] = armCredential;
-        metadata.Properties[ConnectorScaleCredentialProperties.ApiHubTokenCredential] = apiHubCredential;
-
-        _ = new ConnectorScalerProvider(BuildServices(connectionProvider, resolverFactory, depthFactory), metadata);
-
-        Assert.Same(debugCredential, resolverCredential);
-        Assert.Same(debugCredential, depthCredential);
     }
 
     [Fact]
@@ -200,7 +164,6 @@ public class ConnectorScalerProviderTests
     private static ConnectorPollingEndpoints Endpoints() => new(
         new Uri("https://runtime.test/receive"),
         new Uri("https://runtime.test/ack"),
-        new Uri("https://runtime.test/has"),
         new Uri("https://runtime.test/depth"));
     private sealed class TestWebJobsBuilder : IWebJobsBuilder
     {

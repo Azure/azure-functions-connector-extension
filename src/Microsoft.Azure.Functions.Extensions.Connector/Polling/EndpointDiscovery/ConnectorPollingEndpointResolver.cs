@@ -11,8 +11,6 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 internal interface IConnectorPollingEndpointResolver
 {
     Task<ConnectorPollingEndpoints> ResolveAsync(CancellationToken cancellationToken = default);
-
-    Task<ConnectorPollingEndpoints> RefreshAsync(CancellationToken cancellationToken = default);
 }
 
 internal interface IConnectorPollingEndpointResolverFactory
@@ -61,7 +59,6 @@ internal sealed class ConnectorPollingEndpointResolver : IConnectorPollingEndpoi
     private readonly ILogger _logger;
     private readonly object _syncLock = new();
     private Task<ConnectorPollingEndpoints>? _resolution;
-    private Task<ConnectorPollingEndpoints>? _refreshResolution;
 
     public ConnectorPollingEndpointResolver(
         ConnectorConnectionOptions connection,
@@ -81,35 +78,6 @@ internal sealed class ConnectorPollingEndpointResolver : IConnectorPollingEndpoi
     public Task<ConnectorPollingEndpoints> ResolveAsync(
         CancellationToken cancellationToken = default) =>
         GetOrCreateResolution().WaitAsync(cancellationToken);
-
-    public Task<ConnectorPollingEndpoints> RefreshAsync(
-        CancellationToken cancellationToken = default)
-    {
-        Task<ConnectorPollingEndpoints> refreshResolution;
-        bool refreshStarted = false;
-        lock (_syncLock)
-        {
-            if (_refreshResolution is null)
-            {
-                refreshResolution = CreateResolution();
-                _refreshResolution = refreshResolution;
-                refreshStarted = true;
-            }
-            else
-            {
-                refreshResolution = _refreshResolution;
-            }
-        }
-
-        if (refreshStarted)
-        {
-            _logger.LogInformation(
-                "Refreshing Connector Poll endpoints for trigger configuration {TriggerConfigName}.",
-                _triggerConfigName);
-        }
-
-        return refreshResolution.WaitAsync(cancellationToken);
-    }
 
     private Task<ConnectorPollingEndpoints> GetOrCreateResolution()
     {
@@ -179,8 +147,7 @@ internal sealed class ConnectorPollingEndpointResolver : IConnectorPollingEndpoi
             if (!response.IsSuccessStatusCode)
             {
                 throw new ConnectorPollingEndpointResolutionException(
-                    $"ARM endpoint resolution failed with HTTP {(int)response.StatusCode} ({response.StatusCode}).",
-                    response.StatusCode);
+                    $"ARM endpoint resolution failed with HTTP {(int)response.StatusCode} ({response.StatusCode}).");
             }
 
             await using Stream content = await response.Content
@@ -228,7 +195,6 @@ internal sealed class ConnectorPollingEndpointResolver : IConnectorPollingEndpoi
         return new ConnectorPollingEndpoints(
             GetHttpsEndpoint(endpoints, "receiveUri"),
             GetHttpsEndpoint(endpoints, "acknowledgeUri"),
-            GetHttpsEndpoint(endpoints, "hasMessagesUri"),
             GetHttpsEndpoint(endpoints, "approximateQueueDepthUri"));
     }
 
@@ -256,9 +222,8 @@ internal sealed class ConnectorPollingEndpointResolutionException : Exception
 {
     public ConnectorPollingEndpointResolutionException(
         string message,
-        System.Net.HttpStatusCode? statusCode = null,
         Exception? innerException = null)
-        : base(message, innerException) => StatusCode = statusCode;
-
-    public System.Net.HttpStatusCode? StatusCode { get; }
+        : base(message, innerException)
+    {
+    }
 }

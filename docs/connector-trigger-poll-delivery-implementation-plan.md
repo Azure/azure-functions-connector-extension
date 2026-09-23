@@ -185,12 +185,25 @@ Requirements:
 - Document that ARM GET requires the control-plane action `Microsoft.Web/connectorGateways/triggerconfigs/read`.
 - Treat built-in Reader at the Connector Namespace resource scope as the least-privilege built-in-role proposal, pending an end-to-end test with no broader inherited permissions.
 - Verify that delivery mode is Poll and the trigger is enabled.
-- Extract `receiveUri`, `acknowledgeUri`, `hasMessagesUri`, and
-  `approximateQueueDepthUri`.
+- Extract `receiveUri`, `acknowledgeUri`, and `approximateQueueDepthUri`.
+- Do not call `hasMessagesUri`; Receive already reports whether more messages
+  are available, so a separate preflight request would add latency and create a
+  time-of-check/time-of-use race.
 - Require absolute HTTPS endpoints.
 - Cache by connection and trigger-config name.
-- Refresh only for endpoint-specific stale failures.
 - Before publishing final customer guidance, run a service-backed authorization test with no broader inherited permissions to confirm or correct the proposed ARM role.
+
+Deferred endpoint-contract follow-up:
+
+- Replace `resourceId`-based ARM discovery with the customer-provided
+  `ConnectorNamespace__endpoint`.
+- Treat the configured endpoint as authoritative and remove the ARM resolver,
+  and endpoint cache.
+- When the configured endpoint is unreachable or a derived Poll route returns
+  `404 Not Found` or `410 Gone`, surface an explicit configured-endpoint error;
+  do not attempt ARM discovery.
+- Confirm that the service contract guarantees endpoint stability before
+  adopting this behavior.
 
 ## PR 5: Runtime and Linked-Output Clients
 

@@ -2,10 +2,8 @@
 // Licensed under the MIT License.
 
 using System.Globalization;
-using System.Net;
 using System.Net.Http.Headers;
 using Azure.Core;
-using Microsoft.Extensions.Logging;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
@@ -20,14 +18,6 @@ internal interface IConnectorPollDeliveryClient
         ConnectorPollingEndpoints endpoints,
         IReadOnlyList<ConnectorMessageLock> messages,
         CancellationToken cancellationToken);
-
-    Task<bool> HasMessagesAsync(
-        ConnectorPollingEndpoints endpoints,
-        CancellationToken cancellationToken);
-
-    Task<ConnectorQueueStatus> GetQueueStatusAsync(
-        ConnectorPollingEndpoints endpoints,
-        CancellationToken cancellationToken);
 }
 
 internal interface IConnectorPollDeliveryClientFactory
@@ -39,23 +29,15 @@ internal sealed class ConnectorPollDeliveryClientFactory :
     IConnectorPollDeliveryClientFactory
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ILoggerFactory _loggerFactory;
 
-    public ConnectorPollDeliveryClientFactory(
-        IHttpClientFactory httpClientFactory,
-        ILoggerFactory loggerFactory)
-    {
+    public ConnectorPollDeliveryClientFactory(IHttpClientFactory httpClientFactory) =>
         _httpClientFactory = httpClientFactory ??
             throw new ArgumentNullException(nameof(httpClientFactory));
-        _loggerFactory = loggerFactory ??
-            throw new ArgumentNullException(nameof(loggerFactory));
-    }
 
     public IConnectorPollDeliveryClient Create(TokenCredential credential) =>
         new ConnectorPollDeliveryClient(
             credential ?? throw new ArgumentNullException(nameof(credential)),
-            _httpClientFactory,
-            _loggerFactory.CreateLogger<ConnectorPollDeliveryClient>());
+            _httpClientFactory);
 }
 
 internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
@@ -69,21 +51,15 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
 
     private readonly TokenCredential _credential;
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ILogger _logger;
-    private readonly Func<int, CancellationToken, Task> _retryDelayAsync;
 
     internal ConnectorPollDeliveryClient(
         TokenCredential credential,
-        IHttpClientFactory httpClientFactory,
-        ILogger logger,
-        Func<int, CancellationToken, Task>? retryDelayAsync = null)
+        IHttpClientFactory httpClientFactory)
     {
         _credential =
             credential ?? throw new ArgumentNullException(nameof(credential));
         _httpClientFactory = httpClientFactory ??
             throw new ArgumentNullException(nameof(httpClientFactory));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _retryDelayAsync = retryDelayAsync ?? DelayForRetryAsync;
     }
 
     public async Task<ConnectorReceiveResult> ReceiveAsync(
@@ -185,111 +161,6 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
         }
     }
 
-    public async Task<ConnectorQueueStatus> GetQueueStatusAsync(
-        ConnectorPollingEndpoints endpoints,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(endpoints);
-
-        Task<BinaryData> hasMessagesTask = GetSafeOperationContentAsync(
-            endpoints.HasMessagesUri,
-            "HasMessages",
-            cancellationToken);
-        Task<BinaryData> depthTask = GetSafeOperationContentAsync(
-            endpoints.ApproximateQueueDepthUri,
-            "ApproximateQueueDepth",
-            cancellationToken);
-        await Task.WhenAll(hasMessagesTask, depthTask).ConfigureAwait(false);
-
-        return ConnectorPollingProtocol.DeserializeQueueStatus(
-            await hasMessagesTask.ConfigureAwait(false),
-            await depthTask.ConfigureAwait(false));
-    }
-
-    public async Task<bool> HasMessagesAsync(
-        ConnectorPollingEndpoints endpoints,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(endpoints);
-
-        BinaryData content = await GetSafeOperationContentAsync(
-            endpoints.HasMessagesUri,
-            "HasMessages",
-            cancellationToken).ConfigureAwait(false);
-        return ConnectorPollingProtocol.DeserializeHasMessages(content);
-    }
-
-    private async Task<BinaryData> GetSafeOperationContentAsync(
-        Uri endpoint,
-        string operation,
-        CancellationToken cancellationToken)
-    {
-        for (int attempt = 1;
-            attempt <= ConnectorPollingHttpConstants.MaximumSafeOperationAttempts;
-            attempt++)
-        {
-            try
-            {
-                using HttpResponseMessage response =
-                    await SendAuthenticatedAsync(
-                        HttpMethod.Get,
-                        endpoint,
-                        content: null,
-                        cancellationToken).ConfigureAwait(false);
-                if (response.IsSuccessStatusCode)
-                {
-                    return await ReadContentAsync(
-                        response,
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                if (attempt ==
-                        ConnectorPollingHttpConstants.MaximumSafeOperationAttempts ||
-                    !IsTransient(response.StatusCode))
-                {
-                    EnsureSuccess(response, operation);
-                }
-            }
-            catch (HttpRequestException)
-            {
-                if (attempt ==
-                    ConnectorPollingHttpConstants.MaximumSafeOperationAttempts)
-                {
-                    throw new ConnectorPollDeliveryException(
-                        $"Connector {operation} HTTP request failed.");
-                }
-
-                _logger.LogWarning(
-                    "Transient Connector {Operation} request failure; retrying attempt {NextAttempt} of {MaximumAttempts}.",
-                    operation,
-                    attempt + 1,
-                    ConnectorPollingHttpConstants.MaximumSafeOperationAttempts);
-            }
-            catch (OperationCanceledException)
-                when (!cancellationToken.IsCancellationRequested)
-            {
-                if (attempt ==
-                    ConnectorPollingHttpConstants.MaximumSafeOperationAttempts)
-                {
-                    throw new ConnectorPollDeliveryException(
-                        $"Connector {operation} HTTP request timed out.");
-                }
-
-                _logger.LogWarning(
-                    "Connector {Operation} request timed out; retrying attempt {NextAttempt} of {MaximumAttempts}.",
-                    operation,
-                    attempt + 1,
-                    ConnectorPollingHttpConstants.MaximumSafeOperationAttempts);
-            }
-
-            await _retryDelayAsync(attempt, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        throw new InvalidOperationException(
-            $"Connector {operation} retry loop completed unexpectedly.");
-    }
-
     private async Task<HttpResponseMessage> SendAuthenticatedAsync(
         HttpMethod method,
         Uri endpoint,
@@ -381,32 +252,16 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
         if (!response.IsSuccessStatusCode)
         {
             throw new ConnectorPollDeliveryException(
-                $"Connector {operation} request failed with HTTP {(int)response.StatusCode} ({response.StatusCode}).",
-                response.StatusCode);
+                $"Connector {operation} request failed with HTTP {(int)response.StatusCode} ({response.StatusCode}).");
         }
     }
 
-    private static bool IsTransient(HttpStatusCode statusCode) =>
-        statusCode is HttpStatusCode.RequestTimeout or
-            HttpStatusCode.TooManyRequests ||
-        (int)statusCode >= 500;
-
-    private static Task DelayForRetryAsync(
-        int attempt,
-        CancellationToken cancellationToken) =>
-        Task.Delay(
-            ConnectorPollingHttpConstants.BaseRetryDelay * attempt,
-            cancellationToken);
 }
 
 internal sealed class ConnectorPollDeliveryException : Exception
 {
-    internal ConnectorPollDeliveryException(
-        string message,
-        HttpStatusCode? statusCode = null,
-        Exception? innerException = null)
-        : base(message, innerException) =>
-        StatusCode = statusCode;
-
-    internal HttpStatusCode? StatusCode { get; }
+    internal ConnectorPollDeliveryException(string message)
+        : base(message)
+    {
+    }
 }

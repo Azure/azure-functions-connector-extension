@@ -106,8 +106,10 @@ The trigger-contract seam has been implemented:
 - `ConnectorTriggerDeliveryMode` defines `Webhook` and `Poll`.
 - The host and isolated-worker attributes expose the initial Poll metadata.
 - `Webhook` remains the default.
+- `ConnectorTriggerBinding` directly implements `ITriggerBinding` avoiding obsolete WebJobs binding-strategy
+  APIs.
 - `ConnectorTriggerBinding.CreateListenerAsync` selects `ConnectorListener`
-  for Webhook and the placeholder `ConnectorPollingListener` for Poll.
+  for Webhook and `ConnectorPollingListener` for Poll.
 - `ConnectorListener` still registers the function for webhook routing and
   otherwise has inert lifecycle methods.
 - `ConnectorExtensionConfigProvider` registers the webhook handler and
@@ -369,9 +371,6 @@ ConnectorNamespace__resourceId=/subscriptions/{subscription}/resourceGroups/{res
 ConnectorNamespace__credential=managedidentity
 ConnectorNamespace__clientId={optional-user-assigned-managed-identity-client-id}
 ConnectorNamespace__managedIdentityResourceId={optional-user-assigned-managed-identity-resource-id}
-ConnectorNamespace__token={debug-only-token-for-all-audiences}
-ConnectorNamespace__managementToken={debug-only-arm-token}
-ConnectorNamespace__apiHubToken={debug-only-apihub-token}
 ```
 
 `TriggerConfigName` remains trigger metadata because it identifies the event source within the namespace. It should support Functions name resolution so environment-specific configuration is not embedded in attributes.
@@ -415,7 +414,6 @@ The extension follows the standard Functions identity-based connection pattern u
 | Local development | Omit `credential`, or use `credential=managedidentity` with an unavailable MI selector | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
 | Azure, system-assigned identity | `credential=managedidentity` | Use the Function App's system-assigned managed identity; if the managed identity endpoint reports authentication unavailable, the extension falls back to `DefaultAzureCredential` for local/private-stamp diagnostics |
 | Azure, user-assigned identity | `credential=managedidentity` plus `clientId` or `managedIdentityResourceId` | Use the selected user-assigned managed identity |
-| Private-stamp diagnostics only | `token`, or `managementToken` plus `apiHubToken` | Bypass SDK credential creation and use caller-provided bearer token strings without logging them |
 
 Authentication uses two token audiences:
 
@@ -427,8 +425,6 @@ Authentication uses two token audiences:
 The request URI identifies the target Connector Namespace; the credential does not receive or infer that target resource ID. ARM and Connector Namespace authorize the caller represented by the bearer token against the requested resource.
 
 When Scale Controller hosts the scaler, it may inject dedicated app-identity credentials for ARM and API Hub through `ConnectorScaleCredentialProperties`. The extension routes ARM discovery to the former and queue-depth operations to the latter. This lets Scale Controller use its existing fixed-audience `ManagedIdentityTokenCredential` without making the extension impersonate the Function App.
-
-The debug token override is intentionally for private-stamp diagnostics. A single `ConnectorNamespace__token` is returned for every requested scope, but normal scaling uses different ARM and API Hub audiences; use `ConnectorNamespace__managementToken` and `ConnectorNamespace__apiHubToken` when testing both endpoint discovery and queue-depth calls with copied tokens. The extension parses JWT `exp` for the returned `AccessToken` expiry when present; otherwise it treats the configured token as a short-lived five-minute diagnostic token. The token setting can also be supplied with a single underscore, such as `ConnectorNamespace_token`, for environments where hierarchical app settings are inconvenient.
 
 ARM endpoint discovery requires the following control-plane action:
 
@@ -713,9 +709,17 @@ Responsibilities:
 - Validate that required endpoints are absolute HTTPS URLs.
 - Resolve the namespace resource ID and credential from the named connection configuration.
 - Cache resolved endpoints by connection and trigger-config name.
-- Refresh cached endpoints after endpoint-specific stale/not-found failures.
 
 The resolver must not be part of the runtime data-plane client.
+
+> **Future configured-endpoint contract:** When Poll configuration moves from
+> ARM discovery to the customer-provided `ConnectorNamespace__endpoint`, remove
+> the ARM endpoint resolver and endpoint cache. The configured endpoint becomes
+> authoritative. If a derived Poll
+> route cannot be reached or returns an endpoint-specific `404 Not Found` or
+> `410 Gone`, report an explicit configured-endpoint failure instead of querying
+> ARM for replacement URLs. This requires the service contract to guarantee
+> that the configured endpoint is stable.
 
 ### 2. Poll-delivery HTTP Client
 
@@ -773,7 +777,7 @@ Avoid automatic HTTP retries for Receive and Acknowledge:
 
 Keep the existing Webhook listener behavior unchanged.
 
-Change `ConnectorTriggerBinding.CreateListenerAsync` to select:
+Use `ConnectorTriggerBinding.CreateListenerAsync` to select:
 
 - `ConnectorListener` for Webhook.
 - `ConnectorPollingListener` for Poll.
@@ -1096,7 +1100,8 @@ preserve Webhook behavior and pass its focused build and tests.
 
 - Read the trigger configuration through ARM using API version
   `2026-05-01-preview`.
-- Extract and cache the four opaque runtime endpoints.
+- Extract and cache the three runtime endpoints used by the extension:
+  Receive, Acknowledge, and Approximate Queue Depth.
 - Verify Poll mode, enabled state, HTTPS endpoints, and ARM authentication.
 
 ### PR 5: Runtime client

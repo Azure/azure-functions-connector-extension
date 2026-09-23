@@ -21,11 +21,7 @@ internal sealed class ConnectorAcknowledgeResult
 
     internal IReadOnlyList<ConnectorAcknowledgeItemResult> Results { get; }
 
-    internal bool AllAcknowledged =>
-        Results.Count > 0 && Results.All(result => result.IsAcknowledged);
-
     public override string ToString() =>
         $"{nameof(ConnectorAcknowledgeResult)} {{ " +
-        $"ResultCount = {Results.Count}, " +
-        $"{nameof(AllAcknowledged)} = {AllAcknowledged} }}";
+        $"ResultCount = {Results.Count} }}";
 }

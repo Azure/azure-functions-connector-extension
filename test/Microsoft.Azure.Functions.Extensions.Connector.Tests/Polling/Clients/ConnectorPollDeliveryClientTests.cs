@@ -3,7 +3,6 @@
 
 using System.Net;
 using System.Text;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
@@ -19,19 +18,9 @@ public class ConnectorPollDeliveryClientTests
         Assert.Equal(
             "httpClientFactory",
             Assert.Throws<ArgumentNullException>(() =>
-                new ConnectorPollDeliveryClientFactory(
-                    null!,
-                    NullLoggerFactory.Instance)).ParamName);
-        Assert.Equal(
-            "loggerFactory",
-            Assert.Throws<ArgumentNullException>(() =>
-                new ConnectorPollDeliveryClientFactory(
-                    httpClientFactory,
-                    null!)).ParamName);
+                new ConnectorPollDeliveryClientFactory(null!)).ParamName);
 
-        var factory = new ConnectorPollDeliveryClientFactory(
-            httpClientFactory,
-            NullLoggerFactory.Instance);
+        var factory = new ConnectorPollDeliveryClientFactory(httpClientFactory);
         Assert.Equal(
             "credential",
             Assert.Throws<ArgumentNullException>(() =>
@@ -45,28 +34,17 @@ public class ConnectorPollDeliveryClientTests
         var httpClientFactory = new TestHttpClientFactory(
             new SequenceHttpMessageHandler(_ =>
                 throw new InvalidOperationException()));
-        var logger = NullLogger<ConnectorPollDeliveryClient>.Instance;
-
         Assert.Equal(
             "credential",
             Assert.Throws<ArgumentNullException>(() =>
                 new ConnectorPollDeliveryClient(
                     null!,
-                    httpClientFactory,
-                    logger)).ParamName);
+                    httpClientFactory)).ParamName);
         Assert.Equal(
             "httpClientFactory",
             Assert.Throws<ArgumentNullException>(() =>
                 new ConnectorPollDeliveryClient(
                     credential,
-                    null!,
-                    logger)).ParamName);
-        Assert.Equal(
-            "logger",
-            Assert.Throws<ArgumentNullException>(() =>
-                new ConnectorPollDeliveryClient(
-                    credential,
-                    httpClientFactory,
                     null!)).ParamName);
     }
 
@@ -97,12 +75,6 @@ public class ConnectorPollDeliveryClientTests
             (await Assert.ThrowsAsync<ArgumentNullException>(() =>
                 client.AcknowledgeAsync(
                     Endpoints(),
-                    null!,
-                    CancellationToken.None))).ParamName);
-        Assert.Equal(
-            "endpoints",
-            (await Assert.ThrowsAsync<ArgumentNullException>(() =>
-                client.GetQueueStatusAsync(
                     null!,
                     CancellationToken.None))).ParamName);
     }
@@ -295,7 +267,6 @@ public class ConnectorPollDeliveryClientTests
             locks,
             CancellationToken.None);
 
-        Assert.False(result.AllAcknowledged);
         Assert.Equal(
             ConnectorAcknowledgeStatus.Acknowledged,
             result.Results[0].Status);
@@ -346,146 +317,18 @@ public class ConnectorPollDeliveryClientTests
         Assert.Equal(1, handler.CallCount);
     }
 
-    [Fact]
-    public async Task GetQueueStatusAsync_ParsesBothApproximateValues()
-    {
-        var handler = new RoutingHttpMessageHandler(request =>
-            request.RequestUri!.AbsolutePath.EndsWith(
-                "/has",
-                StringComparison.Ordinal)
-                ? JsonResponse(
-                    HttpStatusCode.OK,
-                    """{"hasMessages":true}""")
-                : JsonResponse(
-                    HttpStatusCode.OK,
-                    """{"approximateQueueDepth":2147483648}"""));
-        ConnectorPollDeliveryClient client = CreateClient(
-            new TestTokenCredential(),
-            handler);
-
-        ConnectorQueueStatus result = await client.GetQueueStatusAsync(
-            Endpoints(),
-            CancellationToken.None);
-
-        Assert.True(result.HasMessages);
-        Assert.Equal(2147483648L, result.ApproximateQueueDepth);
-        Assert.Equal(2, handler.CallCount);
-    }
-
-    [Fact]
-    public async Task HasMessagesAsync_DoesNotCallApproximateQueueDepth()
-    {
-        var handler = new RoutingHttpMessageHandler(request =>
-            request.RequestUri!.AbsolutePath.EndsWith(
-                "/has",
-                StringComparison.Ordinal)
-                ? JsonResponse(
-                    HttpStatusCode.OK,
-                    """{"hasMessages":true}""")
-                : JsonResponse(
-                    HttpStatusCode.InternalServerError,
-                    "{}"));
-        ConnectorPollDeliveryClient client = CreateClient(
-            new TestTokenCredential(),
-            handler);
-
-        bool result = await client.HasMessagesAsync(
-            Endpoints(),
-            CancellationToken.None);
-
-        Assert.True(result);
-        Assert.Equal(1, handler.CallCount);
-    }
-
-    [Fact]
-    public async Task GetQueueStatusAsync_RetriesOnlySafeTransientOperation()
-    {
-        int depthAttempts = 0;
-        var handler = new RoutingHttpMessageHandler(request =>
-        {
-            if (request.RequestUri!.AbsolutePath.EndsWith(
-                "/has",
-                StringComparison.Ordinal))
-            {
-                return JsonResponse(
-                    HttpStatusCode.OK,
-                    """{"hasMessages":false}""");
-            }
-
-            depthAttempts++;
-            return depthAttempts == 1
-                ? JsonResponse(HttpStatusCode.ServiceUnavailable, "{}")
-                : JsonResponse(
-                    HttpStatusCode.OK,
-                    """{"approximateQueueDepth":0}""");
-        });
-        ConnectorPollDeliveryClient client = CreateClient(
-            new TestTokenCredential(),
-            handler);
-
-        ConnectorQueueStatus result = await client.GetQueueStatusAsync(
-            Endpoints(),
-            CancellationToken.None);
-
-        Assert.False(result.HasMessages);
-        Assert.Equal(0, result.ApproximateQueueDepth);
-        Assert.Equal(2, depthAttempts);
-    }
-
-    [Fact]
-    public async Task GetQueueStatusAsync_RetriesSafeTransportTimeout()
-    {
-        int depthAttempts = 0;
-        var handler = new AsyncRoutingHttpMessageHandler(
-            (request, _) =>
-            {
-                if (request.RequestUri!.AbsolutePath.EndsWith(
-                    "/has",
-                    StringComparison.Ordinal))
-                {
-                    return Task.FromResult(
-                        JsonResponse(
-                            HttpStatusCode.OK,
-                            """{"hasMessages":false}"""));
-                }
-
-                depthAttempts++;
-                return depthAttempts == 1
-                    ? Task.FromException<HttpResponseMessage>(
-                        new TaskCanceledException("timeout"))
-                    : Task.FromResult(
-                        JsonResponse(
-                            HttpStatusCode.OK,
-                            """{"approximateQueueDepth":0}"""));
-            });
-        ConnectorPollDeliveryClient client = CreateClient(
-            new TestTokenCredential(),
-            handler);
-
-        ConnectorQueueStatus result = await client.GetQueueStatusAsync(
-            Endpoints(),
-            CancellationToken.None);
-
-        Assert.False(result.HasMessages);
-        Assert.Equal(0, result.ApproximateQueueDepth);
-        Assert.Equal(2, depthAttempts);
-    }
-
     private static ConnectorPollDeliveryClient CreateClient(
         TestTokenCredential credential,
         HttpMessageHandler handler) =>
         new(
             credential,
-            new TestHttpClientFactory(handler),
-            NullLogger<ConnectorPollDeliveryClient>.Instance,
-            (_, _) => Task.CompletedTask);
+            new TestHttpClientFactory(handler));
 
     private static ConnectorPollingEndpoints Endpoints(
         string receiveUri = "https://runtime.test/receive") =>
         new(
             new Uri(receiveUri),
             new Uri("https://runtime.test/ack"),
-            new Uri("https://runtime.test/has"),
             new Uri("https://runtime.test/depth"));
 
     private static HttpResponseMessage JsonResponse(
@@ -499,33 +342,4 @@ public class ConnectorPollDeliveryClientTests
                 "application/json"),
         };
 
-    private sealed class RoutingHttpMessageHandler(
-        Func<HttpRequestMessage, HttpResponseMessage> response) :
-        HttpMessageHandler
-    {
-        private int _callCount;
-
-        internal int CallCount => Volatile.Read(ref _callCount);
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            Interlocked.Increment(ref _callCount);
-            return Task.FromResult(response(request));
-        }
-    }
-
-    private sealed class AsyncRoutingHttpMessageHandler(
-        Func<
-            HttpRequestMessage,
-            CancellationToken,
-            Task<HttpResponseMessage>> response) :
-        HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken) =>
-            response(request, cancellationToken);
-    }
 }

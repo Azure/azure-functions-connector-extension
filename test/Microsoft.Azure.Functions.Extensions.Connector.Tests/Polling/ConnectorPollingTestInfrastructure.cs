@@ -92,21 +92,14 @@ internal sealed class AsyncSequenceHttpMessageHandler(
     }
 }
 
-internal sealed class StubEndpointResolver(ConnectorPollingEndpoints initial, ConnectorPollingEndpoints? refreshed = null) : IConnectorPollingEndpointResolver
+internal sealed class StubEndpointResolver(ConnectorPollingEndpoints initial) : IConnectorPollingEndpointResolver
 {
     public int ResolveCalls { get; private set; }
-    public int RefreshCalls { get; private set; }
 
     public Task<ConnectorPollingEndpoints> ResolveAsync(CancellationToken cancellationToken = default)
     {
         ResolveCalls++;
         return Task.FromResult(initial);
-    }
-
-    public Task<ConnectorPollingEndpoints> RefreshAsync(CancellationToken cancellationToken = default)
-    {
-        RefreshCalls++;
-        return Task.FromResult(refreshed ?? initial);
     }
 }
 

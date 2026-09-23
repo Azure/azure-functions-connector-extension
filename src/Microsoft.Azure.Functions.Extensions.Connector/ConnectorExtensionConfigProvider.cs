@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Net;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Web;
 using Microsoft.Azure.WebJobs;
@@ -21,6 +22,10 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvider,
     IAsyncConverter<HttpRequestMessage, HttpResponseMessage>
 {
+    internal const string BindingDataVersion = "1.0";
+    internal const string BindingDataSource = "AzureConnectorEvent";
+    internal const string BindingDataContentType = "application/json";
+
     private static readonly Regex FunctionNamePattern = new(@"^[a-zA-Z0-9_-]{1,128}$", RegexOptions.Compiled);
 
     private readonly ILogger<ConnectorExtensionConfigProvider> _logger;
@@ -60,16 +65,15 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
     {
         ArgumentNullException.ThrowIfNull(context);
 
-#pragma warning disable 618
+#pragma warning disable CS0618 // GetWebhookHandler remains the WebJobs webhook registration API.
         var webhookUrl = context.GetWebhookHandler();
-#pragma warning restore 618
+#pragma warning restore CS0618
 
         var extensionUri = webhookUrl?.GetLeftPart(UriPartial.Path) ?? string.Empty;
         _consoleLogger.LogInformation("Connector endpoint: {uri}", extensionUri);
 
-        context
-            .AddBindingRule<ConnectorTriggerAttribute>()
-            .BindToTrigger(new ConnectorTriggerBindingProvider(
+        var rule = context.AddBindingRule<ConnectorTriggerAttribute>();
+        rule.BindToTrigger(new ConnectorTriggerBindingProvider(
                 this,
                 _options,
                 _connectionOptionsProvider,
@@ -113,7 +117,13 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
 
-        var triggerData = new TriggeredFunctionData { TriggerValue = triggerValue };
+        var triggerData = new TriggeredFunctionData
+        {
+            TriggerValue = ConnectorTriggerInput.FromSingle(
+                BinaryData.FromString(triggerValue),
+                messageId: null,
+                ConnectorTriggerDeliveryMode.Webhook),
+        };
         var result = await registration.Executor.TryExecuteAsync(triggerData, cancellationToken).ConfigureAwait(false);
 
         if (result.Succeeded)
@@ -127,5 +137,35 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         {
             Content = new StringContent(result.Exception?.Message ?? "Function execution failed")
         };
+    }
+
+    internal static ParameterBindingData ConvertTriggerInputToBindingData(
+        ConnectorTriggerInput input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("deliveryMode", input.DeliveryMode.ToString());
+            writer.WriteString("data", input.Outputs.ToString());
+            if (input.MessageId is null)
+            {
+                writer.WriteNull("messageId");
+            }
+            else
+            {
+                writer.WriteString("messageId", input.MessageId);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return new ParameterBindingData(
+            BindingDataVersion,
+            BindingDataSource,
+            BinaryData.FromBytes(stream.ToArray()),
+            BindingDataContentType);
     }
 }

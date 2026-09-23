@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-using System.Net;
 using System.Net.Http.Headers;
 using Azure.Core;
 using Microsoft.Extensions.Logging;
@@ -86,25 +85,9 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
     {
         ConnectorPollingEndpoints endpoints = await _endpointResolver
             .ResolveAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            return await GetDepthCoreAsync(
-                endpoints.ApproximateQueueDepthUri,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (ConnectorQueueDepthException exception) when (exception.EndpointMayBeStale)
-        {
-            _logger.LogWarning(
-                exception,
-                "Connector queue depth endpoint was stale for function {FunctionName} and trigger configuration {TriggerConfigName}; refreshing once.",
-                _functionName,
-                _triggerConfigName);
-            endpoints = await _endpointResolver
-                .RefreshAsync(cancellationToken).ConfigureAwait(false);
-            return await GetDepthCoreAsync(
-                endpoints.ApproximateQueueDepthUri,
-                cancellationToken).ConfigureAwait(false);
-        }
+        return await GetDepthCoreAsync(
+            endpoints.ApproximateQueueDepthUri,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<long> GetDepthCoreAsync(
@@ -126,8 +109,7 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
             if (!response.IsSuccessStatusCode)
             {
                 throw new ConnectorQueueDepthException(
-                    $"Connector approximate queue depth request failed with HTTP {(int)response.StatusCode} ({response.StatusCode}).",
-                    response.StatusCode);
+                    $"Connector approximate queue depth request failed with HTTP {(int)response.StatusCode} ({response.StatusCode}).");
             }
 
             await using Stream content = await response.Content
@@ -168,11 +150,8 @@ internal sealed class ConnectorQueueDepthException : Exception
 {
     public ConnectorQueueDepthException(
         string message,
-        HttpStatusCode? statusCode = null,
         Exception? innerException = null)
-        : base(message, innerException) => StatusCode = statusCode;
-
-    public HttpStatusCode? StatusCode { get; }
-
-    public bool EndpointMayBeStale => StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone;
+        : base(message, innerException)
+    {
+    }
 }

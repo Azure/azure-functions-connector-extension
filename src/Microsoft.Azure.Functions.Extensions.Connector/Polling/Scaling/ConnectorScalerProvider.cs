@@ -40,12 +40,16 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
         ConnectorScaleConnectionOptions scaleConnection = serviceProvider
             .GetRequiredService<IConnectorScaleConnectionOptionsProvider>()
             .Get(connectionName, injectedComponentFactory);
-        TokenCredential armCredential = scaleConnection.HasDebugTokenOverride
-            ? scaleConnection.Credential
-            : GetInjectedTokenCredential(triggerMetadata, ConnectorScaleCredentialProperties.ArmTokenCredential) ?? scaleConnection.Credential;
-        TokenCredential apiHubCredential = scaleConnection.HasDebugTokenOverride
-            ? scaleConnection.Credential
-            : GetInjectedTokenCredential(triggerMetadata, ConnectorScaleCredentialProperties.ApiHubTokenCredential) ?? scaleConnection.Credential;
+        TokenCredential armCredential =
+            GetInjectedTokenCredential(
+                triggerMetadata,
+                ConnectorScaleCredentialProperties.ArmTokenCredential) ??
+            scaleConnection.Credential;
+        TokenCredential apiHubCredential =
+            GetInjectedTokenCredential(
+                triggerMetadata,
+                ConnectorScaleCredentialProperties.ApiHubTokenCredential) ??
+            scaleConnection.Credential;
         var connection = new ConnectorConnectionOptions(
             scaleConnection.ResourceId,
             scaleConnection.Credential);

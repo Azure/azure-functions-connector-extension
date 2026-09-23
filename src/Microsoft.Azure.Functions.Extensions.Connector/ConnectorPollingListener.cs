@@ -57,7 +57,6 @@ internal sealed class ConnectorPollingListenerFactory(
         return new ConnectorPollingListener(
             registration,
             resolvedOptions,
-            connectionOptions,
             _endpointResolverFactory.Create(
                 connectionOptions,
                 connectionOptions.Credential,
@@ -94,7 +93,6 @@ internal sealed class ConnectorPollingListener : IListener
     internal ConnectorPollingListener(
         ConnectorFunctionRegistration registration,
         ConnectorPollingOptions options,
-        ConnectorConnectionOptions connectionOptions,
         IConnectorPollingEndpointResolver endpointResolver,
         IConnectorPollDeliveryClient deliveryClient,
         IConnectorLinkedOutputClient linkedOutputClient,
@@ -103,7 +101,6 @@ internal sealed class ConnectorPollingListener : IListener
     {
         Registration = registration ?? throw new ArgumentNullException(nameof(registration));
         Options = options ?? throw new ArgumentNullException(nameof(options));
-        ConnectionOptions = connectionOptions ?? throw new ArgumentNullException(nameof(connectionOptions));
         _endpointResolver = endpointResolver ?? throw new ArgumentNullException(nameof(endpointResolver));
         _deliveryClient = deliveryClient ?? throw new ArgumentNullException(nameof(deliveryClient));
         _linkedOutputClient = linkedOutputClient ?? throw new ArgumentNullException(nameof(linkedOutputClient));
@@ -114,8 +111,6 @@ internal sealed class ConnectorPollingListener : IListener
     internal ConnectorFunctionRegistration Registration { get; }
 
     internal ConnectorPollingOptions Options { get; }
-
-    internal ConnectorConnectionOptions ConnectionOptions { get; }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -257,18 +252,6 @@ internal sealed class ConnectorPollingListener : IListener
 
                 try
                 {
-                    bool hasMessages =
-                        await _deliveryClient.HasMessagesAsync(
-                            endpoints,
-                            receiveCancellationToken).ConfigureAwait(false);
-                    if (!hasMessages)
-                    {
-                        await _delayAsync(
-                            EmptyQueueDelay,
-                            receiveCancellationToken).ConfigureAwait(false);
-                        continue;
-                    }
-
                     int maxEvents = Math.Min(
                         ConnectorPollingProtocolLimits.MaximumBatchSize,
                         availableInvocationSlots);
@@ -340,7 +323,10 @@ internal sealed class ConnectorPollingListener : IListener
                     cancellationToken).ConfigureAwait(false);
             var triggerData = new TriggeredFunctionData
             {
-                TriggerValue = outputs.ToString(),
+                TriggerValue = ConnectorTriggerInput.FromSingle(
+                    outputs,
+                    message.MessageId,
+                    ConnectorTriggerDeliveryMode.Poll),
             };
             FunctionResult result = await Registration.Executor.TryExecuteAsync(
                 triggerData,

@@ -3,7 +3,7 @@
 These apps validate the same Connector Namespace Poll trigger from each
 supported language worker:
 
-- `dotnet` - .NET isolated with a typed Office 365 payload.
+- `dotnet` - .NET isolated with a typed Office 365 payload and Poll `MessageId`.
 - `nodejs` - TypeScript generic binding with an untyped JSON payload.
 - `python` - Python v2 generic binding with an untyped JSON payload.
 
@@ -16,6 +16,9 @@ TriggerConfigName = %ConnectorTriggerConfigName%
 MaxBatchSize = 1
 Concurrency = 4
 ```
+
+The current Poll listener supports one event per invocation, so all binding
+shapes require an effective `MaxBatchSize` of `1`.
 
 The local settings files are intentionally untracked. Configure:
 
@@ -34,19 +37,6 @@ Build the .NET sample against the repository-local projects:
 dotnet build .\test\poll\dotnet\PollSample.csproj
 ```
 
-To validate the packed preview NuGet instead:
-
-```powershell
-dotnet pack .\Microsoft.Azure.Functions.Extensions.Connector.sln `
-    --configuration Release `
-    --output .\out\pkg
-
-dotnet build .\test\poll\dotnet\PollSample.csproj `
-    --configuration Release `
-    -p:ConnectorPackageVersion=0.3.0-alpha.dev `
-    -p:RestoreAdditionalProjectSources="$PWD\out\pkg"
-```
-
 Build the host extension before starting Node.js or Python:
 
 ```powershell
@@ -60,6 +50,3 @@ dotnet build .\test\poll\python\PythonPollExtensions.csproj
 ```
 
 Start Azurite, then run `func start` from the selected sample directory.
-
-Current preview limitations are documented in
-[`docs/connector-trigger-poll-preview.md`](../../docs/connector-trigger-poll-preview.md).

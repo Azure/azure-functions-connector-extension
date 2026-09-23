@@ -45,40 +45,6 @@ public class ConnectorPollingEndpointResolverTests
         Assert.Equal("https://runtime.test/depth?opaque=1", resolved.ApproximateQueueDepthUri.ToString());
     }
 
-    [Fact]
-    public async Task RefreshAsync_ConcurrentCallsAwaitOneNewArmRequest()
-    {
-        var refreshRequestStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var refreshResponse = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var handler = new AsyncSequenceHttpMessageHandler(
-            (_, _) => Task.FromResult(JsonResponse(ValidResponse("one"))),
-            (_, _) =>
-            {
-                refreshRequestStarted.SetResult();
-                return refreshResponse.Task;
-            });
-        var resolver = CreateResolver(handler, new TestTokenCredential(), "trigger");
-        await resolver.ResolveAsync();
-
-        Task<ConnectorPollingEndpoints> firstRefresh = resolver.RefreshAsync();
-        await refreshRequestStarted.Task;
-        Task<ConnectorPollingEndpoints>[] concurrentRefreshes = Enumerable.Range(0, 8)
-            .Select(_ => resolver.RefreshAsync())
-            .ToArray();
-
-        Assert.Equal(2, handler.CallCount);
-        Assert.False(firstRefresh.IsCompleted);
-        Assert.All(concurrentRefreshes, refresh => Assert.False(refresh.IsCompleted));
-
-        refreshResponse.SetResult(JsonResponse(ValidResponse("two")));
-        ConnectorPollingEndpoints[] refreshed = await Task.WhenAll([firstRefresh, .. concurrentRefreshes]);
-        ConnectorPollingEndpoints laterRefresh = await resolver.RefreshAsync();
-
-        Assert.Equal(2, handler.CallCount);
-        Assert.All(refreshed, value => Assert.Contains("two", value.ApproximateQueueDepthUri.Host));
-        Assert.Contains("two", laterRefresh.ApproximateQueueDepthUri.Host);
-    }
-
     [Theory]
     [InlineData("Disabled", "Poll", "https://runtime.test/depth")]
     [InlineData("Enabled", "Webhook", "https://runtime.test/depth")]

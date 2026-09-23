@@ -299,7 +299,6 @@ public class ConnectorPollingProtocolTests
             result.Results[2].Status);
         Assert.Equal("Deferred", result.Results[3].Status.ToString());
         Assert.False(result.Results[3].Status.IsKnown);
-        Assert.False(result.AllAcknowledged);
     }
 
     [Theory]
@@ -358,32 +357,4 @@ public class ConnectorPollingProtocolTests
         Assert.DoesNotContain("secret-lock", exception.ToString());
     }
 
-    [Fact]
-    public void DeserializeQueueStatus_ParsesConfirmedWireShapes()
-    {
-        ConnectorQueueStatus status =
-            ConnectorPollingProtocol.DeserializeQueueStatus(
-                BinaryData.FromString("""{"hasMessages":true}"""),
-                BinaryData.FromString("""{"approximateQueueDepth":9223372036854775807}"""));
-
-        Assert.True(status.HasMessages);
-        Assert.Equal(long.MaxValue, status.ApproximateQueueDepth);
-    }
-
-    [Theory]
-    [InlineData("""{}""", """{"approximateQueueDepth":0}""", "hasMessages")]
-    [InlineData("""{"hasMessages":false}""", """{}""", "approximateQueueDepth")]
-    [InlineData("""{"hasMessages":false}""", """{"approximateQueueDepth":-1}""", "must not be negative")]
-    public void DeserializeQueueStatus_RejectsInvalidResponses(
-        string hasMessagesJson,
-        string depthJson,
-        string expectedMessage)
-    {
-        JsonException exception = Assert.Throws<JsonException>(() =>
-            ConnectorPollingProtocol.DeserializeQueueStatus(
-                BinaryData.FromString(hasMessagesJson),
-                BinaryData.FromString(depthJson)));
-
-        Assert.Contains(expectedMessage, exception.Message);
-    }
 }

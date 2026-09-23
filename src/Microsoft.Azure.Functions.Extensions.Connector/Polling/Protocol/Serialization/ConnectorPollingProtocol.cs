@@ -116,33 +116,6 @@ internal static class ConnectorPollingProtocol
         return new ConnectorAcknowledgeResult(results);
     }
 
-    internal static ConnectorQueueStatus DeserializeQueueStatus(
-        BinaryData hasMessagesContent,
-        BinaryData approximateQueueDepthContent)
-    {
-        ArgumentNullException.ThrowIfNull(hasMessagesContent);
-        ArgumentNullException.ThrowIfNull(approximateQueueDepthContent);
-
-        bool hasMessages = DeserializeHasMessages(hasMessagesContent);
-        long approximateQueueDepth =
-            DeserializeApproximateQueueDepth(approximateQueueDepthContent);
-
-        return new ConnectorQueueStatus(hasMessages, approximateQueueDepth);
-    }
-
-    internal static bool DeserializeHasMessages(BinaryData content)
-    {
-        ArgumentNullException.ThrowIfNull(content);
-
-        ConnectorHasMessagesWireDto response = Deserialize(
-            content,
-            ConnectorPollingJsonContext.Default.ConnectorHasMessagesWireDto,
-            "has-messages");
-        return response.HasMessages ??
-            throw ProtocolError(
-                "Has-messages response must contain a boolean hasMessages property.");
-    }
-
     internal static long DeserializeApproximateQueueDepth(BinaryData content)
     {
         ArgumentNullException.ThrowIfNull(content);

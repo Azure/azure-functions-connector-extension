@@ -63,12 +63,6 @@ internal sealed class ConnectorAcknowledgeItemWireDto
     public string? Status { get; init; }
 }
 
-internal sealed class ConnectorHasMessagesWireDto
-{
-    [JsonPropertyName("hasMessages")]
-    public bool? HasMessages { get; init; }
-}
-
 internal sealed class ConnectorApproximateQueueDepthWireDto
 {
     [JsonPropertyName("approximateQueueDepth")]

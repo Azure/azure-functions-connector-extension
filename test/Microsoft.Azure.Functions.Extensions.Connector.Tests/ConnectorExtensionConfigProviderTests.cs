@@ -309,7 +309,7 @@ public class ConnectorExtensionConfigProviderTests
     }
 
     [Fact]
-    public async Task ConvertAsync_PassesJsonStringToExecutor()
+    public async Task ConvertAsync_PassesWebhookTriggerValueToExecutor()
     {
         // Arrange
         TriggeredFunctionData? capturedData = null;
@@ -333,11 +333,13 @@ public class ConnectorExtensionConfigProviderTests
         // Act
         await _configProvider.ConvertAsync(request, CancellationToken.None);
 
-        // Assert - TriggerValue should be raw JSON string
+        // Assert
         Assert.NotNull(capturedData);
-        Assert.IsType<string>(capturedData.TriggerValue);
-        var jsonString = (string)capturedData.TriggerValue;
+        ConnectorTriggerInput triggerInput =
+            Assert.IsType<ConnectorTriggerInput>(capturedData.TriggerValue);
+        string jsonString = triggerInput.ToPayloadJson();
         Assert.Contains("test@example.com", jsonString);
         Assert.Contains("Hello", jsonString);
+        Assert.DoesNotContain("messageId", jsonString);
     }
 }

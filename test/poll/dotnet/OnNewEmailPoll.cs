@@ -18,10 +18,11 @@ public sealed class OnNewEmailPoll(ILogger<OnNewEmailPoll> logger)
             TriggerConfigName = "%ConnectorTriggerConfigName%",
             MaxBatchSize = 1,
             Concurrency = 4)]
-        Office365OnNewEmailTriggerPayload payload)
+        ConnectorEvent<Office365OnNewEmailTriggerPayload> email)
     {
         logger.LogInformation(
-            "Poll email trigger payload received: {Payload}",
-            System.Text.Json.JsonSerializer.Serialize(payload));
+            "Poll email trigger message {MessageId} received: {Payload}",
+            email.MessageId,
+            System.Text.Json.JsonSerializer.Serialize(email.Data));
     }
 }

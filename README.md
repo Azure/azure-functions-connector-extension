@@ -131,19 +131,19 @@ The underlying Connector SDKs provide typed models:
 
 - `string` - raw JSON body
 - POCO/model types - strongly-typed SDK models (see individual SDK docs for available types)
+- `T[]` - an array-shaped binding containing the delivered event payload
+- `ConnectorEvent<T>` and `ConnectorEvent<T>[]` - payloads with the stable Poll
+  `MessageId` for application-level deduplication
 
-### Poll delivery preview
+### Poll delivery
 
-The first runnable Poll package supports concurrent single-event invocations
-with `MaxBatchSize = 1`. See
-[Connector Trigger Poll Preview](./docs/connector-trigger-poll-preview.md) for
-local package instructions, Function App configuration, and the current
-limitations.
+The current Poll listener requires an effective `MaxBatchSize` of `1` for
+scalar and array bindings. Array binding shapes are available now so
+applications can adopt them before multi-event invocation batching is added.
 
 ## Documentation
 
-- **[Operations to Functions Signature Mapping](./docs/operations-functions-match.md)** - Complete reference of all connector trigger operations and their Azure Functions signatures across .NET, Python, and TypeScript SDKs
-- **[Connector Trigger Poll Preview](./docs/connector-trigger-poll-preview.md)** - Build and run the first Poll-capable NuGet package and review its limitations
+- **[Operations to Functions Signature Mapping](./docs/operations-functions-match.md)** - Complete reference of all connector trigger operations and their Azure Functions signatures across .NET, Python, and TypeScript SDKs.
 
 ## Copilot Skills
 

@@ -26,24 +26,6 @@ public class ConnectorQueueDepthClientTests
     }
 
     [Fact]
-    public async Task GetApproximateQueueDepthAsync_RefreshesOnceForNotFound()
-    {
-        var resolver = new StubEndpointResolver(
-            Endpoints("https://old.test/depth"),
-            Endpoints("https://new.test/depth"));
-        var handler = new SequenceHttpMessageHandler(
-            _ => JsonResponse(HttpStatusCode.NotFound, "{}"),
-            _ => JsonResponse(HttpStatusCode.OK, "{\"approximateQueueDepth\":9}"));
-        var client = CreateClient(resolver, new TestTokenCredential(), handler);
-
-        long depth = await client.GetApproximateQueueDepthAsync();
-
-        Assert.Equal(9, depth);
-        Assert.Equal(1, resolver.RefreshCalls);
-        Assert.Equal(new[] { "old.test", "new.test" }, handler.Requests.Select(r => r.RequestUri!.Host));
-    }
-
-    [Fact]
     public async Task GetApproximateQueueDepthAsync_SupportsInt64Depth()
     {
         var resolver = new StubEndpointResolver(
@@ -63,7 +45,7 @@ public class ConnectorQueueDepthClientTests
     }
 
     [Fact]
-    public async Task GetApproximateQueueDepthAsync_DoesNotRefreshForOtherErrors()
+    public async Task GetApproximateQueueDepthAsync_ThrowsForHttpError()
     {
         var resolver = new StubEndpointResolver(Endpoints("https://runtime.test/depth"));
         var handler = new SequenceHttpMessageHandler(_ => JsonResponse(HttpStatusCode.InternalServerError, "{}"));
@@ -71,7 +53,6 @@ public class ConnectorQueueDepthClientTests
 
         await Assert.ThrowsAsync<ConnectorQueueDepthException>(() => client.GetApproximateQueueDepthAsync());
 
-        Assert.Equal(0, resolver.RefreshCalls);
         Assert.Equal(1, handler.CallCount);
     }
 
@@ -103,7 +84,6 @@ public class ConnectorQueueDepthClientTests
     private static ConnectorPollingEndpoints Endpoints(string depthUri) => new(
         new Uri("https://runtime.test/receive"),
         new Uri("https://runtime.test/ack"),
-        new Uri("https://runtime.test/has"),
         new Uri(depthUri));
 
     private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string json) => new(statusCode)

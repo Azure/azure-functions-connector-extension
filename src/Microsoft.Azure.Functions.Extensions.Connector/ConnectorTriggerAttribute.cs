@@ -32,7 +32,7 @@ public sealed class ConnectorTriggerAttribute : Attribute
     /// Gets or sets the maximum number of events supplied to one function invocation.
     /// Valid values are zero through 32. A value of zero uses
     /// <see cref="ConnectorOptions.DefaultMaxBatchSize"/>.
-    /// The initial Poll listener preview requires the effective value to be one.
+    /// The current Poll listener requires the effective value to be one.
     /// </summary>
     public int MaxBatchSize { get; set; }
 

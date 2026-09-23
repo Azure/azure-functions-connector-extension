@@ -6,6 +6,7 @@ using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Host.Executors;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using System.Net;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
@@ -14,7 +15,6 @@ public class ConnectorPollingListenerTests
     private static readonly ConnectorPollingEndpoints Endpoints = new(
         new Uri("https://runtime.example/receive"),
         new Uri("https://runtime.example/acknowledge"),
-        new Uri("https://runtime.example/hasMessages"),
         new Uri("https://runtime.example/approximateQueueDepth"));
 
     [Fact]
@@ -116,15 +116,7 @@ public class ConnectorPollingListenerTests
                 throw new InvalidOperationException("Unreachable.");
             },
         };
-        int hasMessagesCount = 0;
-        var deliveryClient = new StubConnectorPollDeliveryClient
-        {
-            HasMessagesAsyncHandler = (_, _) =>
-            {
-                Interlocked.Increment(ref hasMessagesCount);
-                return Task.FromResult(false);
-            },
-        };
+        var deliveryClient = new StubConnectorPollDeliveryClient();
         using ConnectorPollingListener listener = CreateListener(
             Mock.Of<ITriggeredFunctionExecutor>(),
             endpointResolver,
@@ -135,8 +127,6 @@ public class ConnectorPollingListenerTests
         await resolutionStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await listener.StopAsync(CancellationToken.None);
         await startTask.WaitAsync(TimeSpan.FromSeconds(5));
-
-        Assert.Equal(0, hasMessagesCount);
     }
 
     [Fact]
@@ -149,7 +139,6 @@ public class ConnectorPollingListenerTests
         var invalidResponseHandled = NewCompletionSource();
         var deliveryClient = new StubConnectorPollDeliveryClient
         {
-            HasMessagesAsyncHandler = (_, _) => Task.FromResult(true),
             ReceiveAsyncHandler = (_, maxEvents, _) =>
             {
                 Assert.Equal(1, maxEvents);
@@ -190,7 +179,6 @@ public class ConnectorPollingListenerTests
         var acknowledgementsCompleted = NewCompletionSource();
         var deliveryClient = new StubConnectorPollDeliveryClient
         {
-            HasMessagesAsyncHandler = (_, _) => Task.FromResult(true),
             ReceiveAsyncHandler = (_, maxEvents, _) =>
             {
                 receiveMaxEvents = maxEvents;
@@ -321,7 +309,8 @@ public class ConnectorPollingListenerTests
         executor
             .Setup(value => value.TryExecuteAsync(
                 It.Is<TriggeredFunctionData>(
-                    data => (string)data.TriggerValue == """{"value":"linked"}"""),
+                    data => ((ConnectorTriggerInput)data.TriggerValue).ToPayloadJson()
+                        == """{"value":"linked"}"""),
                 It.IsAny<CancellationToken>()))
             .Callback(() => invocationCompleted.TrySetResult())
             .ReturnsAsync(new FunctionResult(true));
@@ -341,16 +330,57 @@ public class ConnectorPollingListenerTests
     }
 
     [Fact]
-    public async Task Listener_DoesNotReceiveWhenQueueIsEmpty()
+    public async Task Listener_PreservesMessageIdButNotLockTokenInBindingData()
+    {
+        ConnectorPollMessage message =
+            CreateInlineMessage("message-1", "lock-secret", """{"value":1}""");
+        StubConnectorPollDeliveryClient deliveryClient =
+            CreateSingleReceiveClient(message);
+        deliveryClient.AcknowledgeAsyncHandler = (_, locks, _) =>
+            Task.FromResult(Acknowledged(locks.Single()));
+        string? bindingContent = null;
+        var invocationCompleted = NewCompletionSource();
+        var executor = new Mock<ITriggeredFunctionExecutor>();
+        executor
+            .Setup(value => value.TryExecuteAsync(
+                It.IsAny<TriggeredFunctionData>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<TriggeredFunctionData, CancellationToken>((data, _) =>
+            {
+                var triggerInput = (ConnectorTriggerInput)data.TriggerValue;
+                bindingContent = ConnectorExtensionConfigProvider
+                    .ConvertTriggerInputToBindingData(triggerInput)
+                    .Content
+                    .ToString();
+                invocationCompleted.TrySetResult();
+            })
+            .ReturnsAsync(new FunctionResult(true));
+
+        using ConnectorPollingListener listener = CreateListener(
+            executor.Object,
+            CreateEndpointResolver(),
+            deliveryClient,
+            new StubConnectorLinkedOutputClient());
+
+        await listener.StartAsync(CancellationToken.None);
+        await invocationCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Contains("message-1", bindingContent);
+        Assert.DoesNotContain("lock-secret", bindingContent);
+    }
+
+    [Fact]
+    public async Task Listener_ReceivesWithoutUsingApproximateHasMessages()
     {
         int receiveCount = 0;
         var deliveryClient = new StubConnectorPollDeliveryClient
         {
-            HasMessagesAsyncHandler = (_, _) => Task.FromResult(false),
             ReceiveAsyncHandler = (_, _, _) =>
             {
                 Interlocked.Increment(ref receiveCount);
-                throw new InvalidOperationException("Receive must not be called.");
+                return Task.FromResult(
+                    new ConnectorReceiveResult([], false));
             },
         };
         var delayStarted = NewCompletionSource();
@@ -370,7 +400,7 @@ public class ConnectorPollingListenerTests
         await delayStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await listener.StopAsync(CancellationToken.None);
 
-        Assert.Equal(0, receiveCount);
+        Assert.Equal(1, receiveCount);
     }
 
     [Fact]
@@ -430,15 +460,9 @@ public class ConnectorPollingListenerTests
             "OnNewEmail",
             maxBatchSize,
             concurrency);
-        var connectionOptions = new ConnectorConnectionOptions(
-            new ResourceIdentifier(
-                "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns"),
-            Mock.Of<TokenCredential>());
-
         return new ConnectorPollingListener(
             registration,
             options,
-            connectionOptions,
             endpointResolver,
             deliveryClient,
             linkedOutputClient,
@@ -456,7 +480,6 @@ public class ConnectorPollingListenerTests
         ConnectorPollMessage message) =>
         new()
         {
-            HasMessagesAsyncHandler = (_, _) => Task.FromResult(true),
             ReceiveAsyncHandler = (_, _, _) =>
                 Task.FromResult(new ConnectorReceiveResult([message], false)),
         };

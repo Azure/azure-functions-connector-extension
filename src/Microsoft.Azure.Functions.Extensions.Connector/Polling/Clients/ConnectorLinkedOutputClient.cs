@@ -90,8 +90,7 @@ internal sealed class ConnectorLinkedOutputClient :
 
                     throw Failure(
                         outputsLink.Uri,
-                        $"request failed with HTTP {(int)response.StatusCode} ({response.StatusCode})",
-                        response.StatusCode);
+                        $"request failed with HTTP {(int)response.StatusCode} ({response.StatusCode})");
                 }
 
                 ValidateResponseHeaders(
@@ -262,11 +261,9 @@ internal sealed class ConnectorLinkedOutputClient :
     private static ConnectorLinkedOutputException Failure(
         Uri endpoint,
         string reason,
-        HttpStatusCode? statusCode = null,
         Exception? innerException = null) =>
         new(
             $"Connector linked-output {reason} at {ConnectorPollingUri.Redact(endpoint)}.",
-            statusCode,
             innerException);
 
     private static Task DelayForRetryAsync(
@@ -281,10 +278,8 @@ internal sealed class ConnectorLinkedOutputException : Exception
 {
     internal ConnectorLinkedOutputException(
         string message,
-        HttpStatusCode? statusCode = null,
         Exception? innerException = null)
-        : base(message, innerException) =>
-        StatusCode = statusCode;
-
-    internal HttpStatusCode? StatusCode { get; }
+        : base(message, innerException)
+    {
+    }
 }
