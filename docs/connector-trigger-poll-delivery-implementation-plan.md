@@ -198,11 +198,10 @@ Requirements:
 - Cache by connection and trigger-config name.
 - Before publishing final customer guidance, run a service-backed authorization test with no broader inherited permissions to confirm or correct the proposed ARM role.
 
-Deferred endpoint-contract follow-up:
+Next endpoint-contract PR:
 
 - Replace `resourceId`-based ARM discovery with the customer-provided opaque
-  polling base URL that the service will expose as
-  `pollingEndpoints.baseUrl` in each Trigger Config's properties.
+  polling base URL derived from `pollingEndpoints.receiveUri`.
 - Add a `PollingEndpoint` binding property whose value can use Functions app
   setting resolution, for example `%OnNewEmail_Endpoint%`.
 - Continue sharing one `Connection` prefix across Functions that use the same
@@ -211,9 +210,9 @@ Deferred endpoint-contract follow-up:
 - Treat the base URL as trigger-specific. Do not share it across a Connector
   Namespace or derive it from the namespace name; it may contain a gateway
   GUID.
-- Define the current transitional base as `pollingEndpoints.receiveUri` with
-  only its final `/receive` path segment removed after strict HTTPS URI and
-  path validation. Do not use unrestricted string replacement.
+- Derive the base by parsing `pollingEndpoints.receiveUri` as an absolute HTTPS
+  URI, requiring its final path segment to be exactly `receive`, and removing
+  only that segment. Do not use unrestricted string replacement.
 - The base includes `/triggerConfigs/<triggerConfigName>`. Append only the
   fixed `/receive`, `/acknowledge`, and `/approximateQueueDepth` operations.
 - Remove `TriggerConfigName` from the Poll runtime contract when
@@ -225,9 +224,6 @@ Deferred endpoint-contract follow-up:
   do not attempt ARM discovery.
 - Preserve compatibility with existing APIM polling URLs when the service
   moves to DNS.
-- Keep this follow-up blocked until the Trigger Config property is deployed.
-- Do not finalize the public Function configuration shape until these contract
-  decisions are complete.
 
 ## PR 5: Runtime and Linked-Output Clients
 

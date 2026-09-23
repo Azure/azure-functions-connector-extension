@@ -100,6 +100,16 @@ Keep the protocol client, listener, scaler, and ARM endpoint resolver behind sep
 ## Future Enhancements
 
 - Add rich Connector SDK client bindings, similar to client bindings offered by extensions such as Storage. This would let applications bind to generated Connector clients without constructing and managing those clients themselves. This is useful beyond Poll delivery but is not required for the initial Poll implementation.
+- If the service formally guarantees that every Trigger Config in a Connector
+  Namespace shares a stable authority and the route format is
+  `/triggerConfigs/<triggerConfigName>`, consider supporting a shared
+  `<Connection>__Endpoint` setting together with an explicit
+  `TriggerConfigName` on each trigger. The same named connection section would
+  continue to provide the managed-identity selectors used to obtain the API
+  Hub token; endpoint sharing does not change authentication. Until that
+  structure is a service contract, use the complete trigger-specific
+  `PollingEndpoint` derived from that Trigger Config's
+  `pollingEndpoints.receiveUri`.
 
 ## Current Extension Architecture
 
@@ -173,10 +183,11 @@ the Trigger Config response will expose this value directly as
 `pollingEndpoints.baseUrl`.
 
 Clients must obtain these URLs from the trigger configuration response. Each
-trigger configuration has its own base URL; base URLs are not shared across a
-Connector Namespace. The authority may contain a gateway GUID now or after a
-future DNS migration. Clients must not construct a hostname from the Connector
-Namespace name or assume a pattern such as
+trigger configuration has its own full base URL. Multiple Trigger Configs may
+use the same authority, but clients must treat the complete authority and path
+as opaque. The authority may contain a gateway GUID now or after a future DNS
+migration. Clients must not construct a hostname from the Connector Namespace
+name or assume a pattern such as
 `<namespace>.connectornamespace.net/triggerConfigs/<triggerConfigName>`.
 
 Existing APIM polling URLs remain valid when the service moves to DNS. The
@@ -415,9 +426,10 @@ As part of setting up Poll delivery, the customer provisions a trigger configura
 - The trigger configuration enabled before the Function listener starts.
 
 The extension does not create, update, enable, or convert Connector Namespace
-trigger configurations. Customers obtain the trigger-specific polling base URL
-from the provisioned Trigger Config and grant the Function identity an access
-policy on the connection referenced by that Trigger Config.
+trigger configurations. Customers obtain `pollingEndpoints.receiveUri` from
+the provisioned Trigger Config, derive the trigger-specific polling base URL,
+and grant the Function identity an access policy on the connection referenced
+by that Trigger Config.
 
 ### Polling Endpoint Configuration
 
@@ -451,14 +463,19 @@ The configured value is the complete opaque HTTPS base URL, including the
 - `/acknowledge`
 - `/approximateQueueDepth`
 
-Each Trigger Config has its own base URL. The authority may contain a gateway
-GUID and must not be constructed from a Connector Namespace name, region,
-resource ID, or Trigger Config name.
+Each Trigger Config has its own full base URL. Multiple Trigger Configs may use
+the same authority, but the complete authority and path are opaque. The URL
+must not be constructed from a Connector Namespace name, region, resource ID,
+or Trigger Config name.
 
-The service exposes this value as `pollingEndpoints.baseUrl`. Because
-`PollingEndpoint` already identifies the Trigger Config, the runtime contract
-does not include `TriggerConfigName`, Connector Namespace `resourceId`, ARM
-discovery, or an endpoint cache.
+To obtain the configured value, parse `pollingEndpoints.receiveUri` as an
+absolute HTTPS URI, require its final path segment to be exactly `receive`, and
+remove only that segment. Preserve the authority and remaining path as opaque;
+do not use unrestricted string replacement.
+
+Because `PollingEndpoint` already identifies the Trigger Config, the runtime
+contract does not include `TriggerConfigName`, Connector Namespace
+`resourceId`, ARM discovery, or an endpoint cache.
 
 ### Identity and Permissions
 
@@ -736,20 +753,19 @@ Responsibilities:
 
 The resolver must not be part of the runtime data-plane client.
 
-> **Future configured-endpoint contract:** When the Trigger Config property is
-> deployed, customers will provide its opaque, per-trigger polling base URL
-> through a `PollingEndpoint` binding property that resolves from a Function
-> app setting, such as `%OnNewEmail_Endpoint%`. The value is the complete
-> `pollingEndpoints.baseUrl`, including Trigger Config identity. `Connection`
-> remains shared by Functions that use the same Connector Namespace. Remove
-> `TriggerConfigName` from Poll configuration, along with the ARM endpoint
-> resolver and endpoint cache. Never derive the authority from the Connector
-> Namespace name; the URL may contain a gateway GUID and is not shared with
-> other trigger configurations. Treat the configured base as authoritative. If
-> a derived Poll route cannot be reached or returns an endpoint-specific
-> `404 Not Found` or `410 Gone`, report an explicit configured-endpoint failure
-> instead of querying ARM for replacement URLs. Existing APIM URLs remain valid
-> through the service's DNS migration.
+> **Next endpoint-contract change:** Customers provide the opaque,
+> trigger-specific polling base URL through a `PollingEndpoint` binding
+> property that resolves from a Function app setting, such as
+> `%OnNewEmail_Endpoint%`. Derive the value from
+> `pollingEndpoints.receiveUri` by validating and removing only its final
+> `/receive` segment. The resulting base includes the Trigger Config identity.
+> `Connection` remains shared by Functions that use the same Connector
+> Namespace. Remove `TriggerConfigName` from Poll configuration, along with the
+> ARM endpoint resolver and endpoint cache. Never derive the authority from the
+> Connector Namespace name; treat the complete configured base as opaque and
+> authoritative. If a derived Poll route cannot be reached or returns an
+> endpoint-specific `404 Not Found` or `410 Gone`, report an explicit
+> configured-endpoint failure instead of querying ARM for replacement URLs.
 
 ### 2. Poll-delivery HTTP Client
 
