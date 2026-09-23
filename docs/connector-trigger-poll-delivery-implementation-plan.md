@@ -18,10 +18,13 @@
 
 ## Purpose
 
-Deliver production Poll support as eight stacked PRs while preserving existing
-Webhook behavior. The authoritative behavioral and architectural decisions are
-in `connector-trigger-poll-delivery-design.md`; this document tracks
-implementation boundaries, dependencies, and completion criteria.
+Deliver production Poll support through a stacked PR sequence while preserving
+existing Webhook behavior. The stack now includes the trigger contract,
+configuration, protocol models, target scaler, runtime clients, a concurrent
+single-event listener, and the worker binding. This document tracks the
+remaining implementation boundaries, dependencies, and completion criteria;
+the authoritative behavioral and architectural decisions are in
+`connector-trigger-poll-delivery-design.md`.
 
 ## Verified Baseline
 
@@ -197,6 +200,8 @@ Deferred endpoint-contract follow-up:
 
 - Replace `resourceId`-based ARM discovery with the customer-provided
   `ConnectorNamespace__endpoint`.
+- Decide whether `TriggerConfigName` remains a separate setting or the
+  configured endpoint includes the trigger-configuration identity.
 - Treat the configured endpoint as authoritative and remove the ARM resolver,
   and endpoint cache.
 - When the configured endpoint is unreachable or a derived Poll route returns
@@ -204,6 +209,8 @@ Deferred endpoint-contract follow-up:
   do not attempt ARM discovery.
 - Confirm that the service contract guarantees endpoint stability before
   adopting this behavior.
+- Do not finalize the public Function configuration shape until these contract
+  decisions are complete.
 
 ## PR 5: Runtime and Linked-Output Clients
 
@@ -212,22 +219,25 @@ Implement:
 ```csharp
 ReceiveAsync(endpoints, maxEvents, cancellationToken)
 AcknowledgeAsync(endpoints, locks, cancellationToken)
-GetQueueStatusAsync(endpoints, cancellationToken)
+GetApproximateQueueDepthAsync(cancellationToken)
 ```
+
+Receive and acknowledgement belong to the delivery client. Approximate queue
+depth belongs to the dedicated scaling client.
 
 Requirements:
 
 - Authenticate runtime operations with the API Hub scope.
 - Require the Function identity to have an access policy on the connection referenced by the trigger config.
 - Preserve the service-backed authorization evidence: the same API Hub token
-  and queue-status endpoint returned `200 OK` with the connection access
+  and approximate-queue-depth endpoint returned `200 OK` with the connection access
   policy, `403 Forbidden` without it, and `200 OK` after restoration.
 - Preserve existing endpoint query parameters.
 - Explicitly send `maxEvents` in the range 1-32.
 - Parse `x-ms-more-messages-available`.
 - Process acknowledgement statuses per item.
 - Do not transparently retry Receive or Acknowledge after ambiguous failures.
-- Allow bounded transient retries only for safe queue-status operations.
+- Allow bounded transient retries only for safe queue-depth operations.
 
 Add a dedicated linked-output client or narrowly scoped collaborator:
 
@@ -290,21 +300,31 @@ Requirements:
 - Keep `lockToken` internal.
 - Do not add scalar `[BindingName("messageId")]` or parallel metadata arrays.
 
+Implementation status:
+
+- The host-to-worker deferred transport and scalar/array converters are
+  implemented.
+- `CollectionModelBindingData` conversion is covered independently.
+- The current listener still dispatches one event per invocation, so
+  end-to-end multi-event collection binding and array-specific
+  `MaxBatchSize > 1` validation remain part of PR 7.
+
 ## PR 7: Poll Listener
 
-Replace the placeholder with a lifecycle-safe, capacity-aware message pump.
+Complete the lifecycle-safe, capacity-aware message pump with true invocation
+batching.
 
-Before the complete listener, publish an interim runnable package that uses
-the existing string binding with these deliberate constraints:
+The interim listener is runnable with these deliberate constraints:
 
 - Require the effective `MaxBatchSize` to be one.
 - Honor `Concurrency` as concurrent one-message invocations.
-- Resolve endpoints, query queue status, and receive no more than available
+- Resolve endpoints and receive no more than available
   invocation slots.
 - Normalize inline and linked outputs before dispatch.
 - Acknowledge only successful invocations.
-- Document that metadata-rich binding, batch invocation, endpoint refresh,
-  poison handling, and complete lock-budget telemetry remain deferred.
+- Pass metadata-rich values through the worker binding.
+- Document that batch invocation, poison handling, and complete lock-budget
+  telemetry remain deferred.
 
 Capacity calculation:
 
@@ -342,8 +362,9 @@ sequential message processing.
 
 ## PR 8: Scaling and Completion
 
-Add the scale monitor or target scaler supported by the repository's WebJobs
-host version.
+Complete and validate the target scaler supported by the repository's WebJobs
+host version. The target-scaler implementation is already present in the
+stack; service-backed validation and release-readiness work remain.
 
 Requirements:
 
@@ -359,7 +380,7 @@ Requirements:
   metrics provider, or conflicting metadata names.
 - Verify the referenced host interfaces and reflective registration signature
   against the current Functions host and Scale Monitor before implementation.
-- Reuse the endpoint resolver and queue-status client.
+- Reuse the endpoint resolver and queue-depth client.
 - Obtain metrics only through the current server-provided
   `approximateQueueDepthUri`.
 - Scale from approximate queue depth without treating it as an exact count or
@@ -373,7 +394,7 @@ Requirements:
   ```
 
 - Keep `MaxBatchSize` and Connector Namespace `maxEvents` independent of the scaling calculation.
-- Return conservative decisions when queue status is unavailable.
+- Return conservative decisions when queue depth is unavailable.
 - Validate scale from zero.
 - Add integration tests, samples, and final user documentation.
 
