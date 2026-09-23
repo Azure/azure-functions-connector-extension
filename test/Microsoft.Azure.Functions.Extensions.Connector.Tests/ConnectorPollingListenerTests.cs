@@ -453,7 +453,7 @@ public class ConnectorPollingListenerTests
         executor
             .Setup(value => value.TryExecuteAsync(
                 It.Is<TriggeredFunctionData>(
-                    data => ((ConnectorTriggerInput)data.TriggerValue).ToPayloadJson()
+                    data => ((ConnectorTriggerInput)data.TriggerValue).ToSinglePayloadJson()
                         == """{"value":"linked"}"""),
                 It.IsAny<CancellationToken>()))
             .Callback(() => invocationCompleted.TrySetResult())

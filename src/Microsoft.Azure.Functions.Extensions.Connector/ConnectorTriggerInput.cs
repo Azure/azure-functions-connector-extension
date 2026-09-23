@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 
 using System.Collections.ObjectModel;
-using System.Text.Json;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
@@ -19,6 +18,13 @@ internal sealed class ConnectorTriggerInput
         {
             throw new ArgumentException(
                 "Connector trigger input must contain at least one event.",
+                nameof(events));
+        }
+
+        if (events.Any(static connectorEvent => connectorEvent is null))
+        {
+            throw new ArgumentException(
+                "Connector trigger input must not contain null events.",
                 nameof(events));
         }
 
@@ -42,28 +48,15 @@ internal sealed class ConnectorTriggerInput
         IReadOnlyList<ConnectorTriggerEventInput> events) =>
         new(events, isBatched: true);
 
-    internal string ToPayloadJson()
+    internal string ToSinglePayloadJson()
     {
-        if (!IsBatched)
+        if (IsBatched)
         {
-            return _events[0].Outputs.ToString();
+            throw new InvalidOperationException(
+                "A batched Connector trigger input does not have one payload JSON value.");
         }
 
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
-        {
-            writer.WriteStartArray();
-            foreach (ConnectorTriggerEventInput connectorEvent in _events)
-            {
-                writer.WriteRawValue(
-                    connectorEvent.Outputs.ToMemory().Span,
-                    skipInputValidation: false);
-            }
-
-            writer.WriteEndArray();
-        }
-
-        return BinaryData.FromBytes(stream.ToArray()).ToString();
+        return _events[0].Outputs.ToString();
     }
 }
 

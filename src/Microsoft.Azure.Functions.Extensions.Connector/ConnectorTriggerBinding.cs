@@ -59,10 +59,8 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
         };
         var bindingData = new Dictionary<string, object?>(
             StringComparer.OrdinalIgnoreCase);
-        string payloadJson = triggerInput.ToPayloadJson();
         ConnectorTriggerInputValueProvider valueProvider = CreateValueProvider(
-            triggerInput,
-            payloadJson);
+            triggerInput);
         return Task.FromResult<ITriggerData>(
             new TriggerData(valueProvider, bindingData));
     }
@@ -105,9 +103,11 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
     }
 
     private ConnectorTriggerInputValueProvider CreateValueProvider(
-        ConnectorTriggerInput triggerInput,
-        string payloadJson)
+        ConnectorTriggerInput triggerInput)
     {
+        string invokeString = triggerInput.IsBatched
+            ? $"Connector trigger batch ({triggerInput.Events.Count} events)"
+            : "Connector trigger event";
         bool usesDeferredBinding =
             _parameter.ParameterType == typeof(ParameterBindingData) ||
             _parameter.ParameterType == typeof(ParameterBindingData[]);
@@ -122,7 +122,7 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
                 return new ConnectorTriggerInputValueProvider(
                     values,
                     typeof(ParameterBindingData[]),
-                    payloadJson);
+                    invokeString);
             }
 
             return new ConnectorTriggerInputValueProvider(
@@ -130,7 +130,7 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
                     .ConvertTriggerEventToBindingData(
                         triggerInput.Events.Single()),
                 typeof(ParameterBindingData),
-                payloadJson);
+                invokeString);
         }
 
         if (triggerInput.IsBatched)
@@ -142,13 +142,14 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
             return new ConnectorTriggerInputValueProvider(
                 values,
                 typeof(string[]),
-                payloadJson);
+                invokeString);
         }
 
+        string payloadJson = triggerInput.ToSinglePayloadJson();
         return new ConnectorTriggerInputValueProvider(
             payloadJson,
             typeof(string),
-            payloadJson);
+            invokeString);
     }
 
     private static bool IsBatchedParameter(Type parameterType) =>

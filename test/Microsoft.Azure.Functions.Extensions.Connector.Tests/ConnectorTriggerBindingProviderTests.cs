@@ -143,6 +143,9 @@ public class ConnectorTriggerBindingProviderTests
             CreateValueBindingContext());
 
         Assert.Equal("""{"value":123}""", await result.ValueProvider.GetValueAsync());
+        Assert.Equal(
+            "Connector trigger event",
+            result.ValueProvider.ToInvokeString());
         Assert.Empty(result.BindingData);
     }
 
@@ -173,6 +176,9 @@ public class ConnectorTriggerBindingProviderTests
         Assert.Equal(
             "message-1",
             content.RootElement.GetProperty("messageId").GetString());
+        Assert.Equal(
+            "Connector trigger event",
+            result.ValueProvider.ToInvokeString());
     }
 
     [Fact]
@@ -192,7 +198,7 @@ public class ConnectorTriggerBindingProviderTests
                 await result.ValueProvider.GetValueAsync()));
         Assert.Equal(typeof(string[]), result.ValueProvider.Type);
         Assert.Equal(
-            """[{"value":1},{"value":2}]""",
+            "Connector trigger batch (2 events)",
             result.ValueProvider.ToInvokeString());
     }
 
@@ -222,6 +228,18 @@ public class ConnectorTriggerBindingProviderTests
                     .GetString();
             }));
         Assert.Equal(typeof(ParameterBindingData[]), result.ValueProvider.Type);
+        Assert.Equal(
+            "Connector trigger batch (2 events)",
+            result.ValueProvider.ToInvokeString());
+    }
+
+    [Fact]
+    public void BatchInput_RejectsNullEvent()
+    {
+        ArgumentException exception = Assert.Throws<ArgumentException>(() =>
+            ConnectorTriggerInput.FromBatch([null!]));
+
+        Assert.Equal("events", exception.ParamName);
     }
 
     [Fact]

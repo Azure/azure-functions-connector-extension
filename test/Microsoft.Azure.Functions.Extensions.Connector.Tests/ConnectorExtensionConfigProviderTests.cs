@@ -337,7 +337,7 @@ public class ConnectorExtensionConfigProviderTests
         Assert.NotNull(capturedData);
         ConnectorTriggerInput triggerInput =
             Assert.IsType<ConnectorTriggerInput>(capturedData.TriggerValue);
-        string jsonString = triggerInput.ToPayloadJson();
+        string jsonString = triggerInput.ToSinglePayloadJson();
         Assert.Contains("test@example.com", jsonString);
         Assert.Contains("Hello", jsonString);
         Assert.DoesNotContain("messageId", jsonString);
