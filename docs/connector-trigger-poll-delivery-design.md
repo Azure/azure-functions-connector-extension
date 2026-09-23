@@ -17,7 +17,7 @@
   - [Delivery Semantics](#delivery-semantics)
 - [Proposed User Contract](#proposed-user-contract)
   - [Connector Namespace Trigger Configuration](#connector-namespace-trigger-configuration)
-  - [Current ARM Discovery Configuration](#current-arm-discovery-configuration)
+  - [Polling Endpoint Configuration](#polling-endpoint-configuration)
   - [Identity and Permissions](#identity-and-permissions)
   - [Ordering Guidance](#ordering-guidance)
   - [Payload and Message Metadata](#payload-and-message-metadata)
@@ -375,7 +375,7 @@ and create a time-of-check/time-of-use race.
 
 ## Proposed User Contract
 
-Add delivery mode and Poll configuration to both trigger attributes:
+Add delivery mode and Poll configuration to the Connector trigger binding:
 
 ```csharp
 public enum ConnectorTriggerDeliveryMode
@@ -393,7 +393,7 @@ public void Run(
     [ConnectorTrigger(
         DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
         Connection = "ConnectorNamespace",
-        TriggerConfigName = "%CONNECTOR_TRIGGER_CONFIG_NAME%",
+        PollingEndpoint = "%OnNewEmail_Endpoint%",
         IsBatched = true,
         MaxBatchSize = 4,
         Concurrency = 8)]
@@ -414,65 +414,59 @@ As part of setting up Poll delivery, the customer provisions a trigger configura
 - `deliveryMode` set to `Poll`.
 - The trigger configuration enabled before the Function listener starts.
 
-The Connector Namespace portal does not currently support provisioning a Poll trigger configuration, and the current `az connector-namespace trigger create` command does not expose `deliveryMode`. Until those surfaces support Poll, provisioning must use a raw ARM PUT request, such as `az rest --method put`, with `deliveryMode` set to `Poll`. Customer documentation must provide that provisioning flow separately from the Function trigger configuration.
+The extension does not create, update, enable, or convert Connector Namespace
+trigger configurations. Customers obtain the trigger-specific polling base URL
+from the provisioned Trigger Config and grant the Function identity an access
+policy on the connection referenced by that Trigger Config.
 
-The Function's `TriggerConfigName` identifies this service-side trigger configuration. It is not the Function name, and the Functions extension does not provision it.
+### Polling Endpoint Configuration
 
-The extension does not create, update, enable, or convert Connector Namespace trigger configurations. It reads the named trigger configuration, obtains its server-generated polling endpoints, and validates that it is enabled and uses Poll delivery. Customers must also grant the Function identity an access policy on the connection referenced by that trigger configuration.
-
-### Current ARM Discovery Configuration
-
-`Connection` is a literal app setting name or configuration prefix, consistent with other Azure Functions extensions. It is not itself resolved through `%...%` substitution. The Connector Namespace resource ID and credential configuration belong in app settings rather than function metadata:
+`Connection` is a literal app setting name or configuration prefix, consistent
+with other Azure Functions extensions. It is not itself resolved through
+`%...%` substitution. It identifies the credential configuration shared by
+Functions that use the same Connector Namespace:
 
 ```text
-ConnectorNamespace__resourceId=/subscriptions/{subscription}/resourceGroups/{resource-group}/providers/Microsoft.Web/connectorGateways/{gateway}
 ConnectorNamespace__credential=managedidentity
 ConnectorNamespace__clientId={optional-user-assigned-managed-identity-client-id}
 ConnectorNamespace__managedIdentityResourceId={optional-user-assigned-managed-identity-resource-id}
 ```
 
-`TriggerConfigName` remains trigger metadata because it identifies the event source within the namespace. It should support Functions name resolution so environment-specific configuration is not embedded in attributes.
-
-This describes the current ARM-discovery contract only. The replacement
-contract will use the trigger-specific base URL exposed as
-`pollingEndpoints.baseUrl`. The configured `PollingEndpoint` includes the
-`/triggerConfigs/<triggerConfigName>` path and therefore identifies the Trigger
-Config. The extension appends only `/receive`, `/acknowledge`, and
-`/approximateQueueDepth`. `TriggerConfigName` is removed from the future Poll
-runtime contract when this endpoint contract replaces ARM discovery.
-
-The full Connector Namespace resource ID is required by the current service contract because the polling endpoints are exposed by the ARM GET operation for a trigger configuration. A Connector Namespace name alone does not identify its subscription and resource group and is not sufficient to build that request. Using the full ID also permits a Function App and Connector Namespace to reside in different resource groups or subscriptions when authorization allows it.
-
-This differs from bindings such as Service Bus and Event Hubs, where the configured fully qualified namespace is itself a stable data-plane endpoint. Connector Poll currently requires an ARM bootstrap step:
+`PollingEndpoint` uses Functions app-setting resolution and identifies one
+specific Trigger Config:
 
 ```text
-Connector Namespace resource ID + trigger config name
-    -> ARM GET trigger configuration
-    -> opaque polling endpoints
+OnNewEmail_Endpoint=https://<authority>/api/connectorGateways/<id>/triggerConfigs/Email-Polling1
 ```
 
-This is a requirement of the current ARM resolver, not an intrinsic part of
-the public Poll trigger contract. Endpoint discovery stays behind
-`IConnectorPollingEndpointResolver` so the service-exposed per-trigger base URL
-can replace the ARM bootstrap path. That endpoint-contract PR intentionally
-changes the Poll trigger attribute by adding `PollingEndpoint` and removing
-`TriggerConfigName`.
+The setting may contain a direct value, a platform-level Key Vault reference,
+or a platform-level Azure App Configuration reference. Configuration providers
+loaded only inside a language worker are insufficient because the host
+extension must resolve the endpoint before starting the listener.
 
-Before listener startup succeeds, the resolver must verify that the referenced trigger configuration:
+The configured value is the complete opaque HTTPS base URL, including the
+`/triggerConfigs/<triggerConfigName>` path. The extension appends only:
 
-- Exists and is enabled.
-- Has `deliveryMode` set to `Poll`.
-- Returns all required polling endpoints.
+- `/receive`
+- `/acknowledge`
+- `/approximateQueueDepth`
 
-A Webhook trigger configuration cannot be used by a Function configured for Poll delivery.
+Each Trigger Config has its own base URL. The authority may contain a gateway
+GUID and must not be constructed from a Connector Namespace name, region,
+resource ID, or Trigger Config name.
+
+The service exposes this value as `pollingEndpoints.baseUrl`. Because
+`PollingEndpoint` already identifies the Trigger Config, the runtime contract
+does not include `TriggerConfigName`, Connector Namespace `resourceId`, ARM
+discovery, or an endpoint cache.
 
 ### Identity and Permissions
 
-The target Connector Namespace and the caller identity are separate:
+The Polling endpoint and caller identity are configured separately:
 
 ```text
-ConnectorNamespace__resourceId
-    Target Connector Namespace
+OnNewEmail_Endpoint
+    Trigger-specific Polling endpoint
 
 ConnectorNamespace__credential and identity selectors
     Identity used to access it
@@ -486,31 +480,21 @@ The extension follows the standard Functions identity-based connection pattern u
 | Azure, system-assigned identity | `credential=managedidentity` | Use the Function App's system-assigned managed identity; if the managed identity endpoint reports authentication unavailable, the extension falls back to `DefaultAzureCredential` for local/private-stamp diagnostics |
 | Azure, user-assigned identity | `credential=managedidentity` plus `clientId` or `managedIdentityResourceId` | Use the selected user-assigned managed identity |
 
-Authentication uses two token audiences:
+Poll runtime operations use the API Hub token audience:
 
 | Operation | Token audience/scope |
 |---|---|
-| Read the trigger configuration through ARM | `https://management.azure.com/.default` |
 | Receive, acknowledge, and query queue depth | `https://apihub.azure.com/.default` |
 
-The request URI identifies the target Connector Namespace; the credential does not receive or infer that target resource ID. ARM and Connector Namespace authorize the caller represented by the bearer token against the requested resource.
-
-When Scale Controller hosts the scaler, it may inject dedicated app-identity credentials for ARM and API Hub through `ConnectorScaleCredentialProperties`. The extension routes ARM discovery to the former and queue-depth operations to the latter. This lets Scale Controller use its existing fixed-audience `ManagedIdentityTokenCredential` without making the extension impersonate the Function App.
-
-ARM endpoint discovery requires the following control-plane action:
-
-```text
-Microsoft.Web/connectorGateways/triggerconfigs/read
-```
+The configured endpoint identifies the target Trigger Config. Connector
+Namespace authorizes the caller represented by the bearer token against the
+connection used by that Trigger Config.
 
 Required permissions:
 
 | Access | Requirement | Scope |
 |---|---|---|
-| ARM endpoint discovery | `Microsoft.Web/connectorGateways/triggerconfigs/read`, included in the built-in **Reader** role | Connector Namespace resource, or inherited from its resource group or subscription |
 | Poll runtime endpoints | Access policy for the Function identity | Connection referenced by the trigger config |
-
-**Reader** is an Azure built-in role definition; it is not assigned to the Function App automatically. The Function identity must receive an explicit Reader role assignment covering the target Connector Namespace unless it already inherits Reader from the target resource group or subscription. This assignment is also required when the Connector Namespace is in another subscription.
 
 The runtime access policy is configured under:
 
