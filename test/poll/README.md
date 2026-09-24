@@ -24,6 +24,11 @@ Node.js uses `cardinality: 'many'`; and Python uses
 `one` supplies one event per invocation and requires an effective
 `MaxBatchSize` of `1`.
 
+Linked-output events are delivered one per invocation and serialized
+host-wide to bound memory. Connector Namespace does not yet emit linked-output
+messages in the available test environment, so the samples currently validate
+inline batching only.
+
 The local settings files are intentionally untracked. Configure:
 
 ```text

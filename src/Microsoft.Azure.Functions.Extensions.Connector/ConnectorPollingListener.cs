@@ -21,6 +21,7 @@ internal sealed class ConnectorPollingListenerFactory(
     IConnectorPollingEndpointResolverFactory endpointResolverFactory,
     IConnectorPollDeliveryClientFactory deliveryClientFactory,
     IConnectorLinkedOutputClient linkedOutputClient,
+    ConnectorLinkedOutputInvocationLimiter linkedOutputInvocationLimiter,
     INameResolver nameResolver,
     ILoggerFactory loggerFactory) : IConnectorPollingListenerFactory
 {
@@ -30,6 +31,9 @@ internal sealed class ConnectorPollingListenerFactory(
         deliveryClientFactory ?? throw new ArgumentNullException(nameof(deliveryClientFactory));
     private readonly IConnectorLinkedOutputClient _linkedOutputClient =
         linkedOutputClient ?? throw new ArgumentNullException(nameof(linkedOutputClient));
+    private readonly ConnectorLinkedOutputInvocationLimiter _linkedOutputInvocationLimiter =
+        linkedOutputInvocationLimiter
+        ?? throw new ArgumentNullException(nameof(linkedOutputInvocationLimiter));
     private readonly INameResolver _nameResolver =
         nameResolver ?? throw new ArgumentNullException(nameof(nameResolver));
     private readonly ILoggerFactory _loggerFactory =
@@ -63,6 +67,7 @@ internal sealed class ConnectorPollingListenerFactory(
                 resolvedOptions.TriggerConfigName),
             _deliveryClientFactory.Create(connectionOptions.Credential),
             _linkedOutputClient,
+            _linkedOutputInvocationLimiter,
             _loggerFactory.CreateLogger<ConnectorPollingListener>());
     }
 }
@@ -81,6 +86,7 @@ internal sealed class ConnectorPollingListener : IListener
     private readonly IConnectorPollingEndpointResolver _endpointResolver;
     private readonly IConnectorPollDeliveryClient _deliveryClient;
     private readonly IConnectorLinkedOutputClient _linkedOutputClient;
+    private readonly ConnectorLinkedOutputInvocationLimiter _linkedOutputInvocationLimiter;
     private readonly ILogger<ConnectorPollingListener> _logger;
     private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
     private readonly object _lifecycleLock = new();
@@ -96,6 +102,7 @@ internal sealed class ConnectorPollingListener : IListener
         IConnectorPollingEndpointResolver endpointResolver,
         IConnectorPollDeliveryClient deliveryClient,
         IConnectorLinkedOutputClient linkedOutputClient,
+        ConnectorLinkedOutputInvocationLimiter linkedOutputInvocationLimiter,
         ILogger<ConnectorPollingListener> logger,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null)
     {
@@ -104,6 +111,8 @@ internal sealed class ConnectorPollingListener : IListener
         _endpointResolver = endpointResolver ?? throw new ArgumentNullException(nameof(endpointResolver));
         _deliveryClient = deliveryClient ?? throw new ArgumentNullException(nameof(deliveryClient));
         _linkedOutputClient = linkedOutputClient ?? throw new ArgumentNullException(nameof(linkedOutputClient));
+        _linkedOutputInvocationLimiter = linkedOutputInvocationLimiter
+            ?? throw new ArgumentNullException(nameof(linkedOutputInvocationLimiter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _delayAsync = delayAsync ?? DelayWithJitterAsync;
     }
@@ -310,9 +319,48 @@ internal sealed class ConnectorPollingListener : IListener
         IReadOnlyList<ConnectorPollMessage> messages,
         CancellationToken cancellationToken)
     {
+        ConnectorPollMessage[] inlineMessages = messages
+            .Where(static message => message.Outputs is not null)
+            .ToArray();
+        if (inlineMessages.Length > 0)
+        {
+            await ProcessInvocationBatchAsync(
+                endpoints,
+                inlineMessages,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (ConnectorPollMessage linkedMessage in messages.Where(
+            static message => message.OutputsLink is not null))
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await ProcessInvocationBatchAsync(
+                endpoints,
+                [linkedMessage],
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task ProcessInvocationBatchAsync(
+        ConnectorPollingEndpoints endpoints,
+        ConnectorPollMessage[] messages,
+        CancellationToken cancellationToken)
+    {
+        IDisposable? linkedOutputLease = null;
         try
         {
-            var preparedMessages = new List<PreparedMessage>(messages.Count);
+            if (messages.Length == 1 && messages[0].OutputsLink is not null)
+            {
+                linkedOutputLease =
+                    await _linkedOutputInvocationLimiter.AcquireAsync(
+                        cancellationToken).ConfigureAwait(false);
+            }
+
+            var preparedMessages = new List<PreparedMessage>(messages.Length);
             foreach (ConnectorPollMessage message in messages)
             {
                 PreparedMessage? preparedMessage =
@@ -387,6 +435,10 @@ internal sealed class ConnectorPollingListener : IListener
                 exception,
                 "Connector Poll batch processing failed for function {FunctionName}; the messages will not be acknowledged.",
                 Registration.FunctionName);
+        }
+        finally
+        {
+            linkedOutputLease?.Dispose();
         }
     }
 

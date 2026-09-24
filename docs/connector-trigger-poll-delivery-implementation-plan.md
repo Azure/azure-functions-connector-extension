@@ -334,8 +334,9 @@ The listener now:
 - Honors explicit one/many cardinality independently from `MaxBatchSize`.
 - Resolves endpoints and receives no more than the remaining invocation
   capacity multiplied by `MaxBatchSize`, capped at 32.
-- Partitions Receive results into invocation batches.
-- Normalizes inline and linked outputs before dispatch.
+- Partitions Receive results into capacity-accounted processing chunks.
+- Preserves normal batching for inline outputs and invokes each linked output
+  individually behind a singleton host-wide limiter.
 - Acknowledges all prepared messages only after a successful invocation.
 - Passes metadata-rich scalar and collection values through the worker binding.
 
@@ -358,8 +359,14 @@ Requirements:
   `MaxBatchSize` events.
 - Allow no more than `Concurrency` active function invocations per worker
   instance.
-- Bound linked-output hydration and account for its time in the fixed
-  two-minute lock budget.
+- Group inline messages normally, but place every linked-output message in a
+  single-event invocation.
+- Use one singleton host-wide linked-output invocation slot and hold it from
+  before download through function execution and acknowledgement.
+- Keep the slot process-local so each scaled-out Functions host can process one
+  linked-output invocation; do not add distributed serialization.
+- Account for linked-output waiting and hydration in the fixed two-minute lock
+  budget.
 - Pass normalized payloads and per-event metadata through the worker binding.
 - Acknowledge every event in a successful invocation batch.
 - Acknowledge no events from a failed or cancelled invocation batch.
@@ -371,8 +378,8 @@ Requirements:
 - Stop receiving during shutdown, allow bounded in-flight completion, and
   leave unfinished events unacknowledged.
 
-The first implementation is concurrent by design; it must not revert to
-sequential message processing.
+Inline processing remains concurrent. Only linked-output invocations are
+serialized host-wide to bound retained payload memory.
 
 ## PR 8: Scaling and Completion
 
@@ -408,6 +415,11 @@ Requirements:
   ```
 
 - Keep `MaxBatchSize` and Connector Namespace `maxEvents` independent of the scaling calculation.
+- Document that aggregate queue depth cannot distinguish inline from linked
+  events. Effective-concurrency scaling can underestimate linked-heavy worker
+  demand, while universally targeting one would over-scale inline traffic.
+  Revisit the calculation if the service exposes payload-class or byte backlog
+  metrics.
 - Return conservative decisions when queue depth is unavailable.
 - Validate scale from zero.
 - Add integration tests, samples, and final user documentation.
@@ -432,7 +444,9 @@ Final smoke test:
 3. Generate new connector events.
 4. Verify typed payload-only and metadata-rich invocation.
 5. Verify batching, concurrency, and success-only acknowledgement.
-6. Verify linked output when the service test path is available.
+6. Verify linked output when the service test path is available. Until then,
+   rely on synthetic unit tests because Connector Namespace does not emit
+   linked-output messages in the available environment.
 7. Confirm acknowledged events do not reappear and failed events are
    redelivered.
 8. Confirm queue depth returns to zero.
@@ -444,4 +458,6 @@ The Connector Namespace team confirmed the linked-output authentication,
 lifetime, redelivery, 100 MiB maximum, response shape, content type,
 compression, redirects, retry safety, integrity metadata, deletion, and
 authority behavior. PR 5 must implement the contract recorded in the design
-document.
+document. The service-side linked-output feature is still in development, so
+live validation remains pending even though the client and listener behavior
+are covered by synthetic tests.

@@ -34,6 +34,7 @@ public class ConnectorPollingListenerTests
             new TestPollDeliveryClientFactory(
                 _ => new StubConnectorPollDeliveryClient()),
             new StubConnectorLinkedOutputClient(),
+            new ConnectorLinkedOutputInvocationLimiter(),
             nameResolver,
             NullLoggerFactory.Instance);
 
@@ -65,6 +66,7 @@ public class ConnectorPollingListenerTests
             new TestPollDeliveryClientFactory(
                 _ => new StubConnectorPollDeliveryClient()),
             new StubConnectorLinkedOutputClient(),
+            new ConnectorLinkedOutputInvocationLimiter(),
             nameResolver,
             NullLoggerFactory.Instance);
 
@@ -474,7 +476,7 @@ public class ConnectorPollingListenerTests
     }
 
     [Fact]
-    public async Task Listener_HydratesBatchLinkedOutputsSequentially()
+    public async Task Listener_InvokesLinkedOutputsIndividuallyAndSerially()
     {
         ConnectorPollMessage first = ConnectorPollMessage.FromOutputsLink(
             "message-1",
@@ -486,7 +488,8 @@ public class ConnectorPollingListenerTests
             "lock-2",
             new ConnectorOutputsLink(
                 new Uri("https://content.example/output-2?sig=secret")));
-        var acknowledgementCompleted = NewCompletionSource();
+        var acknowledgementsCompleted = NewCompletionSource();
+        int acknowledgementCount = 0;
         var deliveryClient = new StubConnectorPollDeliveryClient
         {
             ReceiveAsyncHandler = (_, _, _) =>
@@ -494,7 +497,12 @@ public class ConnectorPollingListenerTests
                     new ConnectorReceiveResult([first, second], false)),
             AcknowledgeAsyncHandler = (_, locks, _) =>
             {
-                acknowledgementCompleted.TrySetResult();
+                Assert.Single(locks);
+                if (Interlocked.Increment(ref acknowledgementCount) == 2)
+                {
+                    acknowledgementsCompleted.TrySetResult();
+                }
+
                 return Task.FromResult(Acknowledged(locks));
             },
         };
@@ -515,14 +523,171 @@ public class ConnectorPollingListenerTests
                 return BinaryData.FromString("""{"value":"linked"}""");
             },
         };
+        int activeInvocations = 0;
+        int maximumActiveInvocations = 0;
+        var invocationSizes = new List<int>();
         var executor = new Mock<ITriggeredFunctionExecutor>();
         executor
             .Setup(value => value.TryExecuteAsync(
-                It.Is<TriggeredFunctionData>(data =>
-                    ((ConnectorTriggerInput)data.TriggerValue)
-                        .Events.Count == 2),
+                It.IsAny<TriggeredFunctionData>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<TriggeredFunctionData, CancellationToken>(
+                async (triggerData, cancellationToken) =>
+                {
+                    var input =
+                        (ConnectorTriggerInput)triggerData.TriggerValue;
+                    lock (invocationSizes)
+                    {
+                        invocationSizes.Add(input.Events.Count);
+                    }
+
+                    int active =
+                        Interlocked.Increment(ref activeInvocations);
+                    UpdateMaximum(ref maximumActiveInvocations, active);
+                    await Task.Delay(
+                        TimeSpan.FromMilliseconds(50),
+                        cancellationToken);
+                    Interlocked.Decrement(ref activeInvocations);
+                    return new FunctionResult(true);
+                });
+
+        using ConnectorPollingListener listener = CreateListener(
+            executor.Object,
+            CreateEndpointResolver(),
+            deliveryClient,
+            linkedOutputClient,
+            maxBatchSize: 1,
+            concurrency: 2,
+            isBatched: true);
+
+        await listener.StartAsync(CancellationToken.None);
+        await acknowledgementsCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(2, downloadCount);
+        Assert.Equal(1, maximumActiveDownloads);
+        Assert.Equal(1, maximumActiveInvocations);
+        Assert.Equal([1, 1], invocationSizes);
+    }
+
+    [Fact]
+    public async Task Listener_SerializesLinkedOutputsAcrossListenersThroughAcknowledgement()
+    {
+        var limiter = new ConnectorLinkedOutputInvocationLimiter();
+        var firstAcknowledgementStarted = NewCompletionSource();
+        var releaseFirstAcknowledgement = NewCompletionSource();
+        var secondDownloadStarted = NewCompletionSource();
+        var secondAcknowledgementCompleted = NewCompletionSource();
+        StubConnectorPollDeliveryClient firstDeliveryClient =
+            CreateSingleReceiveClient(ConnectorPollMessage.FromOutputsLink(
+                "message-1",
+                "lock-1",
+                new ConnectorOutputsLink(
+                    new Uri("https://content.example/output-1?sig=secret"))));
+        firstDeliveryClient.AcknowledgeAsyncHandler =
+            async (_, locks, cancellationToken) =>
+            {
+                firstAcknowledgementStarted.TrySetResult();
+                await releaseFirstAcknowledgement.Task.WaitAsync(
+                    cancellationToken);
+                return Acknowledged(locks);
+            };
+        StubConnectorPollDeliveryClient secondDeliveryClient =
+            CreateSingleReceiveClient(ConnectorPollMessage.FromOutputsLink(
+                "message-2",
+                "lock-2",
+                new ConnectorOutputsLink(
+                    new Uri("https://content.example/output-2?sig=secret"))));
+        secondDeliveryClient.AcknowledgeAsyncHandler = (_, locks, _) =>
+        {
+            secondAcknowledgementCompleted.TrySetResult();
+            return Task.FromResult(Acknowledged(locks));
+        };
+        var firstLinkedOutputClient = new StubConnectorLinkedOutputClient
+        {
+            DownloadAsyncHandler = (_, _, _) =>
+                Task.FromResult(BinaryData.FromString("""{"value":1}""")),
+        };
+        var secondLinkedOutputClient = new StubConnectorLinkedOutputClient
+        {
+            DownloadAsyncHandler = (_, _, _) =>
+            {
+                secondDownloadStarted.TrySetResult();
+                return Task.FromResult(
+                    BinaryData.FromString("""{"value":2}"""));
+            },
+        };
+        var executor = new Mock<ITriggeredFunctionExecutor>();
+        executor
+            .Setup(value => value.TryExecuteAsync(
+                It.IsAny<TriggeredFunctionData>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FunctionResult(true));
+
+        using ConnectorPollingListener firstListener = CreateListener(
+            executor.Object,
+            CreateEndpointResolver(),
+            firstDeliveryClient,
+            firstLinkedOutputClient,
+            linkedOutputInvocationLimiter: limiter);
+        using ConnectorPollingListener secondListener = CreateListener(
+            executor.Object,
+            CreateEndpointResolver(),
+            secondDeliveryClient,
+            secondLinkedOutputClient,
+            linkedOutputInvocationLimiter: limiter);
+
+        await firstListener.StartAsync(CancellationToken.None);
+        await firstAcknowledgementStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5));
+        await secondListener.StartAsync(CancellationToken.None);
+
+        Assert.False(secondDownloadStarted.Task.IsCompleted);
+
+        releaseFirstAcknowledgement.TrySetResult();
+        await secondAcknowledgementCompleted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5));
+        await Task.WhenAll(
+            firstListener.StopAsync(CancellationToken.None),
+            secondListener.StopAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Listener_CancellationStopsRemainingLinkedInvocations()
+    {
+        ConnectorPollMessage[] messages =
+        [
+            ConnectorPollMessage.FromOutputsLink(
+                "message-1",
+                "lock-1",
+                new ConnectorOutputsLink(
+                    new Uri("https://content.example/output-1?sig=secret"))),
+            ConnectorPollMessage.FromOutputsLink(
+                "message-2",
+                "lock-2",
+                new ConnectorOutputsLink(
+                    new Uri("https://content.example/output-2?sig=secret"))),
+        ];
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+                Task.FromResult(new ConnectorReceiveResult(messages, false)),
+        };
+        var downloadStarted = NewCompletionSource();
+        int downloadCount = 0;
+        var linkedOutputClient = new StubConnectorLinkedOutputClient
+        {
+            DownloadAsyncHandler = async (_, _, cancellationToken) =>
+            {
+                Interlocked.Increment(ref downloadCount);
+                downloadStarted.TrySetResult();
+                await Task.Delay(
+                    Timeout.InfiniteTimeSpan,
+                    cancellationToken);
+                return BinaryData.FromString("""{"value":"linked"}""");
+            },
+        };
+        var executor = new Mock<ITriggeredFunctionExecutor>();
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
@@ -533,11 +698,92 @@ public class ConnectorPollingListenerTests
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
-        await acknowledgementCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await downloadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        listener.Cancel();
         await listener.StopAsync(CancellationToken.None);
 
-        Assert.Equal(2, downloadCount);
-        Assert.Equal(1, maximumActiveDownloads);
+        Assert.Equal(1, downloadCount);
+        executor.Verify(value => value.TryExecuteAsync(
+            It.IsAny<TriggeredFunctionData>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Listener_SeparatesLinkedOutputsFromInlineBatch()
+    {
+        ConnectorPollMessage[] messages =
+        [
+            CreateInlineMessage("inline-1", "lock-1", """{"value":1}"""),
+            ConnectorPollMessage.FromOutputsLink(
+                "linked-1",
+                "lock-2",
+                new ConnectorOutputsLink(
+                    new Uri("https://content.example/output-1?sig=secret"))),
+            CreateInlineMessage("inline-2", "lock-3", """{"value":2}"""),
+            ConnectorPollMessage.FromOutputsLink(
+                "linked-2",
+                "lock-4",
+                new ConnectorOutputsLink(
+                    new Uri("https://content.example/output-2?sig=secret"))),
+        ];
+        var acknowledgementsCompleted = NewCompletionSource();
+        int acknowledgementCount = 0;
+        var acknowledgementSizes = new List<int>();
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+                Task.FromResult(new ConnectorReceiveResult(messages, false)),
+            AcknowledgeAsyncHandler = (_, locks, _) =>
+            {
+                lock (acknowledgementSizes)
+                {
+                    acknowledgementSizes.Add(locks.Count);
+                }
+
+                if (Interlocked.Increment(ref acknowledgementCount) == 3)
+                {
+                    acknowledgementsCompleted.TrySetResult();
+                }
+
+                return Task.FromResult(Acknowledged(locks));
+            },
+        };
+        var linkedOutputClient = new StubConnectorLinkedOutputClient
+        {
+            DownloadAsyncHandler = (_, _, _) =>
+                Task.FromResult(
+                    BinaryData.FromString("""{"value":"linked"}""")),
+        };
+        var invocationSizes = new List<int>();
+        var executor = new Mock<ITriggeredFunctionExecutor>();
+        executor
+            .Setup(value => value.TryExecuteAsync(
+                It.IsAny<TriggeredFunctionData>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<TriggeredFunctionData, CancellationToken>((data, _) =>
+            {
+                var input = (ConnectorTriggerInput)data.TriggerValue;
+                lock (invocationSizes)
+                {
+                    invocationSizes.Add(input.Events.Count);
+                }
+            })
+            .ReturnsAsync(new FunctionResult(true));
+
+        using ConnectorPollingListener listener = CreateListener(
+            executor.Object,
+            CreateEndpointResolver(),
+            deliveryClient,
+            linkedOutputClient,
+            maxBatchSize: 4,
+            isBatched: true);
+
+        await listener.StartAsync(CancellationToken.None);
+        await acknowledgementsCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal([1, 1, 2], invocationSizes.Order());
+        Assert.Equal([1, 1, 2], acknowledgementSizes.Order());
     }
 
     [Fact]
@@ -724,7 +970,8 @@ public class ConnectorPollingListenerTests
         int maxBatchSize = 1,
         int concurrency = 1,
         bool isBatched = false,
-        Func<TimeSpan, CancellationToken, Task>? delayAsync = null)
+        Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
+        ConnectorLinkedOutputInvocationLimiter? linkedOutputInvocationLimiter = null)
     {
         var registration = new ConnectorFunctionRegistration("TestFunction", executor);
         var options = new ConnectorPollingOptions(
@@ -739,6 +986,8 @@ public class ConnectorPollingListenerTests
             endpointResolver,
             deliveryClient,
             linkedOutputClient,
+            linkedOutputInvocationLimiter
+                ?? new ConnectorLinkedOutputInvocationLimiter(),
             NullLogger<ConnectorPollingListener>.Instance,
             delayAsync ?? WaitUntilCancelledAsync);
     }

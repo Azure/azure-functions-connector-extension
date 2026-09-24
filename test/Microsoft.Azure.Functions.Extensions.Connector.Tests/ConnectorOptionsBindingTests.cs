@@ -97,6 +97,9 @@ public class ConnectorOptionsBindingTests
         Assert.NotNull(host.Services.GetRequiredService<IConnectorQueueDepthClientFactory>());
         Assert.NotNull(host.Services.GetRequiredService<IConnectorPollDeliveryClientFactory>());
         Assert.NotNull(host.Services.GetRequiredService<IConnectorLinkedOutputClient>());
+        Assert.Same(
+            host.Services.GetRequiredService<ConnectorLinkedOutputInvocationLimiter>(),
+            host.Services.GetRequiredService<ConnectorLinkedOutputInvocationLimiter>());
         Assert.NotNull(host.Services.GetRequiredService<IConnectorPollingListenerFactory>());
     }
 

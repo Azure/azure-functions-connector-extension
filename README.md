@@ -152,6 +152,11 @@ cardinality supports effective values from `1` through `32`; a final
 invocation may contain fewer events. See the [Poll test samples](./test/poll)
 for language-specific examples.
 
+Large events delivered through `outputsLink` are always supplied in
+single-event invocations, including for batched functions. Connector Poll
+serializes linked-output invocations across the host to bound retained payload
+memory; ordinary inline event batches remain concurrent.
+
 An omitted or zero `MaxBatchSize` uses
 `extensions.connector.defaultMaxBatchSize` from `host.json`; the built-in
 default is `1`. The resolved value supplied to the listener is always between

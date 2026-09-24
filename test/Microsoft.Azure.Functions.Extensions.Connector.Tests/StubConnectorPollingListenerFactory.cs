@@ -18,6 +18,7 @@ internal sealed class StubConnectorPollingListenerFactory :
             new StubConnectorPollingEndpointResolver(),
             new StubConnectorPollDeliveryClient(),
             new StubConnectorLinkedOutputClient(),
+            new ConnectorLinkedOutputInvocationLimiter(),
             NullLogger<ConnectorPollingListener>.Instance);
 }
 

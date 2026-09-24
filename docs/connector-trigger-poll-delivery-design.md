@@ -134,9 +134,8 @@ The implemented trigger contract includes:
 - `ConnectorExtensionConfigProvider` registers the webhook handler and
   dispatches callback payloads through `ITriggeredFunctionExecutor`.
 - `ConnectorPollingListener` runs a lifecycle-safe message pump with bounded
-  concurrency, sequential linked-output hydration within each invocation
-  batch, and acknowledgement of successful single-event or batched
-  invocations.
+  concurrency, host-wide serialization of linked-output invocations, and
+  acknowledgement of successful single-event or batched invocations.
 - Invocation cardinality is explicit. Scalar cardinality supplies one event to
   each invocation; batched cardinality partitions Receive results into groups
   of at most the effective `MaxBatchSize`.
@@ -282,6 +281,27 @@ If linked content cannot be retrieved or validated, the extension must not
 invoke the function for that message and must not acknowledge it. Other
 messages from the same Receive response remain independently processable.
 
+Linked outputs use a stricter invocation policy because each payload can be up
+to 100 MiB and worker conversion requires materialization:
+
+- Inline messages continue to use normal invocation batching.
+- Every linked-output message is delivered in its own invocation. A batched
+  function receives an array containing one event.
+- A singleton host-wide limiter permits only one linked-output invocation at a
+  time across all Connector Poll listeners.
+- The limiter is process-local. Every scaled-out Functions host receives its
+  own slot; do not use distributed coordination that would serialize linked
+  outputs across instances.
+- The limiter is held from before download through function execution and
+  acknowledgement, so another linked payload cannot be hydrated while the
+  first remains live.
+- `MaxBatchSize` remains a maximum; it does not guarantee that every invocation
+  contains that number of events.
+
+This follows the serialized batch execution and backpressure patterns used by
+other Functions extensions while leaving ordinary inline invocations
+concurrent.
+
 The signed `outputsLink.uri` is sensitive:
 
 - Never log, persist, or emit the complete URI.
@@ -317,10 +337,9 @@ The outputs-link authority can vary by cloud, region, scale unit, and
 environment. Treat the absolute HTTPS URI as opaque rather than allow-listing
 a hostname or Azure domain.
 
-The first implementation may buffer one complete hydrated output in memory
-because existing worker conversion is JSON-based, but it must not download all
-large outputs in a Receive batch simultaneously. Linked-output hydration must
-be bounded and included in concurrency and memory-budget decisions.
+The implementation may buffer one complete hydrated linked output in memory
+because existing worker conversion is JSON-based. It must not retain multiple
+linked outputs concurrently in one host process.
 
 The two-minute message lock starts when Receive leases the message. Download
 and validation time therefore consume lock budget and must be included in
@@ -551,6 +570,8 @@ Max batch size and concurrency are separate settings:
   than zero.
 - `MaxBatchSize` controls batching only and does not participate in the target-based scaling calculation.
 - Maximum in-flight messages are approximately `MaxBatchSize * Concurrency`.
+- Linked-output messages are an exception to normal grouping: each is invoked
+  individually and host-wide linked-output execution is serialized.
 
 Batching must be explicitly enabled:
 
@@ -833,23 +854,24 @@ Do not turn the current class into a large mode-switching listener.
 2. Determine available invocation capacity from effective `MaxBatchSize` and `Concurrency`.
 3. Call Receive with `maxEvents` capped by 32 and no greater than current processing capacity.
 4. If Receive is empty, apply cancellation-aware backoff with jitter.
-5. Partition received messages into invocation batches of at most
-   `MaxBatchSize`.
-6. Within each invocation batch, hydrate linked outputs sequentially.
-7. Exclude messages whose linked outputs could not be retrieved or validated;
-   leave them unacknowledged and skip the invocation if no messages remain.
-8. Dispatch no more than `Concurrency` function invocations at once.
-9. For each invocation batch, pass normalized `outputs` values and safe
-    metadata through the binding/conversion path.
-10. Retain each message's `messageId` and `lockToken` internally.
-11. If an invocation succeeds, mark every message in that invocation batch
-    for acknowledgement.
-12. If an invocation fails or is cancelled, leave every message in that
-    invocation batch unacknowledged.
-13. Batch-acknowledge successful message locks in requests of at most 32 items.
-14. If `x-ms-more-messages-available` is true and invocation capacity is
+5. Partition received messages into chunks of at most `MaxBatchSize`.
+6. Within each chunk, group inline messages into one invocation and split
+   linked-output messages into single-event invocations.
+7. Process the sub-invocations sequentially within that chunk.
+8. Before downloading a linked output, acquire the singleton host-wide
+   linked-output limiter and hold it through acknowledgement.
+9. Exclude a linked message whose output cannot be retrieved or validated and
+   leave it unacknowledged.
+10. Dispatch no more than `Concurrency` chunk-processing tasks at once.
+11. Pass normalized `outputs` values and safe metadata through the
+    binding/conversion path.
+12. Retain each message's `messageId` and `lockToken` internally.
+13. If an invocation succeeds, acknowledge every message in that invocation.
+14. If an invocation fails or is cancelled, leave every message in that
+    invocation unacknowledged.
+15. If `x-ms-more-messages-available` is true and invocation capacity is
     available, immediately drain another Receive batch.
-15. Otherwise continue using the normal polling cadence.
+16. Otherwise continue using the normal polling cadence.
 
 Concurrency counts function invocations, not individual messages. For
 example, `MaxBatchSize = 4` and `Concurrency = 8` permits up to eight active
@@ -948,6 +970,16 @@ or when approximate depth does not map to immediately receivable full
 batches. Connector Namespace `maxEvents` remains the listener calculation
 `min(32, (effectiveConcurrency - activeInvocations) *
 effectiveMaxBatchSize)`.
+
+The queue-depth contract does not identify inline versus linked-output events.
+The scaler therefore continues to use effective invocation concurrency for the
+aggregate backlog. This preserves normal inline scaling but can underestimate
+the worker count for a linked-output-heavy backlog because each host processes
+only one linked-output invocation at a time. Using a target of one for every
+backlog would instead over-scale ordinary inline traffic. When linked-output
+delivery becomes service-testable, validate this tradeoff and prefer a
+service-provided payload-class or byte-oriented backlog signal if stronger
+linked-output scaling is required.
 
 Historical PR #26 is useful only as a reference for the Functions
 scale-controller integration. Reusable extension-side patterns include:
@@ -1084,6 +1116,9 @@ Record without payload or token content:
 - Concurrent invocation results remain associated with the correct message locks.
 - Inline and linked outputs produce the same function-facing payload shape.
 - A linked-output failure leaves only that message unacknowledged.
+- Mixed Receive results preserve normal inline batching and invoke each linked
+  output individually.
+- Linked-output invocations do not overlap across listeners sharing one host.
 - Large-output hydration is bounded and consumes lock budget.
 - Payload-only `T` and `T[]` conversion.
 - Metadata-rich `ConnectorEvent<T>` and `ConnectorEvent<T>[]` conversion.
@@ -1112,6 +1147,11 @@ Use a Poll trigger configuration such as Office 365 `OnNewEmailV3`:
 5. Verify the expected invocation batch sizes.
 6. Verify every successful event is acknowledged and does not reappear.
 7. Run a failure case and verify redelivery after two minutes.
+
+Connector Namespace does not yet emit linked-output messages in the available
+test environment. Validate linked-output splitting, serialization, failure,
+and memory-safety behavior with synthetic unit tests until the service feature
+is available for an end-to-end test.
 
 ## Delivery Plan
 
