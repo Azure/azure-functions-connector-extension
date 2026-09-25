@@ -40,7 +40,6 @@ public class ConnectorConnectionOptionsProviderTests
                 ["AzureWebJobsConnectorNamespace:resourceId"] = ResourceId,
                 ["AzureWebJobsConnectorNamespace:credential"] = "managedidentity",
                 ["AzureWebJobsConnectorNamespace:clientId"] = "client-id",
-                ["AzureWebJobsConnectorNamespace:managedIdentityResourceId"] = "identity-resource-id",
             });
         TokenCredential credential = Mock.Of<TokenCredential>();
         var componentFactory = new Mock<AzureComponentFactory>();
@@ -63,9 +62,6 @@ public class ConnectorConnectionOptionsProviderTests
             ((IConfigurationSection)receivedConfiguration).Path);
         Assert.Equal("managedidentity", receivedConfiguration["credential"]);
         Assert.Equal("client-id", receivedConfiguration["clientId"]);
-        Assert.Equal(
-            "identity-resource-id",
-            receivedConfiguration["managedIdentityResourceId"]);
     }
 
     [Fact]

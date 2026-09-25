@@ -115,7 +115,7 @@ The trigger-contract seam has been implemented:
 - `ConnectorPollingListener.StartAsync` intentionally throws
   `NotSupportedException` until the production message pump is implemented.
 
-The baseline seam used an earlier `MaxEvents` property. PR 1 replaces it with the public `MaxBatchSize` and `Concurrency` properties described below. `MaxBatchSize` maps to the service `maxEvents` parameter, while `Concurrency` remains independent and defines the maximum pending events per instance for target-based scaling.
+The baseline seam used an earlier `MaxEvents` property. PR 1 replaces it with the public `MaxBatchSize` and `Concurrency` properties described below. `MaxBatchSize` maps to the service `maxEvents` parameter, while `Concurrency` remains independent and defines the maximum concurrent function invocations per instance for target-based scaling.
 
 Poll delivery must run in the host extension, not in a language worker. This allows the same acquisition behavior to support .NET, Python, Node.js, and other extension-bundle consumers.
 
@@ -367,6 +367,9 @@ ConnectorNamespace__resourceId=/subscriptions/{subscription}/resourceGroups/{res
 ConnectorNamespace__credential=managedidentity
 ConnectorNamespace__clientId={optional-user-assigned-managed-identity-client-id}
 ConnectorNamespace__managedIdentityResourceId={optional-user-assigned-managed-identity-resource-id}
+ConnectorNamespace__token={debug-only-token-for-all-audiences}
+ConnectorNamespace__managementToken={debug-only-arm-token}
+ConnectorNamespace__apiHubToken={debug-only-apihub-token}
 ```
 
 `TriggerConfigName` remains trigger metadata because it identifies the event source within the namespace. It should support Functions name resolution so environment-specific configuration is not embedded in attributes.
@@ -407,9 +410,10 @@ The extension follows the standard Functions identity-based connection pattern u
 
 | Environment | Configuration | Behavior |
 |---|---|---|
-| Local development | Omit `credential` | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
-| Azure, system-assigned identity | `credential=managedidentity` | Use the Function App's system-assigned managed identity |
+| Local development | Omit `credential`, or use `credential=managedidentity` with an unavailable MI selector | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
+| Azure, system-assigned identity | `credential=managedidentity` | Use the Function App's system-assigned managed identity; if the managed identity endpoint reports authentication unavailable, the extension falls back to `DefaultAzureCredential` for local/private-stamp diagnostics |
 | Azure, user-assigned identity | `credential=managedidentity` plus `clientId` or `managedIdentityResourceId` | Use the selected user-assigned managed identity |
+| Private-stamp diagnostics only | `token`, or `managementToken` plus `apiHubToken` | Bypass SDK credential creation and use caller-provided bearer token strings without logging them |
 
 Authentication uses two token audiences:
 
@@ -419,6 +423,10 @@ Authentication uses two token audiences:
 | Receive, acknowledge, and query queue status | `https://apihub.azure.com/.default` |
 
 The request URI identifies the target Connector Namespace; the credential does not receive or infer that target resource ID. ARM and Connector Namespace authorize the caller represented by the bearer token against the requested resource.
+
+When Scale Controller hosts the scaler, it may inject dedicated app-identity credentials for ARM and API Hub through `ConnectorScaleCredentialProperties`. The extension routes ARM discovery to the former and queue-depth operations to the latter. This lets Scale Controller use its existing fixed-audience `ManagedIdentityTokenCredential` without making the extension impersonate the Function App.
+
+The debug token override is intentionally for private-stamp diagnostics. A single `ConnectorNamespace__token` is returned for every requested scope, but normal scaling uses different ARM and API Hub audiences; use `ConnectorNamespace__managementToken` and `ConnectorNamespace__apiHubToken` when testing both endpoint discovery and queue-depth calls with copied tokens. The extension parses JWT `exp` for the returned `AccessToken` expiry when present; otherwise it treats the configured token as a short-lived five-minute diagnostic token. The token setting can also be supplied with a single underscore, such as `ConnectorNamespace_token`, for environments where hierarchical app settings are inconvenient.
 
 ARM endpoint discovery requires the following control-plane action:
 
@@ -456,7 +464,7 @@ Applications that require ordering must use source-specific ordering information
 Max batch size and concurrency are separate settings:
 
 - `MaxBatchSize` is the maximum number of Connector events requested in one Receive operation and supplied to one function invocation.
-- `Concurrency` is the maximum number of pending Connector events allowed on one worker instance.
+- `Concurrency` is the maximum number of concurrent function invocations allowed on one worker instance.
 - A value of `0` on either attribute property means to use the host-level default.
 - `MaxBatchSize = 1` preserves one event per function invocation.
 - `MaxBatchSize` must be between `0` and `32`; the effective value must be
@@ -464,6 +472,7 @@ Max batch size and concurrency are separate settings:
 - `Concurrency` must be zero or greater; the effective value must be greater
   than zero.
 - `MaxBatchSize` controls batching only and does not participate in the target-based scaling calculation.
+- Maximum in-flight messages are approximately `MaxBatchSize * Concurrency`.
 
 The effective max batch size must be compatible with the declared function
 parameter:
@@ -486,9 +495,15 @@ infer the target shape for every language worker, so this validation belongs
 to PR 6. The extension must not silently ignore `MaxBatchSize`, truncate received
 events, or automatically change the function parameter shape.
 
-`Concurrency` is independent of parameter shape. For example, a scalar parameter with `MaxBatchSize = 1` and `Concurrency = 8` is valid and permits up to eight pending single-event invocations. With a batched parameter, the number of invocations varies with the number of events returned in each batch while the total pending events remain bounded by `Concurrency`.
+`Concurrency` is independent of parameter shape. For example, a scalar
+parameter with `MaxBatchSize = 1` and `Concurrency = 8` is valid and permits
+up to eight concurrent single-event invocations. With a batched parameter,
+the same concurrency permits up to eight concurrent invocation batches.
 
-An event counts as pending from the time Receive leases it until the listener acknowledges it or finishes handling a failed attempt without acknowledgement. This includes linked-output hydration, function execution, and acknowledgement processing.
+An event counts as in flight from the time Receive leases it until the
+listener acknowledges it or finishes handling a failed attempt without
+acknowledgement. This includes linked-output hydration, function execution,
+and acknowledgement processing.
 
 Host-level defaults:
 
@@ -501,34 +516,43 @@ public sealed class ConnectorOptions
 }
 ```
 
-The service `maxEvents` query parameter maps to the effective `MaxBatchSize`. For each Receive call, the listener also caps it by the remaining event capacity on the instance:
+The service `maxEvents` query parameter is calculated from the remaining
+invocation capacity and capped at 32:
 
 ```csharp
-int availableEventCapacity =
-    effectiveConcurrency - pendingEventCount;
+int availableInvocationSlots =
+    effectiveConcurrency - activeInvocationCount;
+
+int availableMessageCapacity =
+    availableInvocationSlots * effectiveMaxBatchSize;
 
 int maxEvents = Math.Min(
     32,
-    Math.Min(effectiveMaxBatchSize, availableEventCapacity));
+    availableMessageCapacity);
 ```
 
 The listener issues Receive only when `maxEvents > 0` and always sends the calculated value explicitly. It must not rely on the service default of 32 because that could lease more messages than the worker can immediately process.
 
 Examples:
 
-| Max batch size | Concurrency | Pending events | `maxEvents` |
+| Max batch size | Concurrency | Active invocations | `maxEvents` |
 | ---: | ---: | ---: | ---: |
-| 1 | 16 | 0 | 1 |
-| 1 | 16 | 10 | 1 |
-| 4 | 8 | 0 | 4 |
-| 4 | 8 | 3 | 4 |
-| 8 | 2 | 0 | 2 |
-| 32 | 16 | 0 | 16 |
+| 1 | 16 | 0 | 16 |
+| 1 | 16 | 10 | 6 |
+| 4 | 8 | 0 | 32 |
+| 4 | 8 | 3 | 20 |
+| 8 | 2 | 0 | 16 |
+| 32 | 16 | 0 | 32 |
 | 4 | 8 | 8 | 0 |
 
-The initial implementation does not prefetch beyond remaining event capacity. Every received message immediately starts its fixed two-minute lock budget, so leasing messages into a local waiting buffer increases lock expiration and duplicate-delivery risk.
+The initial implementation does not prefetch beyond remaining invocation
+capacity. Every received message immediately starts its fixed two-minute lock
+budget, so leasing messages into a local waiting buffer increases lock
+expiration and duplicate-delivery risk.
 
-When the pending-event limit is reached, the listener does not issue Receive. Even when `x-ms-more-messages-available` is true, immediate draining occurs only when event capacity is available.
+When the concurrent-invocation limit is reached, the listener does not issue
+Receive. Even when `x-ms-more-messages-available` is true, immediate draining
+occurs only when invocation capacity is available.
 
 ### Payload and Message Metadata
 
@@ -754,14 +778,15 @@ Do not turn the current class into a large mode-switching listener.
 `ConnectorPollingListener` owns the message pump:
 
 1. Resolve polling endpoints.
-2. Determine remaining event capacity from effective `Concurrency` and the current pending-event count.
-3. Call Receive with `maxEvents` capped by 32, effective `MaxBatchSize`, and the remaining event capacity.
+2. Determine available invocation capacity from effective `MaxBatchSize` and `Concurrency`.
+3. Call Receive with `maxEvents` capped by 32 and no greater than current processing capacity.
 4. If Receive is empty, apply cancellation-aware backoff with jitter.
 5. Hydrate linked outputs using bounded content-download concurrency.
 6. Exclude messages whose linked outputs could not be retrieved or validated;
    leave them unacknowledged.
-7. Dispatch the successfully hydrated Receive batch as one invocation.
-8. Continue receiving only while total pending events remain below `Concurrency`.
+7. Partition successfully hydrated messages into invocation batches of at
+   most `MaxBatchSize`.
+8. Dispatch no more than `Concurrency` function invocations at once.
 9. For each invocation batch, pass normalized `outputs` values and safe
     metadata through the binding/conversion path.
 10. Retain each message's `messageId` and `lockToken` internally.
@@ -770,11 +795,13 @@ Do not turn the current class into a large mode-switching listener.
 12. If an invocation fails or is cancelled, leave every message in that
     invocation batch unacknowledged.
 13. Batch-acknowledge successful message locks in requests of at most 32 items.
-14. If `x-ms-more-messages-available` is true and event capacity is
+14. If `x-ms-more-messages-available` is true and invocation capacity is
     available, immediately drain another Receive batch.
 15. Otherwise continue using the normal polling cadence.
 
-Concurrency counts pending events, not function invocations. For example, `MaxBatchSize = 4` and `Concurrency = 8` permits up to eight pending events on the instance. That may be two full four-event invocations or more partially filled invocations.
+Concurrency counts function invocations, not individual messages. For
+example, `MaxBatchSize = 4` and `Concurrency = 8` permits up to eight active
+invocations and approximately 32 in-flight messages.
 
 Acknowledgement is initially all-or-none per function invocation. Partial success within one invocation requires a future explicit per-item result contract; the extension must not infer which messages completed before a function failure.
 
@@ -844,19 +871,26 @@ Implement a scale monitor or target scaler using approximate queue depth:
 - Resolve the same trigger endpoints.
 - Query approximate depth with bounded retries.
 - Return no-work/scale-in decisions conservatively.
-- Scale out based on configurable messages-per-worker targets.
+- Scale out based on effective invocation concurrency.
 - Avoid equating approximate depth with immediately receivable messages.
 
 Scaling should use a separate service from the listener and poll client.
 
-Target-based scaling uses `Concurrency` as the maximum pending events per instance:
+Target scaling uses invocation concurrency only:
 
 ```text
 targetWorkerCount =
     ceil(approximateQueueDepth / effectiveConcurrency)
 ```
 
-`MaxBatchSize` is independent of scaling. It controls only the maximum events requested and delivered in one invocation. The listener maps it to Connector Namespace `maxEvents`, capped by the remaining event capacity on the instance. Because a Receive call can return fewer than `MaxBatchSize`, invocation count is not a stable measure of per-instance capacity.
+`Concurrency` is the effective number of active function invocations per
+worker and therefore the target-scaling capacity. `MaxBatchSize` controls
+listener invocation grouping; it does not reduce the worker target. Keeping
+it out of target arithmetic avoids under-scaling for partially filled batches
+or when approximate depth does not map to immediately receivable full
+batches. Connector Namespace `maxEvents` remains the listener calculation
+`min(32, (effectiveConcurrency - activeInvocations) *
+effectiveMaxBatchSize)`.
 
 Historical PR #26 is useful only as a reference for the Functions
 scale-controller integration. Reusable extension-side patterns include:
@@ -867,7 +901,8 @@ scale-controller integration. Reusable extension-side patterns include:
   signature.
 - Reading trigger metadata and host-level `ConnectorOptions` inside the scaler
   provider.
-- Calculating target workers from approximate pending events and effective per-worker event capacity:
+- Calculating target workers from approximate queue depth and effective
+  invocation concurrency:
 
   ```text
   ceil(pendingEvents / effectiveConcurrency)
@@ -881,7 +916,7 @@ Do not reuse the Connector Namespace side of #26:
 - Its positional `connectorNamespace` and `triggerName` attribute contract.
 - Its Namespace API paths, request/response models, or authentication
   assumptions.
-- Its mock pending-events provider.
+- Its mock queue-depth provider.
 - Any metadata names that conflict with the current `Connection` and
   `TriggerConfigName` contract.
 
@@ -982,9 +1017,9 @@ Record without payload or token content:
 ### Listener tests
 
 - Empty queue backoff.
-- Receive size is capped by effective `MaxBatchSize`, remaining event capacity, and 32.
+- Receive size is capped by effective `MaxBatchSize`, remaining invocation capacity, and 32.
 - Each invocation receives no more than effective `MaxBatchSize`.
-- Pending events never exceed effective `Concurrency`.
+- Active function invocations never exceed effective `Concurrency`.
 - A successful invocation acknowledges every message in that invocation batch.
 - A failed invocation acknowledges no messages from that invocation batch.
 - Concurrent invocation results remain associated with the correct message locks.
@@ -1004,7 +1039,7 @@ Record without payload or token content:
 
 - Zero/non-zero depth decisions.
 - Approximate values and transient failures.
-- Messages-per-worker calculations.
+- Effective-concurrency target calculations and `MaxBatchSize` independence.
 - Endpoint/auth failure behavior.
 
 ### End-to-end test
@@ -1128,10 +1163,11 @@ Names and file boundaries are preliminary and should follow repository conventio
 2. Will Connector Namespace expose a fully qualified namespace or stable non-ARM discovery endpoint so clients do not need ARM access to bootstrap polling endpoints?
 3. Does the complete ARM discovery and Poll runtime path support a Function App and Connector Namespace in different subscriptions?
 4. Which Functions scaling interface is appropriate for this extension version?
-5. What default empty-queue backoff and jitter should be used?
-6. Should a long-running execution be allowed to finish after the two-minute lock budget, or should the extension cancel it?
-7. When should endpoint cache entries be refreshed?
-8. What evidence would justify extracting the internal protocol client into a separate public package?
+5. Should future service concurrency signals augment the current `ceil(depth / effectiveConcurrency)` target model?
+6. What default empty-queue backoff and jitter should be used?
+7. Should a long-running execution be allowed to finish after the two-minute lock budget, or should the extension cancel it?
+8. When should endpoint cache entries be refreshed?
+9. What evidence would justify extracting the internal protocol client into a separate public package?
 
 ## Supporting Information: Provisioning a Poll Trigger Configuration
 

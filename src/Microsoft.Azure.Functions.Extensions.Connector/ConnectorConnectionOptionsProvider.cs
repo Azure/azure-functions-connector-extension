@@ -30,7 +30,9 @@ internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionO
         _componentFactory = componentFactory ?? throw new ArgumentNullException(nameof(componentFactory));
     }
 
-    public ConnectorConnectionOptions Get(string connectionName)
+    public ConnectorConnectionOptions Get(
+        string connectionName,
+        AzureComponentFactory? componentFactory = null)
     {
         if (string.IsNullOrWhiteSpace(connectionName))
         {
@@ -39,7 +41,7 @@ internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionO
         }
 
         IConfigurationSection connectionSection =
-            _configuration.GetWebJobsConnectionSection(connectionName);
+            GetConnectionSection(connectionName);
         string? resourceIdValue = connectionSection[ResourceIdPropertyName];
 
         if (string.IsNullOrWhiteSpace(resourceIdValue))
@@ -49,12 +51,40 @@ internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionO
         }
 
         ResourceIdentifier resourceId = ParseResourceId(connectionName, resourceIdValue);
-        TokenCredential credential = _componentFactory.CreateTokenCredential(connectionSection);
+        ValidateIdentitySelectors(connectionSection, connectionName);
+        TokenCredential credential =
+            (componentFactory ?? _componentFactory)
+            .CreateTokenCredential(connectionSection);
 
         return new ConnectorConnectionOptions(resourceId, credential);
     }
 
-    private static ResourceIdentifier ParseResourceId(
+    internal IConfigurationSection GetConnectionSection(string connectionName) =>
+        _configuration.GetWebJobsConnectionSection(connectionName);
+
+    internal static void ValidateIdentitySelectors(
+        IConfigurationSection section,
+        string connectionName)
+    {
+        bool hasCredential = !string.IsNullOrWhiteSpace(section["credential"]);
+        bool hasClientId = !string.IsNullOrWhiteSpace(section["clientId"]);
+        bool hasResourceId =
+            !string.IsNullOrWhiteSpace(section["managedIdentityResourceId"]);
+
+        if (hasClientId && hasResourceId)
+        {
+            throw new InvalidOperationException(
+                $"Connector connection '{connectionName}' must specify only one managed identity selector.");
+        }
+
+        if ((hasClientId || hasResourceId) && !hasCredential)
+        {
+            throw new InvalidOperationException(
+                $"Connector connection '{connectionName}' must configure credential when selecting a managed identity.");
+        }
+    }
+
+    internal static ResourceIdentifier ParseResourceId(
         string connectionName,
         string resourceIdValue)
     {
