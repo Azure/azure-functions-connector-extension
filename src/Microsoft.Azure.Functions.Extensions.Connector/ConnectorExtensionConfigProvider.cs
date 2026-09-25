@@ -3,12 +3,14 @@
 
 using System.Collections.Concurrent;
 using System.Net;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Web;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Description;
 using Microsoft.Azure.WebJobs.Host.Config;
 using Microsoft.Azure.WebJobs.Host.Executors;
+using Microsoft.Azure.Functions.Extensions.Connector.Shared;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -28,13 +30,15 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
     private readonly ConnectorHttpRequestProcessor _httpRequestProcessor;
     private readonly ConnectorOptions _options;
     private readonly IConnectorConnectionOptionsProvider _connectionOptionsProvider;
+    private readonly IConnectorPollingListenerFactory _pollingListenerFactory;
     private readonly ConcurrentDictionary<string, ConnectorFunctionRegistration> _functions = new(StringComparer.OrdinalIgnoreCase);
 
     public ConnectorExtensionConfigProvider(
         ConnectorHttpRequestProcessor httpRequestProcessor,
         ILoggerFactory loggerFactory,
         IOptions<ConnectorOptions> options,
-        IConnectorConnectionOptionsProvider connectionOptionsProvider)
+        IConnectorConnectionOptionsProvider connectionOptionsProvider,
+        IConnectorPollingListenerFactory pollingListenerFactory)
     {
         _httpRequestProcessor = httpRequestProcessor ?? throw new ArgumentNullException(nameof(httpRequestProcessor));
         _logger = loggerFactory?.CreateLogger<ConnectorExtensionConfigProvider>()
@@ -44,6 +48,8 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _connectionOptionsProvider = connectionOptionsProvider
             ?? throw new ArgumentNullException(nameof(connectionOptionsProvider));
+        _pollingListenerFactory = pollingListenerFactory
+            ?? throw new ArgumentNullException(nameof(pollingListenerFactory));
     }
 
     internal void RegisterFunction(ConnectorFunctionRegistration registration)
@@ -56,19 +62,19 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
     {
         ArgumentNullException.ThrowIfNull(context);
 
-#pragma warning disable 618
+#pragma warning disable CS0618 // GetWebhookHandler remains the WebJobs webhook registration API.
         var webhookUrl = context.GetWebhookHandler();
-#pragma warning restore 618
+#pragma warning restore CS0618
 
         var extensionUri = webhookUrl?.GetLeftPart(UriPartial.Path) ?? string.Empty;
         _consoleLogger.LogInformation("Connector endpoint: {uri}", extensionUri);
 
-        context
-            .AddBindingRule<ConnectorTriggerAttribute>()
-            .BindToTrigger(new ConnectorTriggerBindingProvider(
+        var rule = context.AddBindingRule<ConnectorTriggerAttribute>();
+        rule.BindToTrigger(new ConnectorTriggerBindingProvider(
                 this,
                 _options,
-                _connectionOptionsProvider));
+                _connectionOptionsProvider,
+                _pollingListenerFactory));
     }
 
     public async Task<HttpResponseMessage> ConvertAsync(HttpRequestMessage input, CancellationToken cancellationToken)
@@ -108,7 +114,13 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
 
-        var triggerData = new TriggeredFunctionData { TriggerValue = triggerValue };
+        var triggerData = new TriggeredFunctionData
+        {
+            TriggerValue = ConnectorTriggerInput.FromSingle(
+                BinaryData.FromString(triggerValue),
+                messageId: null,
+                ConnectorTriggerDeliveryMode.Webhook),
+        };
         var result = await registration.Executor.TryExecuteAsync(triggerData, cancellationToken).ConfigureAwait(false);
 
         if (result.Succeeded)
@@ -120,7 +132,47 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         _logger.LogError(result.Exception, "Function {FunctionName} failed", functionName);
         return new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
-            Content = new StringContent(result.Exception?.Message ?? "Function execution failed")
+            Content = new StringContent("Function execution failed")
         };
+    }
+
+    internal static ParameterBindingData ConvertTriggerEventToBindingData(
+        ConnectorTriggerEventInput input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString(
+                ConnectorBindingDataContract.PropertyNames.DeliveryMode,
+                input.DeliveryMode.ToString());
+            writer.WriteString(
+                ConnectorBindingDataContract.PropertyNames.Data,
+                input.Outputs.ToString());
+            if (input.MessageId is null)
+            {
+                writer.WriteNull(
+                    ConnectorBindingDataContract.PropertyNames.MessageId);
+            }
+            else
+            {
+                writer.WriteString(
+                    ConnectorBindingDataContract.PropertyNames.MessageId,
+                    input.MessageId);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        return new ParameterBindingData(
+            ConnectorBindingDataContract.Version,
+            ConnectorBindingDataContract.Source,
+            new BinaryData(
+                stream.GetBuffer().AsMemory(
+                    0,
+                    checked((int)stream.Length))),
+            ConnectorBindingDataContract.ContentType);
     }
 }

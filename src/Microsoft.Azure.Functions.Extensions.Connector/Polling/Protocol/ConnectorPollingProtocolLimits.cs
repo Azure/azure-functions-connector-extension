@@ -8,4 +8,6 @@ internal static class ConnectorPollingProtocolLimits
     internal const int MaximumBatchSize = 32;
 
     internal const int MaximumOutputsPayloadSizeInBytes = 100 * 1024 * 1024;
+
+    internal const int MaximumQueueDepthResponseSizeInBytes = 64 * 1024;
 }

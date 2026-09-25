@@ -14,7 +14,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://dev.azure.com/azfunc/public/_apis/build/status/1710?branchName=main)](https://dev.azure.com/azfunc/public/_build?definitionId=1710&branchName=main)
 
-An Azure Functions trigger extension for receiving webhook callbacks from Connector Namespace managed connectors (Office 365, Teams, SharePoint, etc.).
+An Azure Functions trigger extension for receiving Webhook and preview Poll
+events from Connector Namespace managed connectors (Office 365, Teams,
+SharePoint, etc.).
 
 - [Learn Documentation](https://learn.microsoft.com/azure/azure-functions/functions-connectors-overview)
 - [Try Samples](https://aka.ms/functions-connectors-samples)
@@ -129,10 +131,69 @@ The underlying Connector SDKs provide typed models:
 
 - `string` - raw JSON body
 - POCO/model types - strongly-typed SDK models (see individual SDK docs for available types)
+- `T[]` - an array-shaped binding containing the delivered event payload
+- `ConnectorEvent<T>` and `ConnectorEvent<T>[]` - payloads with the stable Poll
+  `MessageId` for application-level deduplication
+
+### Poll delivery
+
+Poll functions configure a credential connection separately from their
+trigger-specific runtime endpoint:
+
+```csharp
+[ConnectorTrigger(
+    DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
+    Connection = "ConnectorNamespace",
+    PollingEndpoint = "%OnNewEmailEndpoint%",
+    IsBatched = true,
+    MaxBatchSize = 4,
+    Concurrency = 4)]
+```
+
+`OnNewEmailEndpoint` must contain the complete HTTPS base obtained from the
+Trigger Config's `pollingEndpoints.receiveUri` after removing only its final
+`/receive` segment. The resolved value must use the default HTTPS port, a
+subdomain of `logic.azure.com`, and the exact path
+`/api/connectorGateways/<connector-namespace-id>/triggerconfigs/<trigger-config-name>`.
+It must not already include `/receive`, `/acknowledge`,
+`/approximateQueueDepth`, or another trailing segment. The namespace and
+trigger identifiers and any query are opaque; the extension appends only the
+three fixed runtime operations.
+
+`Connection` provides only the runtime token credential. Azure deployments
+normally configure `ConnectorNamespace__credential=managedidentity` and may
+select a user-assigned identity with `clientId` or
+`managedIdentityResourceId`. No Connector Namespace resource identifier or
+control-plane endpoint lookup is required.
+
+Poll triggers use one event per invocation by default. Enable batched
+invocations explicitly, then set `MaxBatchSize` to the maximum number of
+events supplied to one invocation:
+
+- .NET isolated: set `IsBatched = true`.
+- Node.js and TypeScript: set `cardinality: "many"`.
+- Python: set `cardinality=func.Cardinality.MANY`.
+- Generic `function.json` bindings, including PowerShell: set `cardinality`
+  to `"many"`.
+
+Scalar cardinality requires an effective `MaxBatchSize` of `1`. Batched
+cardinality supports effective values from `1` through `32`; a final
+invocation may contain fewer events. See the [Poll test samples](./test/poll)
+for language-specific examples.
+
+Large events delivered through `outputsLink` are always supplied in
+single-event invocations, including for batched functions. Connector Poll
+serializes linked-output invocations across the host to bound retained payload
+memory; ordinary inline event batches remain concurrent.
+
+An omitted or zero `MaxBatchSize` uses
+`extensions.connector.defaultMaxBatchSize` from `host.json`; the built-in
+default is `1`. The resolved value supplied to the listener is always between
+`1` and `32`.
 
 ## Documentation
 
-- **[Operations to Functions Signature Mapping](./docs/operations-functions-match.md)** - Complete reference of all connector trigger operations and their Azure Functions signatures across .NET, Python, and TypeScript SDKs
+- **[Operations to Functions Signature Mapping](./docs/operations-functions-match.md)** - Complete reference of all connector trigger operations and their Azure Functions signatures across .NET, Python, and TypeScript SDKs.
 
 ## Copilot Skills
 
@@ -152,9 +213,8 @@ This repository includes [Copilot Skills](https://docs.github.com/en/copilot/cus
 
 These samples build and reference local extension code and are meant for extension testing:
 
-- **[.NET Isolated](./test/dotnet)** - .NET isolated worker sample
-- **[Node.js](./test/nodejs)** - Node.js v4 with blob output
-- **[Python](./test/python)** - Python v2
+- **[Webhook delivery](./test/webhook)** - .NET isolated, Node.js, and Python Webhook samples
+- **[Poll delivery](./test/poll)** - Dedicated .NET, TypeScript, and Python Poll preview samples
 
 ## Project Structure
 
@@ -175,9 +235,8 @@ azure-functions-connector-extension/
 │       ├── ConnectorTriggerAttribute.cs                         #   Trigger attribute
 │       └── Converters/                                          #   Type converters
 ├── test/
-│   ├── dotnet/                                                  # .NET isolated worker test app
-│   ├── nodejs/                                                  # Node.js sample with blob output
-│   ├── python/                                                  # Python sample with blob output
+│   ├── poll/                                                    # Poll preview samples for all supported workers
+│   ├── webhook/                                                 # Webhook samples for all supported workers
 │   ├── test-requests.http                                       # HTTP test requests
 │   └── Microsoft.Azure.Functions.Extensions.Connector.Tests/    # Unit tests
 └── eng/                                                         # Build and CI infrastructure

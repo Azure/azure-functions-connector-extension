@@ -16,30 +16,40 @@ namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
 public class ConnectorScalerProviderTests
 {
-    private const string ResourceId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/gateway";
-
     [Fact]
     public async Task Providers_AreIndependentPerFunctionMetadata()
     {
         var credential = new TestTokenCredential();
-        var connectionProvider = new TestScaleConnectionOptionsProvider((_, _) =>
-            new ConnectorScaleConnectionOptions(
-                new ResourceIdentifier(ResourceId),
-                credential,
-                HasDebugTokenOverride: false));
-        var resolvers = new List<IConnectorPollingEndpointResolver>();
-        var resolverFactory = new TestResolverFactory((_, _, _) =>
+        var connectionProvider = new TestConnectionOptionsProvider((_, _) =>
+            new ConnectorConnectionOptions(credential));
+        var endpoints = new List<ConnectorPollingEndpoints>();
+        var depthFactory = new TestDepthClientFactory((value, _, _) =>
         {
-            var resolver = new StubEndpointResolver(Endpoints());
-            resolvers.Add(resolver);
-            return resolver;
+            endpoints.Add(value);
+            return new SequenceDepthClient(
+                value.ReceiveUri.AbsolutePath.Contains(
+                    "trigger-a",
+                    StringComparison.Ordinal)
+                    ? 9
+                    : 21);
         });
-        var depthFactory = new TestDepthClientFactory((_, _, _, trigger) =>
-            new SequenceDepthClient(trigger == "trigger-a" ? 9 : 21));
-        IServiceProvider services = BuildServices(connectionProvider, resolverFactory, depthFactory);
+        IServiceProvider services =
+            BuildServices(connectionProvider, depthFactory);
 
-        var first = new ConnectorScalerProvider(services, Metadata("FunctionA", "trigger-a", 4, maxBatchSize: 1));
-        var second = new ConnectorScalerProvider(services, Metadata("FunctionB", "trigger-b", 10, maxBatchSize: 32));
+        var first = new ConnectorScalerProvider(
+            services,
+            Metadata(
+                "FunctionA",
+                "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger-a",
+                4,
+                maxBatchSize: 1));
+        var second = new ConnectorScalerProvider(
+            services,
+            Metadata(
+                "FunctionB",
+                "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger-b",
+                10,
+                maxBatchSize: 32));
         var firstScaler = first.GetTargetScaler();
         var secondScaler = second.GetTargetScaler();
 
@@ -47,8 +57,10 @@ public class ConnectorScalerProviderTests
         Assert.Equal("FunctionB", secondScaler.TargetScalerDescriptor.FunctionId);
         Assert.Equal(3, (await firstScaler.GetScaleResultAsync(new())).TargetWorkerCount);
         Assert.Equal(3, (await secondScaler.GetScaleResultAsync(new())).TargetWorkerCount);
-        Assert.Equal(2, resolvers.Count);
-        Assert.NotSame(resolvers[0], resolvers[1]);
+        Assert.Equal(2, endpoints.Count);
+        Assert.NotEqual(
+            endpoints[0].ReceiveUri,
+            endpoints[1].ReceiveUri);
     }
 
     [Fact]
@@ -56,88 +68,82 @@ public class ConnectorScalerProviderTests
     {
         AzureComponentFactory? selectedFactory = null;
         var injectedFactory = new TestAzureComponentFactory(new TestTokenCredential("site-identity"));
-        var connectionProvider = new TestScaleConnectionOptionsProvider((_, factory) =>
+        var connectionProvider = new TestConnectionOptionsProvider((_, factory) =>
         {
             selectedFactory = factory;
-            return new ConnectorScaleConnectionOptions(
-                new ResourceIdentifier(ResourceId),
-                new TestTokenCredential(),
-                HasDebugTokenOverride: false);
+            return new ConnectorConnectionOptions(
+                new TestTokenCredential());
         });
-        var resolverFactory = new TestResolverFactory((_, _, _) => new StubEndpointResolver(Endpoints()));
-        var depthFactory = new TestDepthClientFactory((_, _, _, _) => new SequenceDepthClient(0));
-        TriggerMetadata metadata = Metadata("Function", "trigger", 1);
+        var depthFactory = new TestDepthClientFactory(
+            (_, _, _) => new SequenceDepthClient(0));
+        TriggerMetadata metadata = Metadata(
+            "Function",
+            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger",
+            1);
         metadata.Properties[nameof(AzureComponentFactory)] = injectedFactory;
 
-        _ = new ConnectorScalerProvider(BuildServices(connectionProvider, resolverFactory, depthFactory), metadata);
+        _ = new ConnectorScalerProvider(
+            BuildServices(connectionProvider, depthFactory),
+            metadata);
 
         Assert.Same(injectedFactory, selectedFactory);
     }
 
     [Fact]
-    public void Provider_UsesDedicatedScaleControllerCredentialsForArmAndApiHub()
+    public void Provider_UsesDedicatedScaleControllerCredentialForApiHub()
     {
         var defaultCredential = new TestTokenCredential("default");
-        var armCredential = new TestTokenCredential("arm");
         var apiHubCredential = new TestTokenCredential("apihub");
-        TokenCredential? resolverCredential = null;
         TokenCredential? depthCredential = null;
-        var connectionProvider = new TestScaleConnectionOptionsProvider((_, _) =>
-            new ConnectorScaleConnectionOptions(
-                new ResourceIdentifier(ResourceId),
-                defaultCredential,
-                HasDebugTokenOverride: false));
-        var resolverFactory = new TestResolverFactory((_, credential, _) =>
-        {
-            resolverCredential = credential;
-            return new StubEndpointResolver(Endpoints());
-        });
-        var depthFactory = new TestDepthClientFactory((_, credential, _, _) =>
+        var connectionProvider = new TestConnectionOptionsProvider((_, _) =>
+            new ConnectorConnectionOptions(defaultCredential));
+        var depthFactory = new TestDepthClientFactory((_, credential, _) =>
         {
             depthCredential = credential;
             return new SequenceDepthClient(0);
         });
-        TriggerMetadata metadata = Metadata("Function", "trigger", 1);
-        metadata.Properties[ConnectorScaleCredentialProperties.ArmTokenCredential] = armCredential;
+        TriggerMetadata metadata = Metadata(
+            "Function",
+            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger",
+            1);
         metadata.Properties[ConnectorScaleCredentialProperties.ApiHubTokenCredential] = apiHubCredential;
 
-        _ = new ConnectorScalerProvider(BuildServices(connectionProvider, resolverFactory, depthFactory), metadata);
+        _ = new ConnectorScalerProvider(
+            BuildServices(connectionProvider, depthFactory),
+            metadata);
 
-        Assert.Same(armCredential, resolverCredential);
         Assert.Same(apiHubCredential, depthCredential);
     }
 
     [Fact]
-    public void Provider_DebugTokenOverrideTakesPrecedenceOverScaleControllerCredentials()
+    public void Provider_ResolvesPollingEndpointFromAppSetting()
     {
-        var debugCredential = new TestTokenCredential("debug");
-        var armCredential = new TestTokenCredential("arm");
-        var apiHubCredential = new TestTokenCredential("apihub");
-        TokenCredential? resolverCredential = null;
-        TokenCredential? depthCredential = null;
-        var connectionProvider = new TestScaleConnectionOptionsProvider((_, _) =>
-            new ConnectorScaleConnectionOptions(
-                new ResourceIdentifier(ResourceId),
-                debugCredential,
-                HasDebugTokenOverride: true));
-        var resolverFactory = new TestResolverFactory((_, credential, _) =>
-        {
-            resolverCredential = credential;
-            return new StubEndpointResolver(Endpoints());
-        });
-        var depthFactory = new TestDepthClientFactory((_, credential, _, _) =>
-        {
-            depthCredential = credential;
-            return new SequenceDepthClient(0);
-        });
-        TriggerMetadata metadata = Metadata("Function", "trigger", 1);
-        metadata.Properties[ConnectorScaleCredentialProperties.ArmTokenCredential] = armCredential;
-        metadata.Properties[ConnectorScaleCredentialProperties.ApiHubTokenCredential] = apiHubCredential;
+        ConnectorPollingEndpoints? selectedEndpoints = null;
+        var connectionProvider = new TestConnectionOptionsProvider(
+            (_, _) => new ConnectorConnectionOptions(
+                new TestTokenCredential()));
+        var depthFactory = new TestDepthClientFactory(
+            (endpoints, _, _) =>
+            {
+                selectedEndpoints = endpoints;
+                return new SequenceDepthClient(0);
+            });
+        IServiceProvider services = BuildServices(
+            connectionProvider,
+            depthFactory,
+            new TestNameResolver(
+                name => name == "OnNewEmailEndpoint"
+                    ? "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email"
+                    : null));
 
-        _ = new ConnectorScalerProvider(BuildServices(connectionProvider, resolverFactory, depthFactory), metadata);
+        _ = new ConnectorScalerProvider(
+            services,
+            Metadata("Function", "%OnNewEmailEndpoint%", 1));
 
-        Assert.Same(debugCredential, resolverCredential);
-        Assert.Same(debugCredential, depthCredential);
+        Assert.NotNull(selectedEndpoints);
+        Assert.Equal(
+            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email/approximateQueueDepth",
+            selectedEndpoints.ApproximateQueueDepthUri.ToString());
     }
 
     [Fact]
@@ -157,31 +163,47 @@ public class ConnectorScalerProviderTests
     {
         var builder = new TestWebJobsBuilder();
 
-        builder.AddConnectorScaleForTrigger(Metadata("FunctionA", "trigger-a", 4, maxBatchSize: 1));
-        builder.AddConnectorScaleForTrigger(Metadata("FunctionB", "trigger-b", 4));
-        TriggerMetadata webhook = Metadata("Webhook", "trigger-webhook", 4);
+        builder.AddConnectorScaleForTrigger(
+            Metadata(
+                "FunctionA",
+                "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger-a",
+                4,
+                maxBatchSize: 1));
+        builder.AddConnectorScaleForTrigger(
+            Metadata(
+                "FunctionB",
+                "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger-b",
+                4));
+        TriggerMetadata webhook = Metadata(
+            "Webhook",
+            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger-webhook",
+            4);
         webhook.Metadata["deliveryMode"] = "Webhook";
         builder.AddConnectorScaleForTrigger(webhook);
 
         Assert.Equal(2, builder.Services.Count(descriptor => descriptor.ServiceType == typeof(Microsoft.Azure.WebJobs.Host.Scale.ITargetScalerProvider)));
     }
     private static IServiceProvider BuildServices(
-        IConnectorScaleConnectionOptionsProvider connectionProvider,
-        IConnectorPollingEndpointResolverFactory resolverFactory,
-        IConnectorQueueDepthClientFactory depthFactory)
+        IConnectorConnectionOptionsProvider connectionProvider,
+        IConnectorQueueDepthClientFactory depthFactory,
+        INameResolver? nameResolver = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(NullLoggerFactory.Instance);
         services.AddSingleton(connectionProvider);
-        services.AddSingleton(resolverFactory);
         services.AddSingleton(depthFactory);
         services.AddSingleton(Options.Create(new ConnectorOptions { DefaultConcurrency = 16 }));
+        if (nameResolver is not null)
+        {
+            services.AddSingleton(nameResolver);
+        }
+
         return services.BuildServiceProvider();
     }
 
     private static TriggerMetadata Metadata(
         string functionName,
-        string triggerConfigName,
+        string pollingEndpoint,
         int concurrency,
         int maxBatchSize = 1)
     {
@@ -190,18 +212,13 @@ public class ConnectorScalerProviderTests
             ["functionName"] = functionName,
             ["deliveryMode"] = "Poll",
             ["connection"] = "ConnectorNamespace",
-            ["triggerConfigName"] = triggerConfigName,
+            ["pollingEndpoint"] = pollingEndpoint,
             ["maxBatchSize"] = maxBatchSize,
             ["concurrency"] = concurrency,
         };
         return new TriggerMetadata(metadata);
     }
 
-    private static ConnectorPollingEndpoints Endpoints() => new(
-        new Uri("https://runtime.test/receive"),
-        new Uri("https://runtime.test/ack"),
-        new Uri("https://runtime.test/has"),
-        new Uri("https://runtime.test/depth"));
     private sealed class TestWebJobsBuilder : IWebJobsBuilder
     {
         public IServiceCollection Services { get; } = new ServiceCollection();

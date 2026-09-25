@@ -5,12 +5,17 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Microsoft.Azure.Functions.Worker.Extensions.Connector</AssemblyName>
-    <Description>Connector extension for Azure Functions isolated worker - Exposes a webhook endpoint that accepts JSON/string payloads</Description>
+    <Description>Connector trigger extension for Azure Functions isolated worker with Webhook and preview Poll delivery</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Abstractions" Version="1.3.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Core" Version="2.52.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="$(SrcRoot)Shared\ConnectorContractConstants.cs"
+             Link="Shared\ConnectorContractConstants.cs" />
   </ItemGroup>
 
   <!-- Link to the WebJobs (host-side) extension for extension discovery -->
