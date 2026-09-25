@@ -12,10 +12,18 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 internal sealed class ConnectorTriggerBindingProvider : ITriggerBindingProvider
 {
     private readonly ConnectorExtensionConfigProvider _configProvider;
+    private readonly ConnectorOptions _options;
+    private readonly IConnectorConnectionOptionsProvider _connectionOptionsProvider;
 
-    public ConnectorTriggerBindingProvider(ConnectorExtensionConfigProvider configProvider)
+    public ConnectorTriggerBindingProvider(
+        ConnectorExtensionConfigProvider configProvider,
+        ConnectorOptions options,
+        IConnectorConnectionOptionsProvider connectionOptionsProvider)
     {
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _connectionOptionsProvider = connectionOptionsProvider
+            ?? throw new ArgumentNullException(nameof(connectionOptionsProvider));
     }
 
     public Task<ITriggerBinding?> TryCreateAsync(TriggerBindingProviderContext context)
@@ -30,7 +38,12 @@ internal sealed class ConnectorTriggerBindingProvider : ITriggerBindingProvider
             return Task.FromResult<ITriggerBinding?>(null);
         }
 
-        var binding = new ConnectorTriggerBinding(parameter, _configProvider, attribute);
+        var binding = new ConnectorTriggerBinding(
+            parameter,
+            _configProvider,
+            attribute,
+            _options,
+            _connectionOptionsProvider);
         return Task.FromResult<ITriggerBinding?>(binding);
     }
 }
