@@ -64,7 +64,10 @@ public class ConnectorTargetScalerTests
     public async Task MetricsProvider_PreservesLastKnownGoodDepthOnTransientFailure()
     {
         var depthClient = new SequenceDepthClient(12, new HttpRequestException("transient"));
-        var provider = new ConnectorMetricsProvider(depthClient, "Function", "Trigger", NullLogger<ConnectorMetricsProvider>.Instance);
+        var provider = new ConnectorMetricsProvider(
+            depthClient,
+            "Function",
+            NullLogger<ConnectorMetricsProvider>.Instance);
 
         ConnectorTriggerMetrics first = await provider.GetMetricsAsync();
         ConnectorTriggerMetrics second = await provider.GetMetricsAsync();
@@ -79,10 +82,24 @@ public class ConnectorTargetScalerTests
         var provider = new ConnectorMetricsProvider(
             new SequenceDepthClient(new HttpRequestException("initial")),
             "Function",
-            "Trigger",
             NullLogger<ConnectorMetricsProvider>.Instance);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => provider.GetMetricsAsync());
+    }
+
+    [Fact]
+    public async Task MetricsProvider_PropagatesCallerCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var provider = new ConnectorMetricsProvider(
+            new SequenceDepthClient(
+                new OperationCanceledException(cancellation.Token)),
+            "Function",
+            NullLogger<ConnectorMetricsProvider>.Instance);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            provider.GetMetricsAsync(cancellation.Token));
     }
 
     [Fact]
@@ -95,7 +112,10 @@ public class ConnectorTargetScalerTests
 
     private static ConnectorTargetScaler CreateScaler(IConnectorQueueDepthClient depthClient, int attributeConcurrency, ConnectorOptions options)
     {
-        var metrics = new ConnectorMetricsProvider(depthClient, "Function", "Trigger", NullLogger<ConnectorMetricsProvider>.Instance);
+        var metrics = new ConnectorMetricsProvider(
+            depthClient,
+            "Function",
+            NullLogger<ConnectorMetricsProvider>.Instance);
         return new ConnectorTargetScaler("Function", metrics, attributeConcurrency, options, NullLogger<ConnectorTargetScaler>.Instance);
     }
 }

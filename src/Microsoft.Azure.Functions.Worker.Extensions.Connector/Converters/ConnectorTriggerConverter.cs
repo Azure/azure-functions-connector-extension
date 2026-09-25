@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Azure.Functions.Extensions.Connector.Shared;
 using Microsoft.Azure.Functions.Worker.Converters;
 using Microsoft.Azure.Functions.Worker.Core;
 using Microsoft.Azure.Functions.Worker.Extensions.Abstractions;
@@ -17,10 +18,6 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Connector;
 [SupportsDeferredBinding]
 internal sealed class ConnectorTriggerConverter : IInputConverter
 {
-    private const string BindingDataVersion = "1.0";
-    private const string BindingDataSource = "AzureConnectorEvent";
-    private const string BindingDataContentType = "application/json";
-
     private readonly WorkerOptions _workerOptions;
 
     public ConnectorTriggerConverter(IOptions<WorkerOptions> workerOptions)
@@ -237,7 +234,7 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
 
         if (!string.Equals(
             bindingData.Version,
-            BindingDataVersion,
+            ConnectorBindingDataContract.Version,
             StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
@@ -246,7 +243,7 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
 
         if (!string.Equals(
             bindingData.Source,
-            BindingDataSource,
+            ConnectorBindingDataContract.Source,
             StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
@@ -255,7 +252,7 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
 
         if (!string.Equals(
             bindingData.ContentType,
-            BindingDataContentType,
+            ConnectorBindingDataContract.ContentType,
             StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
@@ -265,16 +262,18 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
 
     private sealed class ConnectorEventBindingData
     {
-        [JsonPropertyName("deliveryMode")]
+        [JsonPropertyName(
+            ConnectorBindingDataContract.PropertyNames.DeliveryMode)]
         [JsonRequired]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public ConnectorTriggerDeliveryMode DeliveryMode { get; init; }
 
-        [JsonPropertyName("data")]
+        [JsonPropertyName(ConnectorBindingDataContract.PropertyNames.Data)]
         [JsonRequired]
         public string? Data { get; init; }
 
-        [JsonPropertyName("messageId")]
+        [JsonPropertyName(
+            ConnectorBindingDataContract.PropertyNames.MessageId)]
         public string? MessageId { get; init; }
     }
 }

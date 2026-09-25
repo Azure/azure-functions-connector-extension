@@ -13,9 +13,23 @@ public class ConnectorTriggerAttributeTests
         var attribute = new ConnectorTriggerAttribute();
 
         Assert.False(attribute.IsBatched);
+        Assert.Null(attribute.PollingEndpoint);
         Assert.Equal(
             Cardinality.One,
             ((ISupportCardinality)attribute).Cardinality);
+    }
+
+    [Fact]
+    public void PollingEndpoint_AcceptsAppSettingExpression()
+    {
+        var attribute = new ConnectorTriggerAttribute
+        {
+            PollingEndpoint = "%OnNewEmailEndpoint%",
+        };
+
+        Assert.Equal(
+            "%OnNewEmailEndpoint%",
+            attribute.PollingEndpoint);
     }
 
     [Fact]

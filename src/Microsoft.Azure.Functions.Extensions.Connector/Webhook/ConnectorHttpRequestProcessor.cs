@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
+using Microsoft.Azure.Functions.Extensions.Connector.Shared;
 using Microsoft.Extensions.Logging;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
@@ -15,7 +16,7 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 internal sealed class ConnectorHttpRequestProcessor
 {
     private const long MaxBodySize = 10 * 1024 * 1024; // 10 MB
-    private const string ExpectedContentType = "application/json";
+    private const string ExpectedContentType = ConnectorMediaTypes.Json;
 
     private readonly ILogger<ConnectorHttpRequestProcessor> _logger;
 

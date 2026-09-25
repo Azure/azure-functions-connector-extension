@@ -18,19 +18,13 @@ public class ConnectorPollingListenerTests
         new Uri("https://runtime.example/approximateQueueDepth"));
 
     [Fact]
-    public void Factory_ResolvesTriggerConfigNameFromAppSetting()
+    public void Factory_ResolvesPollingEndpointFromAppSetting()
     {
-        string? resolverTriggerConfigName = null;
-        var endpointResolverFactory = new TestResolverFactory(
-            (_, _, triggerConfigName) =>
-            {
-                resolverTriggerConfigName = triggerConfigName;
-                return new StubConnectorPollingEndpointResolver();
-            });
         var nameResolver = new TestNameResolver(
-            name => name == "ConnectorTriggerConfigName" ? "OnNewEmail" : null);
+            name => name == "ConnectorPollingEndpoint"
+                ? "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email"
+                : null);
         var factory = new ConnectorPollingListenerFactory(
-            endpointResolverFactory,
             new TestPollDeliveryClientFactory(
                 _ => new StubConnectorPollDeliveryClient()),
             new StubConnectorLinkedOutputClient(),
@@ -44,25 +38,22 @@ public class ConnectorPollingListenerTests
                 Mock.Of<ITriggeredFunctionExecutor>()),
             new ConnectorPollingOptions(
                 "ConnectorNamespace",
-                "%ConnectorTriggerConfigName%",
+                "%ConnectorPollingEndpoint%",
                 1,
                 1),
             new ConnectorConnectionOptions(
-                new ResourceIdentifier(
-                    "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/test/providers/Microsoft.Web/connectorGateways/test"),
                 Mock.Of<TokenCredential>()));
 
-        Assert.Equal("OnNewEmail", listener.Options.TriggerConfigName);
-        Assert.Equal("OnNewEmail", resolverTriggerConfigName);
+        Assert.Equal(
+            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email",
+            listener.Options.PollingEndpoint);
     }
 
     [Fact]
-    public void Factory_ThrowsWhenTriggerConfigNameResolvesToEmpty()
+    public void Factory_ThrowsWhenPollingEndpointResolvesToEmpty()
     {
         var nameResolver = new TestNameResolver(_ => string.Empty);
         var factory = new ConnectorPollingListenerFactory(
-            new TestResolverFactory(
-                (_, _, _) => new StubConnectorPollingEndpointResolver()),
             new TestPollDeliveryClientFactory(
                 _ => new StubConnectorPollDeliveryClient()),
             new StubConnectorLinkedOutputClient(),
@@ -77,41 +68,28 @@ public class ConnectorPollingListenerTests
                     Mock.Of<ITriggeredFunctionExecutor>()),
                 new ConnectorPollingOptions(
                     "ConnectorNamespace",
-                    "%ConnectorTriggerConfigName%",
+                    "%ConnectorPollingEndpoint%",
                     1,
                     1),
                 new ConnectorConnectionOptions(
-                    new ResourceIdentifier(
-                        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/test/providers/Microsoft.Web/connectorGateways/test"),
                     Mock.Of<TokenCredential>())));
 
         Assert.Contains("resolved to an empty value", exception.Message);
     }
 
     [Fact]
-    public async Task StopAsync_DuringEndpointResolutionPreventsMessagePumpStartup()
+    public async Task StartAsync_ThrowsWhenCancellationIsRequested()
     {
-        var resolutionStarted = NewCompletionSource();
-        var endpointResolver = new StubConnectorPollingEndpointResolver
-        {
-            ResolveAsyncHandler = async cancellationToken =>
-            {
-                resolutionStarted.TrySetResult();
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-                throw new InvalidOperationException("Unreachable.");
-            },
-        };
-        var deliveryClient = new StubConnectorPollDeliveryClient();
         using ConnectorPollingListener listener = CreateListener(
             Mock.Of<ITriggeredFunctionExecutor>(),
-            endpointResolver,
-            deliveryClient,
+            Endpoints,
+            new StubConnectorPollDeliveryClient(),
             new StubConnectorLinkedOutputClient());
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
 
-        Task startTask = listener.StartAsync(CancellationToken.None);
-        await resolutionStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await listener.StopAsync(CancellationToken.None);
-        await startTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            listener.StartAsync(cancellation.Token));
     }
 
     [Fact]
@@ -144,7 +122,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             maxBatchSize: 2,
@@ -185,7 +163,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             Mock.Of<ITriggeredFunctionExecutor>(),
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             maxBatchSize: ConnectorPollingProtocolLimits.MaximumBatchSize,
@@ -202,6 +180,51 @@ public class ConnectorPollingListenerTests
         await listener.StopAsync(CancellationToken.None);
 
         Assert.Equal(1, receiveCount);
+    }
+
+    [Fact]
+    public async Task Listener_BacksOffRepeatedReceiveFailures()
+    {
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+                throw new ConnectorPollDeliveryException("Receive failed"),
+        };
+        var delays = new List<TimeSpan>();
+        var expectedDelaysObserved = NewCompletionSource();
+
+        using ConnectorPollingListener listener = CreateListener(
+            Mock.Of<ITriggeredFunctionExecutor>(),
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient(),
+            delayAsync: async (delay, _) =>
+            {
+                lock (delays)
+                {
+                    delays.Add(delay);
+                    if (delays.Count == 4)
+                    {
+                        expectedDelaysObserved.TrySetResult();
+                    }
+                }
+
+                await Task.Yield();
+            });
+
+        await listener.StartAsync(CancellationToken.None);
+        await expectedDelaysObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        listener.Cancel();
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromSeconds(4),
+                TimeSpan.FromSeconds(8),
+            ],
+            delays.Take(4));
     }
 
     [Fact]
@@ -282,7 +305,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             maxBatchSize: 2,
@@ -358,7 +381,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             concurrency: 2);
@@ -408,7 +431,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             maxBatchSize: 2,
@@ -463,7 +486,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             linkedOutputClient);
 
@@ -553,7 +576,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 1,
@@ -626,13 +649,13 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener firstListener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             firstDeliveryClient,
             firstLinkedOutputClient,
             linkedOutputInvocationLimiter: limiter);
         using ConnectorPollingListener secondListener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             secondDeliveryClient,
             secondLinkedOutputClient,
             linkedOutputInvocationLimiter: limiter);
@@ -691,7 +714,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 2,
@@ -772,7 +795,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 4,
@@ -816,7 +839,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             new StubConnectorLinkedOutputClient());
 
@@ -845,7 +868,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             Mock.Of<ITriggeredFunctionExecutor>(),
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             delayAsync: (_, cancellationToken) =>
@@ -889,7 +912,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             linkedOutputClient);
 
@@ -947,7 +970,7 @@ public class ConnectorPollingListenerTests
 
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
-            CreateEndpointResolver(),
+            Endpoints,
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 2,
@@ -964,7 +987,7 @@ public class ConnectorPollingListenerTests
 
     private static ConnectorPollingListener CreateListener(
         ITriggeredFunctionExecutor executor,
-        IConnectorPollingEndpointResolver endpointResolver,
+        ConnectorPollingEndpoints endpoints,
         IConnectorPollDeliveryClient deliveryClient,
         IConnectorLinkedOutputClient linkedOutputClient,
         int maxBatchSize = 1,
@@ -983,7 +1006,7 @@ public class ConnectorPollingListenerTests
         return new ConnectorPollingListener(
             registration,
             options,
-            endpointResolver,
+            endpoints,
             deliveryClient,
             linkedOutputClient,
             linkedOutputInvocationLimiter
@@ -991,12 +1014,6 @@ public class ConnectorPollingListenerTests
             NullLogger<ConnectorPollingListener>.Instance,
             delayAsync ?? WaitUntilCancelledAsync);
     }
-
-    private static StubConnectorPollingEndpointResolver CreateEndpointResolver() =>
-        new()
-        {
-            ResolveAsyncHandler = _ => Task.FromResult(Endpoints),
-        };
 
     private static StubConnectorPollDeliveryClient CreateSingleReceiveClient(
         ConnectorPollMessage message) =>
@@ -1049,4 +1066,5 @@ public class ConnectorPollingListenerTests
         }
         while (Interlocked.CompareExchange(ref maximum, value, current) != current);
     }
+
 }

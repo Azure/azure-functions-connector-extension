@@ -233,6 +233,33 @@ public class ConnectorPollDeliveryClientTests
     }
 
     [Fact]
+    public async Task ReceiveAsync_RejectsOversizedResponse()
+    {
+        var handler = new SequenceHttpMessageHandler(_ =>
+        {
+            HttpResponseMessage response = JsonResponse(
+                HttpStatusCode.OK,
+                """{"messages":[]}""");
+            response.Content.Headers.ContentLength =
+                ConnectorPollingProtocolLimits
+                    .MaximumOutputsPayloadSizeInBytes + 1L;
+            return response;
+        });
+        ConnectorPollDeliveryClient client = CreateClient(
+            new TestTokenCredential(),
+            handler);
+
+        ConnectorPollDeliveryException exception =
+            await Assert.ThrowsAsync<ConnectorPollDeliveryException>(() =>
+                client.ReceiveAsync(
+                    Endpoints(),
+                    1,
+                    CancellationToken.None));
+
+        Assert.Contains("byte limit", exception.Message);
+    }
+
+    [Fact]
     public async Task AcknowledgeAsync_SerializesLocksAndParsesMixedStatuses()
     {
         string? requestBody = null;

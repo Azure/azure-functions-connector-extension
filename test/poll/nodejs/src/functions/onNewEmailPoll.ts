@@ -6,7 +6,7 @@ import { app, InvocationContext } from '@azure/functions';
 app.connectorTrigger('OnNewEmailPoll', {
     deliveryMode: 'Poll',
     connection: 'ConnectorNamespace',
-    triggerConfigName: '%ConnectorTriggerConfigName%',
+    pollingEndpoint: '%OnNewEmailEndpoint%',
     cardinality: 'many',
     maxBatchSize: 4,
     concurrency: 4,

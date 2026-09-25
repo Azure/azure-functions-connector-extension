@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Net.Http.Headers;
 using Azure.Core;
+using Microsoft.Azure.Functions.Extensions.Connector.Shared;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
@@ -76,14 +77,21 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
         }
 
         Uri endpoint = AddMaxEvents(endpoints.ReceiveUri, maxEvents);
+        HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
+        using CancellationTokenSource timeoutSource =
+            ConnectorPollingTimeout.CreateCancellationTokenSource(
+                client,
+                cancellationToken);
+        CancellationToken requestCancellationToken = timeoutSource.Token;
         HttpResponseMessage response;
         try
         {
             response = await SendAuthenticatedAsync(
+                client,
                 HttpMethod.Get,
                 endpoint,
                 content: null,
-                cancellationToken).ConfigureAwait(false);
+                requestCancellationToken).ConfigureAwait(false);
         }
         catch (HttpRequestException)
         {
@@ -104,7 +112,8 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
                 ParseMoreMessagesAvailable(response.Headers);
             BinaryData content = await ReadContentAsync(
                 response,
-                cancellationToken).ConfigureAwait(false);
+                "Receive",
+                requestCancellationToken).ConfigureAwait(false);
             return ConnectorPollingProtocol.DeserializeReceive(
                 content,
                 moreMessagesAvailable);
@@ -123,19 +132,26 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
         using var content = new ByteArrayContent(requestContent.ToArray());
         content.Headers.ContentType =
             new MediaTypeHeaderValue(
-                ConnectorPollingHttpConstants.JsonMediaType)
+                ConnectorMediaTypes.Json)
             {
                 CharSet = ConnectorPollingHttpConstants.Utf8CharacterSet,
             };
 
+        HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
+        using CancellationTokenSource timeoutSource =
+            ConnectorPollingTimeout.CreateCancellationTokenSource(
+                client,
+                cancellationToken);
+        CancellationToken requestCancellationToken = timeoutSource.Token;
         HttpResponseMessage response;
         try
         {
             response = await SendAuthenticatedAsync(
+                client,
                 HttpMethod.Post,
                 endpoints.AcknowledgeUri,
                 content,
-                cancellationToken).ConfigureAwait(false);
+                requestCancellationToken).ConfigureAwait(false);
         }
         catch (HttpRequestException)
         {
@@ -154,7 +170,8 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
 
             BinaryData responseContent = await ReadContentAsync(
                 response,
-                cancellationToken).ConfigureAwait(false);
+                "Acknowledge",
+                requestCancellationToken).ConfigureAwait(false);
             return ConnectorPollingProtocol.DeserializeAcknowledge(
                 responseContent,
                 messages);
@@ -162,6 +179,7 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
     }
 
     private async Task<HttpResponseMessage> SendAuthenticatedAsync(
+        HttpClient client,
         HttpMethod method,
         Uri endpoint,
         HttpContent? content,
@@ -175,12 +193,13 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
             Content = content,
         };
         request.Headers.Authorization =
-            new AuthenticationHeaderValue("Bearer", token.Token);
-        return await _httpClientFactory.CreateClient(HttpClientName)
-            .SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken)
+            new AuthenticationHeaderValue(
+                ConnectorPollingHttpConstants.BearerAuthenticationScheme,
+                token.Token);
+        return await client.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -237,12 +256,15 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
 
     private static async Task<BinaryData> ReadContentAsync(
         HttpResponseMessage response,
+        string operation,
         CancellationToken cancellationToken)
     {
-        await using Stream stream = await response.Content
-            .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        return await BinaryData.FromStreamAsync(stream, cancellationToken)
-            .ConfigureAwait(false);
+        return await ConnectorPollingContentReader.ReadAsync(
+            response.Content,
+            ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes,
+            reason => new ConnectorPollDeliveryException(
+                $"Connector {operation} {reason}."),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static void EnsureSuccess(

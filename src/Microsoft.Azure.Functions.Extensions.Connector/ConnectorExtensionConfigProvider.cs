@@ -10,6 +10,7 @@ using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Description;
 using Microsoft.Azure.WebJobs.Host.Config;
 using Microsoft.Azure.WebJobs.Host.Executors;
+using Microsoft.Azure.Functions.Extensions.Connector.Shared;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -22,10 +23,6 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvider,
     IAsyncConverter<HttpRequestMessage, HttpResponseMessage>
 {
-    internal const string BindingDataVersion = "1.0";
-    internal const string BindingDataSource = "AzureConnectorEvent";
-    internal const string BindingDataContentType = "application/json";
-
     private static readonly Regex FunctionNamePattern = new(@"^[a-zA-Z0-9_-]{1,128}$", RegexOptions.Compiled);
 
     private readonly ILogger<ConnectorExtensionConfigProvider> _logger;
@@ -135,7 +132,7 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         _logger.LogError(result.Exception, "Function {FunctionName} failed", functionName);
         return new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
-            Content = new StringContent(result.Exception?.Message ?? "Function execution failed")
+            Content = new StringContent("Function execution failed")
         };
     }
 
@@ -148,24 +145,34 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         using (var writer = new Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
-            writer.WriteString("deliveryMode", input.DeliveryMode.ToString());
-            writer.WriteString("data", input.Outputs.ToString());
+            writer.WriteString(
+                ConnectorBindingDataContract.PropertyNames.DeliveryMode,
+                input.DeliveryMode.ToString());
+            writer.WriteString(
+                ConnectorBindingDataContract.PropertyNames.Data,
+                input.Outputs.ToString());
             if (input.MessageId is null)
             {
-                writer.WriteNull("messageId");
+                writer.WriteNull(
+                    ConnectorBindingDataContract.PropertyNames.MessageId);
             }
             else
             {
-                writer.WriteString("messageId", input.MessageId);
+                writer.WriteString(
+                    ConnectorBindingDataContract.PropertyNames.MessageId,
+                    input.MessageId);
             }
 
             writer.WriteEndObject();
         }
 
         return new ParameterBindingData(
-            BindingDataVersion,
-            BindingDataSource,
-            BinaryData.FromBytes(stream.ToArray()),
-            BindingDataContentType);
+            ConnectorBindingDataContract.Version,
+            ConnectorBindingDataContract.Source,
+            new BinaryData(
+                stream.GetBuffer().AsMemory(
+                    0,
+                    checked((int)stream.Length))),
+            ConnectorBindingDataContract.ContentType);
     }
 }

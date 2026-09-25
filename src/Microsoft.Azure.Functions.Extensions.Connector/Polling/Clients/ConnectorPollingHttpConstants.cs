@@ -13,7 +13,7 @@ internal static class ConnectorPollingHttpConstants
     internal const string MaxEventsQueryParameter = "maxEvents";
     internal const string MoreMessagesAvailableHeader =
         "x-ms-more-messages-available";
-    internal const string JsonMediaType = "application/json";
+    internal const string BearerAuthenticationScheme = "Bearer";
     internal const string Utf8CharacterSet = "utf-8";
     internal const int MaximumSafeOperationAttempts = 3;
 

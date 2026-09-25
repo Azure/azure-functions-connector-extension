@@ -276,8 +276,6 @@ public class ConnectorTriggerBindingProviderTests
             DefaultConcurrency = 6,
         };
         var connectionOptions = new ConnectorConnectionOptions(
-            new ResourceIdentifier(
-                "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns"),
             Mock.Of<TokenCredential>());
         var provider = new ConnectorTriggerBindingProvider(
             _configProvider,
@@ -298,7 +296,9 @@ public class ConnectorTriggerBindingProviderTests
         ConnectorPollingListener pollingListener =
             Assert.IsType<ConnectorPollingListener>(listener);
         Assert.Equal("ConnectorNamespace", pollingListener.Options.Connection);
-        Assert.Equal("OnNewEmail", pollingListener.Options.TriggerConfigName);
+        Assert.Equal(
+            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email",
+            pollingListener.Options.PollingEndpoint);
         Assert.Equal(2, pollingListener.Options.MaxBatchSize);
         Assert.Equal(6, pollingListener.Options.Concurrency);
         Assert.True(pollingListener.Options.IsBatched);
@@ -383,7 +383,8 @@ public class ConnectorTriggerBindingProviderTests
             [ConnectorTrigger(
                 DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
                 Connection = "ConnectorNamespace",
-                TriggerConfigName = "OnNewEmail")]
+                PollingEndpoint =
+                    "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email")]
             string[] body)
         {
         }

@@ -15,22 +15,12 @@ internal sealed class StubConnectorPollingListenerFactory :
         new(
             registration,
             options,
-            new StubConnectorPollingEndpointResolver(),
+            ConnectorPollingEndpoints.Create(
+                "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/test"),
             new StubConnectorPollDeliveryClient(),
             new StubConnectorLinkedOutputClient(),
             new ConnectorLinkedOutputInvocationLimiter(),
             NullLogger<ConnectorPollingListener>.Instance);
-}
-
-internal sealed class StubConnectorPollingEndpointResolver :
-    IConnectorPollingEndpointResolver
-{
-    internal Func<CancellationToken, Task<ConnectorPollingEndpoints>> ResolveAsyncHandler { get; set; } =
-        _ => throw new NotSupportedException();
-
-    public Task<ConnectorPollingEndpoints> ResolveAsync(
-        CancellationToken cancellationToken = default) =>
-        ResolveAsyncHandler(cancellationToken);
 }
 
 internal sealed class StubConnectorPollDeliveryClient :

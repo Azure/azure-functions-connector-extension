@@ -13,6 +13,11 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Core" Version="2.52.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="$(SrcRoot)Shared\ConnectorContractConstants.cs"
+             Link="Shared\ConnectorContractConstants.cs" />
+  </ItemGroup>
+
   <!-- Link to the WebJobs (host-side) extension for extension discovery -->
   <ItemGroup>
     <WebJobsReference Include="$(SrcRoot)Microsoft.Azure.Functions.Extensions.Connector\Extensions.Connector.csproj" />

@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using Microsoft.Azure.Functions.Extensions.Connector.Shared;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
@@ -377,7 +378,7 @@ public class ConnectorLinkedOutputClientTests
         {
             _byteCount = byteCount;
             Headers.ContentType = new MediaTypeHeaderValue(
-                ConnectorPollingHttpConstants.JsonMediaType)
+                ConnectorMediaTypes.Json)
             {
                 CharSet = ConnectorPollingHttpConstants.Utf8CharacterSet,
             };

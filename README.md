@@ -137,6 +137,35 @@ The underlying Connector SDKs provide typed models:
 
 ### Poll delivery
 
+Poll functions configure a credential connection separately from their
+trigger-specific runtime endpoint:
+
+```csharp
+[ConnectorTrigger(
+    DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
+    Connection = "ConnectorNamespace",
+    PollingEndpoint = "%OnNewEmailEndpoint%",
+    IsBatched = true,
+    MaxBatchSize = 4,
+    Concurrency = 4)]
+```
+
+`OnNewEmailEndpoint` must contain the complete HTTPS base obtained from the
+Trigger Config's `pollingEndpoints.receiveUri` after removing only its final
+`/receive` segment. The resolved value must use the default HTTPS port, a
+subdomain of `logic.azure.com`, and the exact path
+`/api/connectorGateways/<connector-namespace-id>/triggerconfigs/<trigger-config-name>`.
+It must not already include `/receive`, `/acknowledge`,
+`/approximateQueueDepth`, or another trailing segment. The namespace and
+trigger identifiers and any query are opaque; the extension appends only the
+three fixed runtime operations.
+
+`Connection` provides only the runtime token credential. Azure deployments
+normally configure `ConnectorNamespace__credential=managedidentity` and may
+select a user-assigned identity with `clientId` or
+`managedIdentityResourceId`. No Connector Namespace resource identifier or
+control-plane endpoint lookup is required.
+
 Poll triggers use one event per invocation by default. Enable batched
 invocations explicitly, then set `MaxBatchSize` to the maximum number of
 events supplied to one invocation:

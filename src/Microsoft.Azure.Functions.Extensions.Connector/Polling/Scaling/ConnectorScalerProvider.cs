@@ -24,11 +24,17 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
         string functionName = triggerMetadata.FunctionName;
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
 
-        string connectionName = GetRequiredMetadata(triggerMetadata, "connection");
-        string triggerConfigName = ResolveTriggerConfigName(
-            GetRequiredMetadata(triggerMetadata, "triggerConfigName"),
+        string connectionName = GetRequiredMetadata(
+            triggerMetadata,
+            ConnectorTriggerMetadataNames.Connection);
+        string pollingEndpoint = ResolvePollingEndpoint(
+            GetRequiredMetadata(
+                triggerMetadata,
+                ConnectorTriggerMetadataNames.PollingEndpoint),
             serviceProvider.GetService<INameResolver>());
-        int attributeConcurrency = GetNonNegativeIntMetadata(triggerMetadata, "concurrency");
+        int attributeConcurrency = GetNonNegativeIntMetadata(
+            triggerMetadata,
+            ConnectorTriggerMetadataNames.Concurrency);
 
         AzureComponentFactory? injectedComponentFactory = null;
         if (triggerMetadata.Properties?.TryGetValue(nameof(AzureComponentFactory), out object? value) == true)
@@ -37,34 +43,24 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
                 ?? throw new InvalidOperationException($"TriggerMetadata.Properties['{nameof(AzureComponentFactory)}'] must be an AzureComponentFactory.");
         }
 
-        ConnectorScaleConnectionOptions scaleConnection = serviceProvider
-            .GetRequiredService<IConnectorScaleConnectionOptionsProvider>()
+        ConnectorConnectionOptions connection = serviceProvider
+            .GetRequiredService<IConnectorConnectionOptionsProvider>()
             .Get(connectionName, injectedComponentFactory);
-        TokenCredential armCredential =
-            GetInjectedTokenCredential(
-                triggerMetadata,
-                ConnectorScaleCredentialProperties.ArmTokenCredential) ??
-            scaleConnection.Credential;
         TokenCredential apiHubCredential =
             GetInjectedTokenCredential(
                 triggerMetadata,
                 ConnectorScaleCredentialProperties.ApiHubTokenCredential) ??
-            scaleConnection.Credential;
-        var connection = new ConnectorConnectionOptions(
-            scaleConnection.ResourceId,
-            scaleConnection.Credential);
-        IConnectorPollingEndpointResolver endpointResolver = serviceProvider
-            .GetRequiredService<IConnectorPollingEndpointResolverFactory>()
-            .Create(connection, armCredential, triggerConfigName);
+            connection.Credential;
+        ConnectorPollingEndpoints endpoints =
+            ConnectorPollingEndpoints.Create(pollingEndpoint);
         IConnectorQueueDepthClient depthClient = serviceProvider
             .GetRequiredService<IConnectorQueueDepthClientFactory>()
-            .Create(endpointResolver, apiHubCredential, functionName, triggerConfigName);
+            .Create(endpoints, apiHubCredential, functionName);
 
         ILoggerFactory loggerFactory = serviceProvider.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance;
         var metricsProvider = new ConnectorMetricsProvider(
             depthClient,
             functionName,
-            triggerConfigName,
             loggerFactory.CreateLogger<ConnectorMetricsProvider>());
         ConnectorOptions options = serviceProvider.GetService<IOptions<ConnectorOptions>>()?.Value ?? new ConnectorOptions();
         _targetScaler = new ConnectorTargetScaler(
@@ -115,12 +111,17 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
         return result;
     }
 
-    private static string ResolveTriggerConfigName(string triggerConfigName, INameResolver? nameResolver)
+    private static string ResolvePollingEndpoint(
+        string pollingEndpoint,
+        INameResolver? nameResolver)
     {
-        string? resolved = nameResolver?.ResolveWholeString(triggerConfigName) ?? triggerConfigName;
+        string? resolved =
+            nameResolver?.ResolveWholeString(pollingEndpoint) ??
+            pollingEndpoint;
         if (string.IsNullOrWhiteSpace(resolved))
         {
-            throw new InvalidOperationException("Connector Poll TriggerConfigName resolved to an empty value.");
+            throw new InvalidOperationException(
+                "Connector Poll PollingEndpoint resolved to an empty value.");
         }
 
         return resolved;

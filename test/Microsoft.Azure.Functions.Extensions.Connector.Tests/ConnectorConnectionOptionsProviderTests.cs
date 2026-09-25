@@ -10,9 +10,6 @@ namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
 public class ConnectorConnectionOptionsProviderTests
 {
-    private const string ResourceId =
-        "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns";
-
     [Fact]
     public void Constructor_Throws_WhenConfigurationIsNull()
     {
@@ -37,7 +34,6 @@ public class ConnectorConnectionOptionsProviderTests
         IConfiguration configuration = BuildConfiguration(
             new Dictionary<string, string?>
             {
-                ["AzureWebJobsConnectorNamespace:resourceId"] = ResourceId,
                 ["AzureWebJobsConnectorNamespace:credential"] = "managedidentity",
                 ["AzureWebJobsConnectorNamespace:clientId"] = "client-id",
             });
@@ -54,7 +50,6 @@ public class ConnectorConnectionOptionsProviderTests
 
         ConnectorConnectionOptions result = provider.Get("ConnectorNamespace");
 
-        Assert.Equal(ResourceId, result.ResourceId.ToString());
         Assert.Same(credential, result.Credential);
         Assert.NotNull(receivedConfiguration);
         Assert.Equal(
@@ -65,13 +60,10 @@ public class ConnectorConnectionOptionsProviderTests
     }
 
     [Fact]
-    public void Get_ResolvesUnprefixedConnection()
+    public void Get_ResolvesUnprefixedConnectionCredential()
     {
         IConfiguration configuration = BuildConfiguration(
-            new Dictionary<string, string?>
-            {
-                ["ConnectorNamespace:resourceId"] = ResourceId,
-            });
+            new Dictionary<string, string?>());
         var componentFactory = new Mock<AzureComponentFactory>();
         componentFactory
             .Setup(factory => factory.CreateTokenCredential(It.IsAny<IConfiguration>()))
@@ -80,9 +72,10 @@ public class ConnectorConnectionOptionsProviderTests
             configuration,
             componentFactory.Object);
 
-        ConnectorConnectionOptions result = provider.Get("ConnectorNamespace");
+        ConnectorConnectionOptions result =
+            provider.Get("ConnectorNamespace");
 
-        Assert.Equal(ResourceId, result.ResourceId.ToString());
+        Assert.NotNull(result.Credential);
     }
 
     [Theory]
@@ -99,56 +92,6 @@ public class ConnectorConnectionOptionsProviderTests
             provider.Get(connectionName!));
 
         Assert.Contains("Connection", exception.Message);
-    }
-
-    [Fact]
-    public void Get_Throws_WhenResourceIdIsMissing()
-    {
-        IConfiguration configuration = BuildConfiguration(
-            new Dictionary<string, string?>
-            {
-                ["ConnectorNamespace:credential"] = "managedidentity",
-            });
-        var provider = new ConnectorConnectionOptionsProvider(
-            configuration,
-            Mock.Of<AzureComponentFactory>());
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            provider.Get("ConnectorNamespace"));
-
-        Assert.Contains("resourceId", exception.Message);
-    }
-
-    [Theory]
-    [InlineData("https://management.azure.com/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns")]
-    [InlineData("/subscriptions/not-a-guid/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns")]
-    [InlineData("/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns?api-version=1")]
-    [InlineData("/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns#fragment")]
-    [InlineData(" /subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns")]
-    [InlineData("/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns/")]
-    [InlineData("/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups//rg/providers/Microsoft.Web/connectorGateways/ns")]
-    [InlineData("/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/account")]
-    [InlineData("/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns/triggerConfigs/config")]
-    [InlineData("/subscriptions/11111111-1111-1111-1111-111111111111/providers/Microsoft.Web/connectorGateways/ns")]
-    public void Get_Throws_WhenResourceIdIsInvalid(string resourceId)
-    {
-        IConfiguration configuration = BuildConfiguration(
-            new Dictionary<string, string?>
-            {
-                ["ConnectorNamespace:resourceId"] = resourceId,
-            });
-        var componentFactory = new Mock<AzureComponentFactory>();
-        var provider = new ConnectorConnectionOptionsProvider(
-            configuration,
-            componentFactory.Object);
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            provider.Get("ConnectorNamespace"));
-
-        Assert.Contains("Microsoft.Web/connectorGateways", exception.Message);
-        componentFactory.Verify(
-            factory => factory.CreateTokenCredential(It.IsAny<IConfiguration>()),
-            Times.Never);
     }
 
     private static IConfiguration BuildConfiguration(

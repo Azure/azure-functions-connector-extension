@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-using System.Buffers;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.Azure.Functions.Extensions.Connector.Shared;
 using Microsoft.Extensions.Logging;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
@@ -22,8 +22,6 @@ internal sealed class ConnectorLinkedOutputClient :
 {
     internal const string HttpClientName =
         ConnectorPollingHttpConstants.LinkedOutputClientName;
-    private const int BufferSize = 81920;
-
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ConnectorLinkedOutputClient> _logger;
     private readonly Func<int, CancellationToken, Task> _retryDelayAsync =
@@ -69,12 +67,19 @@ internal sealed class ConnectorLinkedOutputClient :
                 using var request = new HttpRequestMessage(
                     HttpMethod.Get,
                     outputsLink.Uri);
+                HttpClient client =
+                    _httpClientFactory.CreateClient(HttpClientName);
+                using CancellationTokenSource timeoutSource =
+                    ConnectorPollingTimeout.CreateCancellationTokenSource(
+                        client,
+                        cancellationToken);
+                CancellationToken requestCancellationToken =
+                    timeoutSource.Token;
                 using HttpResponseMessage response =
-                    await _httpClientFactory.CreateClient(HttpClientName)
-                    .SendAsync(
+                    await client.SendAsync(
                         request,
                         HttpCompletionOption.ResponseHeadersRead,
-                        cancellationToken)
+                        requestCancellationToken)
                     .ConfigureAwait(false);
 
                 if (!response.IsSuccessStatusCode)
@@ -97,11 +102,12 @@ internal sealed class ConnectorLinkedOutputClient :
                     response,
                     outputsLink.Uri,
                     maximumPayloadSizeInBytes);
-                BinaryData content = await ReadBoundedContentAsync(
-                    response,
-                    outputsLink.Uri,
+                BinaryData content =
+                    await ConnectorPollingContentReader.ReadAsync(
+                    response.Content,
                     maximumPayloadSizeInBytes,
-                    cancellationToken).ConfigureAwait(false);
+                    reason => Failure(outputsLink.Uri, reason),
+                    requestCancellationToken).ConfigureAwait(false);
                 ValidateJsonObject(content, outputsLink.Uri);
                 return content;
             }
@@ -155,7 +161,7 @@ internal sealed class ConnectorLinkedOutputClient :
         if (contentType is null ||
             !string.Equals(
                 contentType.MediaType,
-                ConnectorPollingHttpConstants.JsonMediaType,
+        ConnectorMediaTypes.Json,
                 StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(
                 contentType.CharSet,
@@ -180,55 +186,6 @@ internal sealed class ConnectorLinkedOutputClient :
             throw Failure(
                 endpoint,
                 $"response exceeded the {maximumPayloadSizeInBytes}-byte limit");
-        }
-    }
-
-    private static async Task<BinaryData> ReadBoundedContentAsync(
-        HttpResponseMessage response,
-        Uri endpoint,
-        int maximumPayloadSizeInBytes,
-        CancellationToken cancellationToken)
-    {
-        await using Stream input = await response.Content
-            .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var output = new MemoryStream(
-            Math.Min(
-                maximumPayloadSizeInBytes,
-                response.Content.Headers.ContentLength is long contentLength
-                    ? checked((int)contentLength)
-                    : BufferSize));
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
-        try
-        {
-            int totalBytesRead = 0;
-            while (true)
-            {
-                int bytesRead = await input.ReadAsync(
-                    buffer.AsMemory(0, BufferSize),
-                    cancellationToken).ConfigureAwait(false);
-                if (bytesRead == 0)
-                {
-                    break;
-                }
-
-                if (bytesRead > maximumPayloadSizeInBytes - totalBytesRead)
-                {
-                    throw Failure(
-                        endpoint,
-                        $"response exceeded the {maximumPayloadSizeInBytes}-byte limit");
-                }
-
-                await output.WriteAsync(
-                    buffer.AsMemory(0, bytesRead),
-                    cancellationToken).ConfigureAwait(false);
-                totalBytesRead += bytesRead;
-            }
-
-            return new BinaryData(output.ToArray());
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 

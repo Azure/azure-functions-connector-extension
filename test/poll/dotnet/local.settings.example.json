@@ -3,7 +3,6 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "ConnectorNamespace__resourceId": "<connector-namespace-resource-id>",
-    "ConnectorTriggerConfigName": "<poll-trigger-config-name>"
+    "OnNewEmailEndpoint": "https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<connector-namespace-id>/triggerconfigs/<poll-trigger-config-name>"
   }
 }

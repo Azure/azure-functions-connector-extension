@@ -91,9 +91,6 @@ public class ConnectorOptionsBindingTests
         Assert.NotNull(host.Services.GetRequiredService<IHttpClientFactory>());
         Assert.NotNull(
             host.Services.GetRequiredService<IConnectorConnectionOptionsProvider>());
-        Assert.NotNull(
-            host.Services.GetRequiredService<IConnectorScaleConnectionOptionsProvider>());
-        Assert.NotNull(host.Services.GetRequiredService<IConnectorPollingEndpointResolverFactory>());
         Assert.NotNull(host.Services.GetRequiredService<IConnectorQueueDepthClientFactory>());
         Assert.NotNull(host.Services.GetRequiredService<IConnectorPollDeliveryClientFactory>());
         Assert.NotNull(host.Services.GetRequiredService<IConnectorLinkedOutputClient>());
@@ -166,6 +163,58 @@ public class ConnectorOptionsBindingTests
                 message.Contains("secret-value", StringComparison.Ordinal) ||
                 message.Contains(
                     "/private/output",
+                    StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AddConnector_DoesNotLogPollingEndpoint()
+    {
+        const string secretEndpoint =
+            "https://runtime.test/private/triggerconfigs/name/receive?signature=secret-value";
+        var loggerProvider = new CapturingLoggerProvider();
+        var handler = new SequenceHttpMessageHandler(_ =>
+            new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"messages":[]}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json"),
+            });
+        using IHost host = BuildHost(
+            new Dictionary<string, string?>(),
+            configureServices: services =>
+                services.AddHttpClient(
+                    ConnectorPollDeliveryClient.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => handler),
+            configureLogging: logging =>
+            {
+                logging.ClearProviders();
+                logging.SetMinimumLevel(LogLevel.Trace);
+                logging.AddProvider(loggerProvider);
+            });
+        IConnectorPollDeliveryClient client = host.Services
+            .GetRequiredService<IConnectorPollDeliveryClientFactory>()
+            .Create(new TestTokenCredential());
+        var endpoints = new ConnectorPollingEndpoints(
+            new Uri(secretEndpoint),
+            new Uri(
+                "https://runtime.test/private/triggerconfigs/name/acknowledge?signature=secret-value"),
+            new Uri(
+                "https://runtime.test/private/triggerconfigs/name/approximateQueueDepth?signature=secret-value"));
+
+        await client.ReceiveAsync(
+            endpoints,
+            maxEvents: 1,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            loggerProvider.Messages,
+            message =>
+                message.Contains(
+                    "secret-value",
+                    StringComparison.Ordinal) ||
+                message.Contains(
+                    "/private/",
                     StringComparison.Ordinal));
     }
 

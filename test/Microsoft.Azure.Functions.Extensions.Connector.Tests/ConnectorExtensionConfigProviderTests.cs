@@ -305,7 +305,8 @@ public class ConnectorExtensionConfigProviderTests
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         var content = await response.Content.ReadAsStringAsync();
-        Assert.Contains("Function failed", content);
+        Assert.Equal("Function execution failed", content);
+        Assert.DoesNotContain("Function failed", content);
     }
 
     [Fact]

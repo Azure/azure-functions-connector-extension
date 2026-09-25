@@ -48,14 +48,22 @@ internal sealed class TestAzureComponentFactory(TokenCredential credential) : Az
         throw new NotSupportedException();
 }
 
-internal sealed class TestHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
+internal sealed class TestHttpClientFactory(
+    HttpMessageHandler handler,
+    TimeSpan? timeout = null) : IHttpClientFactory
 {
     public List<string> Names { get; } = [];
 
     public HttpClient CreateClient(string name)
     {
         Names.Add(name);
-        return new HttpClient(handler, disposeHandler: false);
+        var client = new HttpClient(handler, disposeHandler: false);
+        if (timeout is TimeSpan configuredTimeout)
+        {
+            client.Timeout = configuredTimeout;
+        }
+
+        return client;
     }
 }
 
@@ -92,17 +100,6 @@ internal sealed class AsyncSequenceHttpMessageHandler(
     }
 }
 
-internal sealed class StubEndpointResolver(ConnectorPollingEndpoints initial) : IConnectorPollingEndpointResolver
-{
-    public int ResolveCalls { get; private set; }
-
-    public Task<ConnectorPollingEndpoints> ResolveAsync(CancellationToken cancellationToken = default)
-    {
-        ResolveCalls++;
-        return Task.FromResult(initial);
-    }
-}
-
 internal sealed class SequenceDepthClient(params object[] results) : IConnectorQueueDepthClient
 {
     private int _index;
@@ -118,25 +115,14 @@ internal sealed class SequenceDepthClient(params object[] results) : IConnectorQ
     }
 }
 
-internal sealed class TestScaleConnectionOptionsProvider(
-    Func<string, AzureComponentFactory?, ConnectorScaleConnectionOptions> get) :
-    IConnectorScaleConnectionOptionsProvider
+internal sealed class TestConnectionOptionsProvider(
+    Func<string, AzureComponentFactory?, ConnectorConnectionOptions> get) :
+    IConnectorConnectionOptionsProvider
 {
-    public ConnectorScaleConnectionOptions Get(
+    public ConnectorConnectionOptions Get(
         string connectionName,
         AzureComponentFactory? componentFactory = null) =>
         get(connectionName, componentFactory);
-}
-
-internal sealed class TestResolverFactory(
-    Func<ConnectorConnectionOptions, TokenCredential, string, IConnectorPollingEndpointResolver> create) :
-    IConnectorPollingEndpointResolverFactory
-{
-    public IConnectorPollingEndpointResolver Create(
-        ConnectorConnectionOptions connection,
-        TokenCredential credential,
-        string triggerConfigName) =>
-        create(connection, credential, triggerConfigName);
 }
 
 internal sealed class TestPollDeliveryClientFactory(
@@ -152,7 +138,17 @@ internal sealed class TestNameResolver(Func<string, string?> resolve) : INameRes
     public string? Resolve(string name) => resolve(name);
 }
 
-internal sealed class TestDepthClientFactory(Func<IConnectorPollingEndpointResolver, TokenCredential, string, string, IConnectorQueueDepthClient> create) : IConnectorQueueDepthClientFactory
+internal sealed class TestDepthClientFactory(
+    Func<
+        ConnectorPollingEndpoints,
+        TokenCredential,
+        string,
+        IConnectorQueueDepthClient> create) :
+    IConnectorQueueDepthClientFactory
 {
-    public IConnectorQueueDepthClient Create(IConnectorPollingEndpointResolver resolver, TokenCredential credential, string functionName, string triggerConfigName) => create(resolver, credential, functionName, triggerConfigName);
+    public IConnectorQueueDepthClient Create(
+        ConnectorPollingEndpoints endpoints,
+        TokenCredential credential,
+        string functionName) =>
+        create(endpoints, credential, functionName);
 }

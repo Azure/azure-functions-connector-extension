@@ -23,13 +23,13 @@
   - [Batching and Concurrency](#batching-and-concurrency)
   - [Payload and Message Metadata](#payload-and-message-metadata)
 - [Internal Architecture](#internal-architecture)
-  - [Current ARM Endpoint Resolver](#1-current-arm-endpoint-resolver)
+  - [Polling Endpoint Configuration](#1-polling-endpoint-configuration)
   - [Poll-delivery HTTP Client](#2-poll-delivery-http-client)
   - [Listener Selection](#3-listener-selection)
   - [Polling Listener](#4-polling-listener)
   - [Function Registration and Trigger Values](#5-function-registration-and-trigger-values)
   - [Lifecycle and Shutdown](#6-lifecycle-and-shutdown)
-  - [Lock Budget](#7-lock-budget)
+  - [Message Locks and Redelivery](#7-message-locks-and-redelivery)
   - [Scaling](#8-scaling)
   - [Dependency Registration](#9-dependency-registration)
 - [Error Handling](#error-handling)
@@ -51,17 +51,17 @@
 Working implementation design. The stacked Poll branches now include the
 trigger contract, configuration, protocol models, target scaler, runtime
 clients, a concurrent listener with explicit invocation batching, and the
-isolated-worker binding. The next PR replaces ARM endpoint discovery with the
-configured, trigger-specific `PollingEndpoint` contract.
+isolated-worker binding. The final stacked PR uses the configured,
+trigger-specific `PollingEndpoint` contract and completes cross-stack
+validation.
 
 Read the document in three layers:
 
 1. **Connector Namespace Runtime Contract** describes the observed service
    protocol.
 2. **Proposed User Contract** defines the configuration and function-facing
-   contract targeted by the next PR.
-3. **Internal Architecture** describes the implemented stack and identifies
-   the endpoint-resolver change needed to reach that target contract.
+   contract implemented by the final stacked PR.
+3. **Internal Architecture** describes the implemented stack.
 
 ## Summary
 
@@ -108,8 +108,7 @@ another runtime later needs the same protocol.
   by extensions such as Storage. Applications could then bind to generated
   Connector clients without constructing and managing those clients.
 - If the service formally guarantees that every Trigger Config in a Connector
-  Namespace shares a stable authority and the route format is
-  `/triggerConfigs/<triggerConfigName>`, consider supporting a shared
+  Namespace shares a stable authority, consider supporting a shared
   `<Connection>__Endpoint` setting together with an explicit
   `TriggerConfigName` on each trigger. The same named connection section would
   continue to provide the managed-identity selectors used to obtain the API
@@ -163,7 +162,7 @@ endpoints:
 The current APIM URLs have this observed shape:
 
 ```text
-https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<connector-namespace-id>/triggerConfigs/<trigger-config-name>/<operation>
+https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<connector-namespace-id>/triggerconfigs/<trigger-config-name>/<operation>
 ```
 
 For example, `pollingEndpoints.receiveUri` ends in `/receive`. Clients must not
@@ -175,25 +174,24 @@ Derive the trigger-specific base URL for Function configuration by parsing
 
 ```text
 receiveUri:
-https://<authority>/api/connectorGateways/<id>/triggerConfigs/<name>/receive
+https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<id>/triggerconfigs/<name>/receive
 
 PollingEndpoint base:
-https://<authority>/api/connectorGateways/<id>/triggerConfigs/<name>
+https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<id>/triggerconfigs/<name>
 ```
 
 Do not derive the base with an unrestricted string replacement. Validate that
 the final path segment is exactly `receive`, remove that segment, and preserve
-the remaining authority and path as opaque.
+the returned base exactly for configuration.
 
 Clients must obtain these URLs from the trigger configuration response. Each
 trigger configuration has its own full base URL. Multiple Trigger Configs may
-use the same authority, but clients must treat the complete authority and path
-as opaque. The authority may contain a gateway GUID now or after a future DNS
-migration. Clients must not construct a hostname from the Connector Namespace
-name or assume a pattern such as
-`<namespace>.connectornamespace.net/triggerConfigs/<triggerConfigName>`.
-
-Existing APIM polling URLs remain valid when the service moves to DNS.
+use the same authority. For the current contract, the extension requires the
+default HTTPS port, a normalized host ending at the DNS label boundary
+`.logic.azure.com`, and the exact fixed path segments `api`,
+`connectorGateways`, and `triggerconfigs`. The returned namespace and trigger
+identifiers and any query remain opaque. Clients must not construct the URL
+from a Connector Namespace name, region, resource ID, or Trigger Config name.
 
 ### Receive
 
@@ -341,9 +339,17 @@ The implementation may buffer one complete hydrated linked output in memory
 because existing worker conversion is JSON-based. It must not retain multiple
 linked outputs concurrently in one host process.
 
-The two-minute message lock starts when Receive leases the message. Download
-and validation time therefore consume lock budget and must be included in
-lock-budget telemetry and execution-admission decisions.
+The 100 MiB wire limit is not a 100 MiB process-memory guarantee. Deferred
+worker conversion can temporarily retain the UTF-8 payload, a UTF-16 JSON
+string, and the worker binding envelope at the same time. The host-wide limiter
+bounds concurrent amplification but does not eliminate the peak for one
+message. Validate the supported maximum under constrained host memory when
+Connector Namespace begins emitting linked outputs; reduce the advertised
+limit or change the worker transport if one message can exhaust the host.
+
+The service owns the message-lock duration and may change it independently.
+The current response does not expose lock-expiration metadata, so the
+extension must not infer a fixed client-side deadline.
 
 ### Acknowledge
 
@@ -391,7 +397,8 @@ and create a time-of-check/time-of-use race.
 ### Delivery Semantics
 
 - Delivery is at least once.
-- The message lock is exactly two minutes and is not caller-configurable.
+- The message-lock duration is controlled by Connector Namespace and is not
+  caller-configurable.
 - An unacknowledged message becomes visible again with the same `messageId` and a new `lockToken`.
 - An expired lock token produces a per-message `NotFound` acknowledgement result.
 - Unacknowledged messages can be redelivered without an attempt limit.
@@ -421,7 +428,7 @@ public void Run(
     [ConnectorTrigger(
         DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
         Connection = "ConnectorNamespace",
-        PollingEndpoint = "%OnNewEmail_Endpoint%",
+        PollingEndpoint = "%OnNewEmailEndpoint%",
         IsBatched = true,
         MaxBatchSize = 4,
         Concurrency = 8)]
@@ -465,7 +472,7 @@ ConnectorNamespace__managedIdentityResourceId={optional-user-assigned-managed-id
 specific Trigger Config:
 
 ```text
-OnNewEmail_Endpoint=https://<authority>/api/connectorGateways/<id>/triggerConfigs/Email-Polling1
+OnNewEmailEndpoint=https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<id>/triggerconfigs/Email-Polling1
 ```
 
 The setting may contain a direct value, a platform-level Key Vault reference,
@@ -473,33 +480,44 @@ or a platform-level Azure App Configuration reference. Configuration providers
 loaded only inside a language worker are insufficient because the host
 extension must resolve the endpoint before starting the listener.
 
-The configured value is the complete opaque HTTPS base URL, including the
-`/triggerConfigs/<triggerConfigName>` path. The extension appends only:
+The configured value is the complete HTTPS base URL on a
+`logic.azure.com` subdomain, including the exact
+`/api/connectorGateways/<connectorNamespaceId>/triggerconfigs/<triggerConfigName>`
+path. The extension appends only:
 
 - `/receive`
 - `/acknowledge`
 - `/approximateQueueDepth`
 
 Each Trigger Config has its own full base URL. Multiple Trigger Configs may use
-the same authority, but the complete authority and path are opaque. The URL
-must not be constructed from a Connector Namespace name, region, resource ID,
-or Trigger Config name.
+the same authority. The normalized authority must be a subdomain of
+`logic.azure.com` on the default HTTPS port, and the fixed path segments are
+`api`, `connectorGateways`, and `triggerconfigs`. The Connector Namespace and
+Trigger Config identifiers and any query remain opaque. The URL must not be
+constructed from a Connector Namespace name, region, resource ID, or Trigger
+Config name.
+
+The resolved base must have exactly the path
+`/api/connectorGateways/<non-empty-connector-namespace-id>/triggerconfigs/<non-empty-trigger-config-name>`.
+It must not include a trailing slash, operation, or any other segment after
+the Trigger Config name. In particular, configured values ending in
+`/receive`, `/acknowledge`, or `/approximateQueueDepth` are invalid.
 
 To obtain the configured value, parse `pollingEndpoints.receiveUri` as an
 absolute HTTPS URI, require its final path segment to be exactly `receive`, and
-remove only that segment. Preserve the authority and remaining path as opaque;
-do not use unrestricted string replacement.
+remove only that segment. Preserve the service-provided namespace identifier,
+trigger identifier, and query; do not use unrestricted string replacement.
 
 Because `PollingEndpoint` already identifies the Trigger Config, the runtime
-contract does not include `TriggerConfigName`, Connector Namespace
-`resourceId`, ARM discovery, or an endpoint cache.
+contract does not include `TriggerConfigName`, a Connector Namespace resource
+identifier, control-plane endpoint discovery, or an endpoint cache.
 
 ### Identity and Permissions
 
 The Polling endpoint and caller identity are configured separately:
 
 ```text
-OnNewEmail_Endpoint
+OnNewEmailEndpoint
     Trigger-specific Polling endpoint
 
 ConnectorNamespace__credential and identity selectors
@@ -509,15 +527,15 @@ ConnectorNamespace__credential and identity selectors
 The extension follows the standard Functions identity-based connection pattern used by Service Bus, Event Hubs, Storage, Event Grid, and Cosmos DB. It passes the complete named connection section to `AzureComponentFactory.CreateTokenCredential`.
 
 | Environment | Configuration | Behavior |
-|---|---|---|
-| Local development | Omit `credential`, or use `credential=managedidentity` with an unavailable MI selector | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
-| Azure, system-assigned identity | `credential=managedidentity` | Use the Function App's system-assigned managed identity; if the managed identity endpoint reports authentication unavailable, the extension falls back to `DefaultAzureCredential` for local/private-stamp diagnostics |
+| --- | --- | --- |
+| Local development | Omit `credential` | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
+| Azure, system-assigned identity | `credential=managedidentity` | Use only the Function App's system-assigned managed identity |
 | Azure, user-assigned identity | `credential=managedidentity` plus `clientId` or `managedIdentityResourceId` | Use the selected user-assigned managed identity |
 
 Poll runtime operations use the API Hub token audience:
 
 | Operation | Token audience/scope |
-|---|---|
+| --- | --- |
 | Receive, acknowledge, and query queue depth | `https://apihub.azure.com/.default` |
 
 The configured endpoint identifies the target Trigger Config. Connector
@@ -527,7 +545,7 @@ connection used by that Trigger Config.
 Required permissions:
 
 | Access | Requirement | Scope |
-|---|---|---|
+| --- | --- | --- |
 | Poll runtime endpoints | Access policy for the Function identity | Connection referenced by the trigger config |
 
 The runtime access policy is configured under:
@@ -585,7 +603,7 @@ The effective max batch size must be compatible with the declared
 cardinality and resulting function parameter:
 
 | Cardinality | Function parameter | Allowed effective `MaxBatchSize` |
-|---|---|---:|
+| --- | --- | ---: |
 | One | `T` | Exactly `1` |
 | One | `ConnectorEvent<T>` | Exactly `1` |
 | Many | `T[]` | `1` through `32` |
@@ -651,10 +669,9 @@ Examples:
 | 32 | 16 | 0 | 32 |
 | 4 | 8 | 8 | 0 |
 
-The listener does not prefetch beyond remaining invocation capacity. Every
-received message immediately starts its fixed two-minute lock budget, so
-leasing messages into a local waiting buffer increases lock expiration and
-duplicate-delivery risk.
+The listener does not prefetch beyond remaining invocation capacity. Leasing
+messages into a local waiting buffer consumes an unknown portion of the
+service-managed lock and increases duplicate-delivery risk.
 
 When the concurrent-invocation limit is reached, the listener does not issue
 Receive. Even when `x-ms-more-messages-available` is true, immediate draining
@@ -749,43 +766,20 @@ Azure Functions must discover concrete binding types during function indexing. T
 
 ## Internal Architecture
 
-### 1. Current ARM Endpoint Resolver
+### 1. Polling Endpoint Configuration
 
-The current implementation uses:
+The host resolves the trigger-specific `PollingEndpoint` through Functions
+app-setting resolution during listener startup and scale-controller
+reconstruction. Before acquiring an API Hub token, it validates a default-port
+HTTPS base on a `logic.azure.com` subdomain with exactly the path
+`/api/connectorGateways/<non-empty-connector-namespace-id>/triggerconfigs/<non-empty-trigger-config-name>`.
+It then constructs immutable Receive, Acknowledge, and Approximate Queue Depth
+URIs by appending only their fixed operation segments.
 
-```csharp
-internal interface IConnectorPollingEndpointResolver
-{
-    Task<ConnectorPollingEndpoints> ResolveAsync(
-        ConnectorPollingTriggerOptions options,
-        CancellationToken cancellationToken);
-}
-```
-
-Responsibilities:
-
-- Read the trigger configuration through ARM.
-- Authenticate using the ARM audience.
-- Extract the three `pollingEndpoints` URLs consumed by the extension.
-- Validate that required endpoints are absolute HTTPS URLs.
-- Resolve the namespace resource ID and credential from the named connection configuration.
-- Cache resolved endpoints by connection and trigger-config name.
-
-The resolver must not be part of the runtime data-plane client.
-
-#### Target configured endpoint
-
-The next endpoint-contract change replaces this resolver with the
-trigger-specific `PollingEndpoint` setting described in
-[Polling Endpoint Configuration](#polling-endpoint-configuration).
-
-- Derive the setting from `pollingEndpoints.receiveUri` by validating and
-  removing only its final `/receive` segment.
-- Keep `Connection` shared by Functions that use the same Connector Namespace.
-- Remove `TriggerConfigName`, the ARM endpoint resolver, and the endpoint cache.
-- Treat the complete configured base as opaque and authoritative.
-- Report an explicit configured-endpoint failure for an unreachable route or
-  endpoint-specific `404 Not Found` or `410 Gone`; do not fall back to ARM.
+The namespace and trigger identifiers and any query remain opaque. The
+implementation performs no control-plane lookup, resource-identifier parsing,
+alternate endpoint discovery, or endpoint caching. An invalid setting fails
+startup before any runtime request or token acquisition.
 
 ### 2. Poll-delivery HTTP Client
 
@@ -816,14 +810,16 @@ Implementation guidance:
 - Use `TokenCredential` for `https://apihub.azure.com/.default`.
 - Validate `maxEvents` before sending.
 - Merge `maxEvents` into an existing query string safely.
-- Treat endpoint URLs as opaque.
+- Preserve validated endpoint identifiers and queries without reconstruction.
 - Use explicit JSON models and `System.Text.Json`.
 - Deserialize into nullable wire DTOs, then validate once into immutable protocol models.
 - Model `outputs` and `outputsLink` as mutually exclusive content sources.
 - Preserve inline `outputs` as owned `BinaryData`; do not retain a borrowed `JsonElement` or deserialize into connector-specific models.
 - Normalize linked content to the same logical `outputs` representation used
   by inline messages.
-- Apply actual-bytes-read limits to linked outputs, capped at 100 MiB.
+- Apply actual-bytes-read limits to every runtime response. Cap Receive,
+  Acknowledge, and linked outputs at 100 MiB, and cap the queue-depth JSON
+  response at 64 KiB.
 - Never log bearer tokens, lock tokens, or payload bodies.
 - Never log signed outputs-link URLs.
 - Preserve unknown acknowledgement statuses as unsuccessful extensible string values so a future service status does not break the entire response.
@@ -853,7 +849,8 @@ Do not turn the current class into a large mode-switching listener.
 1. Validate the configured polling base and construct the three runtime routes.
 2. Determine available invocation capacity from effective `MaxBatchSize` and `Concurrency`.
 3. Call Receive with `maxEvents` capped by 32 and no greater than current processing capacity.
-4. If Receive is empty, apply cancellation-aware backoff with jitter.
+4. If Receive is empty, apply cancellation-aware backoff with jitter. Reset
+   the failure backoff after every successful Receive.
 5. Partition received messages into chunks of at most `MaxBatchSize`.
 6. Within each chunk, group inline messages into one invocation and split
    linked-output messages into single-event invocations.
@@ -927,19 +924,21 @@ the public payload-only shape.
 
 `Dispose` must be idempotent.
 
-### 7. Lock Budget
+### 7. Message Locks and Redelivery
 
-The service does not return `lockedUntil`; the listener only knows the fixed two-minute duration.
+The service does not return `lockedUntil` or a lock duration, and Connector
+Namespace may change the duration in the future. The extension therefore does
+not infer a fixed client-side expiration deadline or skip work based on local
+elapsed time.
 
-The extension should:
+Long-running functions, host failures, acknowledgement failures, and lock
+expiration can all produce duplicate execution. Applications must implement
+idempotency or deduplication using `messageId`.
 
-- Record the local Receive completion time.
-- Emit a warning when processing approaches the lock limit.
-- Avoid beginning new work from a batch when too little lock budget remains.
-- Accept that long-running functions can produce duplicate execution.
-- Document application-level deduplication using `messageId`.
-
-Do not invent client-side lock renewal because the service has no renewal endpoint.
+Do not invent client-side lock renewal because the service has no renewal
+endpoint. If Connector Namespace later returns per-message expiration
+metadata, the listener can use that service-owned value to avoid starting work
+that cannot be acknowledged.
 
 ### 8. Scaling
 
@@ -1010,13 +1009,13 @@ Do not reuse the Connector Namespace side of #26:
   `PollingEndpoint` contract.
 
 The production metrics provider appends `/approximateQueueDepth` to the
-configured `PollingEndpoint`. Before completing scaling, verify that the host
-and Scale Monitor still require the interfaces and reflective registration
-signature demonstrated by #26.
+configured `PollingEndpoint`. The final cross-stack validation verifies that
+the host and Scale Monitor still use the interfaces and reflective
+registration signature demonstrated by #26.
 
 ### 9. Dependency Registration
 
-Update `ConnectorWebJobsBuilderExtensions.AddConnector` to register:
+`ConnectorWebJobsBuilderExtensions.AddConnector` registers:
 
 - A default `TokenCredential`.
 - A named runtime `HttpClient` or equivalent handler.
@@ -1032,9 +1031,10 @@ Register `Microsoft.Extensions.Azure` services and reuse `AzureComponentFactory.
 - Invalid Poll attribute/configuration: fail listener startup with an actionable error.
 - Missing or invalid `PollingEndpoint`: fail startup.
 - Unreachable configured endpoint: report the endpoint operation without
-  logging the complete URL or falling back to ARM discovery.
+  logging the complete URL or attempting alternate endpoint discovery.
 - Authentication/authorization failure: log resource identity and audience, never the token.
-- Receive failure: do not assume whether a batch was leased; retry only after backoff.
+- Receive failure: do not assume whether a batch was leased; retry with
+  cancellation-aware exponential backoff capped at 30 seconds.
 - Function failure: log and leave every message in the invocation batch
   unacknowledged.
 - Acknowledge `NotFound`: treat as an expired/already-used lock, not an extension crash.
@@ -1053,7 +1053,6 @@ Record without payload or token content:
 - Empty receives and backoff duration.
 - Function execution success/failure count.
 - Acknowledgement status counts.
-- Lock-budget warnings.
 - Approximate queue depth and scale decision.
 - Stable correlation using hashed or safe identifiers where required.
 
@@ -1080,10 +1079,15 @@ Record without payload or token content:
 
 - `PollingEndpoint` app-setting resolution.
 - Absolute HTTPS base validation.
+- Default HTTPS port and `.logic.azure.com` DNS-label-boundary validation.
 - Correct Receive, Acknowledge, and Approximate Queue Depth route construction.
-- Opaque authority and path preservation.
+- Opaque namespace identifier, trigger identifier, and query preservation.
+- Exact `/api/connectorGateways/<namespace-id>/triggerconfigs/<trigger-name>`
+  path validation.
+- Rejection of bases that already include an operation or another trailing
+  segment.
 - Missing or invalid endpoint handling.
-- No ARM fallback for endpoint-specific `404 Not Found` or `410 Gone`.
+- No alternate discovery for endpoint-specific `404 Not Found` or `410 Gone`.
 
 ### HTTP client tests
 
@@ -1119,7 +1123,7 @@ Record without payload or token content:
 - Mixed Receive results preserve normal inline batching and invoke each linked
   output individually.
 - Linked-output invocations do not overlap across listeners sharing one host.
-- Large-output hydration is bounded and consumes lock budget.
+- Large-output hydration is bounded.
 - Payload-only `T` and `T[]` conversion.
 - Metadata-rich `ConnectorEvent<T>` and `ConnectorEvent<T>[]` conversion.
 - `MessageId` remains paired with the correct payload under batching and concurrency.
@@ -1146,12 +1150,85 @@ Use a Poll trigger configuration such as Office 365 `OnNewEmailV3`:
 4. Start the Function host.
 5. Verify the expected invocation batch sizes.
 6. Verify every successful event is acknowledged and does not reappear.
-7. Run a failure case and verify redelivery after two minutes.
+7. Run a failure case and verify redelivery after the service-managed lock
+   expires.
 
 Connector Namespace does not yet emit linked-output messages in the available
 test environment. Validate linked-output splitting, serialization, failure,
 and memory-safety behavior with synthetic unit tests until the service feature
 is available for an end-to-end test.
+
+## Deferred Linked-Output Release Work
+
+The extension implements the linked-output protocol defensively, but linked
+outputs are not release-validated because Connector Namespace does not yet
+emit them in the available test environment. This does not block or change
+inline Poll delivery.
+
+Before linked outputs are enabled or advertised as customer-supported,
+complete the following service-backed work:
+
+1. **Payload-size validation**
+   - Exercise representative linked outputs, including approximately 1 MiB,
+     10 MiB, 50 MiB, and the 100 MiB service maximum.
+   - Measure peak host and worker working set, allocation rate, GC pauses,
+     download time, conversion time, invocation time, and acknowledgement
+     success for .NET, Node.js, and Python.
+   - Treat 100 MiB as a defensive wire ceiling until this evidence establishes
+     a supported customer payload size. Reduce the supported limit or change
+     the worker transport if one message can exhaust a supported host SKU.
+
+2. **Worker transport and memory amplification**
+   - Measure simultaneous retention of downloaded UTF-8 bytes, the UTF-16 JSON
+     string used by current conversion, and the deferred worker binding
+     envelope.
+   - Avoid additional full-payload copies where the worker protocol permits.
+   - Retain the host-wide linked-output limiter until an alternative is proven
+     to keep aggregate process memory bounded.
+
+3. **Host-wide admission and waiter policy**
+   - Measure wait time and retained leased-message metadata when multiple Poll
+     functions share one host.
+   - Evaluate a bounded global admission queue, non-waiting admission, or a
+     byte-budget limiter if the current `functions × concurrency` waiter bound
+     causes material memory pressure, lock expiration, or duplicate execution.
+   - Verify that linked waiters do not starve inline traffic in mixed
+     workloads.
+
+4. **Message-lock contract**
+   - Request per-message `lockedUntil` or equivalent expiration metadata from
+     Connector Namespace.
+   - Do not introduce a client-configured or hardcoded lock duration.
+   - If expiration metadata becomes available, use the service-owned value to
+     avoid starting work that cannot be acknowledged.
+   - Continue requiring application-level idempotency or deduplication using
+     `messageId`.
+
+5. **Scaling signals**
+   - Measure linked-heavy and mixed queue behavior with multiple host
+     instances.
+   - Request payload-class, linked-message count, or byte-backlog metrics if
+     aggregate approximate queue depth materially under-scales linked
+     workloads.
+   - Revisit the target calculation only with service-backed evidence; do not
+     penalize ordinary inline traffic for a theoretical linked backlog.
+
+6. **End-to-end correctness and operations**
+   - Verify signed-link authentication, no bearer-token forwarding, redirect
+     rejection, content-type validation, actual-bytes enforcement, retries,
+     function invocation, acknowledgement, redelivery, retention, and
+     deletion behavior.
+   - Verify cancellation and host shutdown with an active download, an active
+     invocation, and multiple limiter waiters.
+   - Verify logs and exceptions never contain the complete signed URI, query,
+     payload, bearer token, message ID, or lock token.
+   - Define telemetry for linked download duration, actual bytes, limiter wait
+     duration, waiter count, failures, acknowledgement status, and duplicate
+     delivery without recording sensitive values.
+
+The likely implementation changes depend on these measurements. Do not select
+an arbitrary payload limit, waiter limit, lock reserve, or scaling multiplier
+before the service-backed results are available.
 
 ## Delivery Plan
 
@@ -1164,12 +1241,20 @@ stale as branches are implemented and rebased.
 ## Open Questions
 
 1. Should future service concurrency signals augment the current `ceil(depth / effectiveConcurrency)` target model?
-2. Should a long-running execution be allowed to finish after the two-minute lock budget, or should the extension cancel it?
-3. What evidence would justify extracting the internal protocol client into a separate public package?
+2. Should Connector Namespace expose per-message lock-expiration metadata so
+   the extension can avoid starting work that cannot be acknowledged?
+3. What linked-output payload size can each supported language and host SKU
+   process without unacceptable memory amplification?
+4. Should linked-output admission remain one invocation per host, become a
+   byte-budget limiter, or use non-waiting admission?
+5. What evidence would justify extracting the internal protocol client into a separate public package?
 
 ## Supporting Information: Provisioning a Poll Trigger Configuration
 
 The Connector Namespace portal does not currently support provisioning a Poll trigger configuration, and the current `az connector-namespace trigger create` command does not expose `deliveryMode`. Until those surfaces support Poll, use a raw ARM PUT request.
+
+This control-plane request is a customer setup step only and is not used by
+the Functions extension at runtime.
 
 Create a request body such as:
 

@@ -18,15 +18,12 @@ internal interface IConnectorPollingListenerFactory
 }
 
 internal sealed class ConnectorPollingListenerFactory(
-    IConnectorPollingEndpointResolverFactory endpointResolverFactory,
     IConnectorPollDeliveryClientFactory deliveryClientFactory,
     IConnectorLinkedOutputClient linkedOutputClient,
     ConnectorLinkedOutputInvocationLimiter linkedOutputInvocationLimiter,
     INameResolver nameResolver,
     ILoggerFactory loggerFactory) : IConnectorPollingListenerFactory
 {
-    private readonly IConnectorPollingEndpointResolverFactory _endpointResolverFactory =
-        endpointResolverFactory ?? throw new ArgumentNullException(nameof(endpointResolverFactory));
     private readonly IConnectorPollDeliveryClientFactory _deliveryClientFactory =
         deliveryClientFactory ?? throw new ArgumentNullException(nameof(deliveryClientFactory));
     private readonly IConnectorLinkedOutputClient _linkedOutputClient =
@@ -48,23 +45,22 @@ internal sealed class ConnectorPollingListenerFactory(
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(connectionOptions);
 
-        string? triggerConfigName =
-            _nameResolver.ResolveWholeString(options.TriggerConfigName);
-        if (string.IsNullOrWhiteSpace(triggerConfigName))
+        string? pollingEndpoint =
+            _nameResolver.ResolveWholeString(options.PollingEndpoint) ??
+            options.PollingEndpoint;
+        if (string.IsNullOrWhiteSpace(pollingEndpoint))
         {
             throw new InvalidOperationException(
-                "Connector Poll TriggerConfigName resolved to an empty value.");
+                "Connector Poll PollingEndpoint resolved to an empty value.");
         }
 
         ConnectorPollingOptions resolvedOptions =
-            options with { TriggerConfigName = triggerConfigName };
+            options with { PollingEndpoint = pollingEndpoint };
         return new ConnectorPollingListener(
             registration,
             resolvedOptions,
-            _endpointResolverFactory.Create(
-                connectionOptions,
-                connectionOptions.Credential,
-                resolvedOptions.TriggerConfigName),
+            ConnectorPollingEndpoints.Create(
+                resolvedOptions.PollingEndpoint),
             _deliveryClientFactory.Create(connectionOptions.Credential),
             _linkedOutputClient,
             _linkedOutputInvocationLimiter,
@@ -79,11 +75,14 @@ internal sealed class ConnectorPollingListenerFactory(
 internal sealed class ConnectorPollingListener : IListener
 {
     private static readonly TimeSpan EmptyQueueDelay = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan FailureDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan InitialFailureDelay =
+        TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MaximumFailureDelay =
+        TimeSpan.FromSeconds(30);
     private static readonly TimeSpan MaximumJitter = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(30);
 
-    private readonly IConnectorPollingEndpointResolver _endpointResolver;
+    private readonly ConnectorPollingEndpoints _endpoints;
     private readonly IConnectorPollDeliveryClient _deliveryClient;
     private readonly IConnectorLinkedOutputClient _linkedOutputClient;
     private readonly ConnectorLinkedOutputInvocationLimiter _linkedOutputInvocationLimiter;
@@ -99,7 +98,7 @@ internal sealed class ConnectorPollingListener : IListener
     internal ConnectorPollingListener(
         ConnectorFunctionRegistration registration,
         ConnectorPollingOptions options,
-        IConnectorPollingEndpointResolver endpointResolver,
+        ConnectorPollingEndpoints endpoints,
         IConnectorPollDeliveryClient deliveryClient,
         IConnectorLinkedOutputClient linkedOutputClient,
         ConnectorLinkedOutputInvocationLimiter linkedOutputInvocationLimiter,
@@ -108,7 +107,7 @@ internal sealed class ConnectorPollingListener : IListener
     {
         Registration = registration ?? throw new ArgumentNullException(nameof(registration));
         Options = options ?? throw new ArgumentNullException(nameof(options));
-        _endpointResolver = endpointResolver ?? throw new ArgumentNullException(nameof(endpointResolver));
+        _endpoints = endpoints ?? throw new ArgumentNullException(nameof(endpoints));
         _deliveryClient = deliveryClient ?? throw new ArgumentNullException(nameof(deliveryClient));
         _linkedOutputClient = linkedOutputClient ?? throw new ArgumentNullException(nameof(linkedOutputClient));
         _linkedOutputInvocationLimiter = linkedOutputInvocationLimiter
@@ -121,65 +120,29 @@ internal sealed class ConnectorPollingListener : IListener
 
     internal ConnectorPollingOptions Options { get; }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
-        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
 
-        CancellationTokenSource receiveCancellation;
-        CancellationTokenSource processingCancellation;
         lock (_lifecycleLock)
         {
+            ThrowIfDisposed();
             if (_messagePump is not null || _receiveCancellation is not null)
             {
-                return;
+                return Task.CompletedTask;
             }
 
-            receiveCancellation = new CancellationTokenSource();
-            processingCancellation = new CancellationTokenSource();
+            var receiveCancellation = new CancellationTokenSource();
+            var processingCancellation = new CancellationTokenSource();
             _receiveCancellation = receiveCancellation;
             _processingCancellation = processingCancellation;
+            _messagePump = RunMessagePumpAsync(
+                _endpoints,
+                receiveCancellation.Token,
+                processingCancellation.Token);
         }
 
-        bool started = false;
-        try
-        {
-            using var startupCancellation =
-                CancellationTokenSource.CreateLinkedTokenSource(
-                    cancellationToken,
-                    receiveCancellation.Token);
-            ConnectorPollingEndpoints endpoints =
-                await _endpointResolver.ResolveAsync(
-                    startupCancellation.Token).ConfigureAwait(false);
-
-            lock (_lifecycleLock)
-            {
-                ThrowIfDisposed();
-                if (receiveCancellation.IsCancellationRequested)
-                {
-                    return;
-                }
-
-                _messagePump = RunMessagePumpAsync(
-                    endpoints,
-                    receiveCancellation.Token,
-                    processingCancellation.Token);
-                started = true;
-            }
-        }
-        catch (OperationCanceledException)
-            when (receiveCancellation.IsCancellationRequested &&
-                !cancellationToken.IsCancellationRequested)
-        {
-        }
-        finally
-        {
-            if (!started)
-            {
-                CleanupCancelledStartup(
-                    receiveCancellation,
-                    processingCancellation);
-            }
-        }
+        return Task.CompletedTask;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -239,6 +202,7 @@ internal sealed class ConnectorPollingListener : IListener
         CancellationToken processingCancellationToken)
     {
         var activeInvocations = new HashSet<Task>();
+        TimeSpan failureDelay = InitialFailureDelay;
         try
         {
             while (!receiveCancellationToken.IsCancellationRequested)
@@ -264,6 +228,7 @@ internal sealed class ConnectorPollingListener : IListener
                             endpoints,
                             maxEvents,
                             receiveCancellationToken).ConfigureAwait(false);
+                    failureDelay = InitialFailureDelay;
                     if (receiveResult.Messages.Count > maxEvents)
                     {
                         throw new ConnectorPollDeliveryException(
@@ -299,8 +264,12 @@ internal sealed class ConnectorPollingListener : IListener
                         "Connector Poll listener cycle failed for function {FunctionName}.",
                         Registration.FunctionName);
                     await _delayAsync(
-                        FailureDelay,
+                        failureDelay,
                         receiveCancellationToken).ConfigureAwait(false);
+                    failureDelay = TimeSpan.FromTicks(
+                        Math.Min(
+                            failureDelay.Ticks * 2,
+                            MaximumFailureDelay.Ticks));
                 }
             }
         }
@@ -478,24 +447,6 @@ internal sealed class ConnectorPollingListener : IListener
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-    }
-
-    private void CleanupCancelledStartup(
-        CancellationTokenSource receiveCancellation,
-        CancellationTokenSource processingCancellation)
-    {
-        lock (_lifecycleLock)
-        {
-            if (ReferenceEquals(_receiveCancellation, receiveCancellation) &&
-                _messagePump is null)
-            {
-                _receiveCancellation = null;
-                _processingCancellation = null;
-            }
-        }
-
-        receiveCancellation.Dispose();
-        processingCancellation.Dispose();
     }
 
     private static Task DelayWithJitterAsync(

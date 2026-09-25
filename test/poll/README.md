@@ -12,7 +12,7 @@ Each sample uses:
 ```text
 DeliveryMode = Poll
 Connection = ConnectorNamespace
-TriggerConfigName = %ConnectorTriggerConfigName%
+PollingEndpoint = %OnNewEmailEndpoint%
 Cardinality = Many
 MaxBatchSize = 4
 Concurrency = 4
@@ -29,16 +29,27 @@ host-wide to bound memory. Connector Namespace does not yet emit linked-output
 messages in the available test environment, so the samples currently validate
 inline batching only.
 
-The local settings files are intentionally untracked. Configure:
+Copy each sample's checked-in `local.settings.example.json` to
+`local.settings.json`, which remains gitignored, then configure:
 
 ```text
-ConnectorNamespace__resourceId=/subscriptions/<subscription>/resourceGroups/<resource-group>/providers/Microsoft.Web/connectorGateways/<namespace>
-ConnectorTriggerConfigName=<enabled-poll-trigger-config>
+OnNewEmailEndpoint=https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<connector-namespace-id>/triggerconfigs/<poll-trigger-config-name>
 ```
 
-The signed-in developer identity must be able to read the trigger
-configuration through ARM and must have an access policy on the connection
-referenced by that trigger.
+Never add or commit a real endpoint or credential value.
+
+Obtain the value from the trigger configuration's
+`pollingEndpoints.receiveUri`: require an absolute HTTPS URI whose final path
+segment is exactly `receive`, then remove only that segment. The resulting
+base must end in `/triggerconfigs/<poll-trigger-config-name>` and must not
+include `/receive`, `/acknowledge`, or `/approximateQueueDepth`.
+
+For local development, `Connection = ConnectorNamespace` uses the signed-in
+developer credential when no credential selector is configured. For Azure,
+configure `ConnectorNamespace__credential=managedidentity` and optionally
+`ConnectorNamespace__clientId` or
+`ConnectorNamespace__managedIdentityResourceId`. The selected identity must
+have an access policy on the connection referenced by the trigger.
 
 Build the .NET sample against the repository-local projects:
 
