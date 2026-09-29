@@ -1017,7 +1017,8 @@ Record without payload or token content:
 ### Listener tests
 
 - Empty queue backoff.
-- Receive size is capped by effective `MaxBatchSize`, remaining invocation capacity, and 32.
+- Receive size is capped by remaining invocation capacity multiplied by
+  effective `MaxBatchSize`, and by the protocol maximum of 32.
 - Each invocation receives no more than effective `MaxBatchSize`.
 - Active function invocations never exceed effective `Concurrency`.
 - A successful invocation acknowledges every message in that invocation batch.
