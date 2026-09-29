@@ -153,6 +153,26 @@ public class ConnectorPollDeliveryClientTests
             Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
     }
 
+    [Fact]
+    public async Task ReceiveAsync_ReplacesEncodedMaxEventsParameter()
+    {
+        var handler = new SequenceHttpMessageHandler(_ =>
+            JsonResponse(HttpStatusCode.OK, """{"messages":[]}"""));
+        ConnectorPollDeliveryClient client = CreateClient(
+            new TestTokenCredential(),
+            handler);
+
+        await client.ReceiveAsync(
+            Endpoints(
+                "https://runtime.test/receive?api-version=1&max%45vents=32"),
+            4,
+            CancellationToken.None);
+
+        Assert.Equal(
+            "https://runtime.test/receive?api-version=1&maxEvents=4",
+            Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(33)]

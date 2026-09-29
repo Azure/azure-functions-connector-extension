@@ -32,6 +32,21 @@ public class ConnectorTriggerConverterTests
     }
 
     [Fact]
+    public async Task ConvertAsync_UsesInvocationCancellationForDeserialization()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        cancellationSource.Cancel();
+
+        ConversionResult result = await ConvertAsync(
+            typeof(TestPayload),
+            BindingData("""{"subject":"hello"}""", "message-1"),
+            cancellationSource.Token);
+
+        Assert.Equal(ConversionStatus.Failed, result.Status);
+        Assert.IsAssignableFrom<OperationCanceledException>(result.Error);
+    }
+
+    [Fact]
     public async Task ConvertAsync_ConvertsPayloadBatch()
     {
         ConversionResult result = await ConvertAsync(
@@ -240,8 +255,13 @@ public class ConnectorTriggerConverterTests
 
     private ValueTask<ConversionResult> ConvertAsync(
         Type targetType,
-        object source) =>
-        _converter.ConvertAsync(new TestConverterContext(targetType, source));
+        object source,
+        CancellationToken cancellationToken = default) =>
+        _converter.ConvertAsync(
+            new TestConverterContext(
+                targetType,
+                source,
+                cancellationToken));
 
     private static ModelBindingData BindingData(
         string data,
@@ -271,16 +291,35 @@ public class ConnectorTriggerConverterTests
 
     private sealed class TestConverterContext(
         Type targetType,
-        object source) : ConverterContext
+        object source,
+        CancellationToken cancellationToken) : ConverterContext
     {
         public override Type TargetType { get; } = targetType;
 
         public override object Source { get; } = source;
 
-        public override FunctionContext FunctionContext => null!;
+        public override FunctionContext FunctionContext { get; } =
+            new TestFunctionContext(cancellationToken);
 
         public override IReadOnlyDictionary<string, object> Properties { get; } =
             new Dictionary<string, object>();
+    }
+
+    private sealed class TestFunctionContext(
+        CancellationToken cancellationToken) : FunctionContext
+    {
+        public override string InvocationId => "invocation";
+        public override string FunctionId => "function";
+        public override TraceContext TraceContext => null!;
+        public override BindingContext BindingContext => null!;
+        public override RetryContext RetryContext => null!;
+        public override IServiceProvider InstanceServices { get; set; } = null!;
+        public override FunctionDefinition FunctionDefinition => null!;
+        public override IDictionary<object, object> Items { get; set; } =
+            new Dictionary<object, object>();
+        public override IInvocationFeatures Features => null!;
+        public override CancellationToken CancellationToken { get; } =
+            cancellationToken;
     }
 
     private sealed class TestModelBindingData(

@@ -32,18 +32,22 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
 
         try
         {
+            CancellationToken cancellationToken =
+                context.FunctionContext.CancellationToken;
             object result;
             if (context.Source is ModelBindingData bindingData)
             {
                 result = await ConvertSingleAsync(
                     bindingData,
-                    context.TargetType).ConfigureAwait(false);
+                    context.TargetType,
+                    cancellationToken).ConfigureAwait(false);
             }
             else if (context.Source is CollectionModelBindingData collection)
             {
                 result = await ConvertCollectionAsync(
                     collection,
-                    context.TargetType).ConfigureAwait(false);
+                    context.TargetType,
+                    cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -60,7 +64,8 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
 
     private async Task<object> ConvertSingleAsync(
         ModelBindingData bindingData,
-        Type targetType)
+        Type targetType,
+        CancellationToken cancellationToken)
     {
         ValidateTargetType(targetType);
         ConnectorEventBindingData connectorEvent =
@@ -76,22 +81,26 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
             {
                 return await DeserializePayloadAsync(
                     connectorEvent.Data!,
-                    targetType).ConfigureAwait(false);
+                    targetType,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             return await ConvertArrayAsync(
                 [connectorEvent],
-                targetType).ConfigureAwait(false);
+                targetType,
+                cancellationToken).ConfigureAwait(false);
         }
 
         return await ConvertEventAsync(
             connectorEvent,
-            targetType).ConfigureAwait(false);
+            targetType,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> ConvertCollectionAsync(
         CollectionModelBindingData collection,
-        Type targetType)
+        Type targetType,
+        CancellationToken cancellationToken)
     {
         ValidateTargetType(targetType);
         ArgumentNullException.ThrowIfNull(collection.ModelBindingData);
@@ -118,12 +127,16 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
                 "Batched Connector trigger binding data is supported only for Poll delivery.");
         }
 
-        return await ConvertArrayAsync(events, targetType).ConfigureAwait(false);
+        return await ConvertArrayAsync(
+            events,
+            targetType,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<Array> ConvertArrayAsync(
         IReadOnlyList<ConnectorEventBindingData> events,
-        Type targetType)
+        Type targetType,
+        CancellationToken cancellationToken)
     {
         Type elementType = targetType.GetElementType()!;
         Array result = Array.CreateInstance(elementType, events.Count);
@@ -132,7 +145,8 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
             result.SetValue(
                 await ConvertEventAsync(
                     events[index],
-                    elementType).ConfigureAwait(false),
+                    elementType,
+                    cancellationToken).ConfigureAwait(false),
                 index);
         }
 
@@ -141,7 +155,8 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
 
     private async Task<object> ConvertEventAsync(
         ConnectorEventBindingData connectorEvent,
-        Type targetType)
+        Type targetType,
+        CancellationToken cancellationToken)
     {
         if (connectorEvent.Data is null)
         {
@@ -155,7 +170,8 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
             Type payloadType = targetType.GetGenericArguments()[0];
             object payload = await DeserializePayloadAsync(
                 connectorEvent.Data,
-                payloadType).ConfigureAwait(false);
+                payloadType,
+                cancellationToken).ConfigureAwait(false);
             object result = Activator.CreateInstance(targetType)
                 ?? throw new InvalidOperationException(
                     $"Unable to create Connector trigger target type '{targetType}'.");
@@ -168,12 +184,14 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
 
         return await DeserializePayloadAsync(
             connectorEvent.Data,
-            targetType).ConfigureAwait(false);
+            targetType,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<object> DeserializePayloadAsync(
         string data,
-        Type targetType)
+        Type targetType,
+        CancellationToken cancellationToken)
     {
         if (targetType == typeof(string))
         {
@@ -197,7 +215,7 @@ internal sealed class ConnectorTriggerConverter : IInputConverter
         return await serializer.DeserializeAsync(
             stream,
             targetType,
-            CancellationToken.None).ConfigureAwait(false)
+            cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 $"Connector trigger payload could not be converted to '{targetType}'.");
     }

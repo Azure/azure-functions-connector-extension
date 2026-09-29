@@ -229,7 +229,8 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
                 ReadOnlySpan<char> name = separatorIndex < 0
                     ? parameter.AsSpan()
                     : parameter.AsSpan(0, separatorIndex);
-                return !name.Equals(
+                string decodedName = Uri.UnescapeDataString(name.ToString());
+                return !decodedName.Equals(
                     ConnectorPollingHttpConstants.MaxEventsQueryParameter,
                     StringComparison.OrdinalIgnoreCase);
             });

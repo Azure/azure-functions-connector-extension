@@ -183,10 +183,12 @@ cardinality supports effective values from `1` through `32`; a final
 invocation may contain fewer events. See the [Poll test samples](./test/poll)
 for language-specific examples.
 
-Large events delivered through `outputsLink` are always supplied in
-single-event invocations, including for batched functions. Connector Poll
-serializes linked-output invocations across the host to bound retained payload
-memory; ordinary inline event batches remain concurrent.
+The extension defensively implements `outputsLink` delivery, but Connector
+Namespace does not yet emit linked-output messages in the available test
+environment. Service-backed validation is tracked in [#39](https://github.com/Azure/azure-functions-connector-extension/issues/39)
+before this behavior is advertised as supported. The implementation supplies
+linked outputs in single-event invocations and serializes them across the host
+to bound retained payload memory.
 
 An omitted or zero `MaxBatchSize` uses
 `extensions.connector.defaultMaxBatchSize` from `host.json`; the built-in

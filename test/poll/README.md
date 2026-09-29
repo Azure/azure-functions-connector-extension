@@ -7,22 +7,19 @@ supported language worker:
 - `nodejs` - TypeScript generic binding with an untyped JSON payload.
 - `python` - Python v2 generic binding with an untyped JSON payload.
 
-Each sample uses:
+Each sample uses Poll delivery with the same connection and endpoint settings:
 
 ```text
 DeliveryMode = Poll
 Connection = ConnectorNamespace
 PollingEndpoint = %OnNewEmailEndpoint%
-Cardinality = Many
-MaxBatchSize = 4
-Concurrency = 4
 ```
 
-The samples enable batched invocation. .NET isolated uses `IsBatched = true`;
-Node.js uses `cardinality: 'many'`; and Python uses
-`cardinality=func.Cardinality.MANY`. Omitting batching or using cardinality
-`one` supplies one event per invocation and requires an effective
-`MaxBatchSize` of `1`.
+.NET isolated and Node.js enable batched invocation with `MaxBatchSize = 4`
+and `Concurrency = 4`. .NET isolated uses `IsBatched = true`; Node.js uses
+`cardinality: 'many'`. Python uses `cardinality=func.Cardinality.ONE`,
+`maxBatchSize=1`, and `concurrency=1` because the Python worker's generic
+binding decoder does not accept batched `collection_string` input.
 
 Linked-output events are delivered one per invocation and serialized
 host-wide to bound memory. Connector Namespace does not yet emit linked-output
