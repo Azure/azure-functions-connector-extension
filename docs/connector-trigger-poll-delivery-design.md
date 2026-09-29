@@ -104,6 +104,12 @@ another runtime later needs the same protocol.
 
 ## Future Enhancements
 
+- Extract the Azure SDK-style Poll transport into a Connectors Polling SDK.
+  The SDK should own API Hub authentication, HTTP operations, timeout and retry
+  policy, protocol serialization and validation, and secret-safe errors. The
+  Functions extension should retain binding and listener lifecycle,
+  concurrency and batching, and mapping extension configuration into SDK
+  options.
 - Add rich Connector SDK client bindings, similar to client bindings offered
   by extensions such as Storage. Applications could then bind to generated
   Connector clients without constructing and managing those clients.
@@ -394,6 +400,19 @@ and create a time-of-check/time-of-use race.
 | --- | --- | --- |
 | Receive, acknowledge, queue depth | Runtime data plane | `https://apihub.azure.com/.default` |
 
+### Timeouts and Retry Policy
+
+Receive, acknowledge, and approximate queue-depth HTTP operations use a shared
+30-second timeout. Linked-output downloads use a 2-minute timeout. Credential
+acquisition occurs before the HTTP timeout begins.
+
+Receive and acknowledge requests are not transparently retried after ambiguous
+failures. If acknowledgement fails, the messages remain unacknowledged and can
+be redelivered after their locks expire. Long term, the Connectors Polling SDK
+should own the transport timeout and retry policy. The extension can expose
+user overrides through `ConnectorOptions` and map them into SDK options after
+Connector Namespace publishes supported latency and retry guidance.
+
 ### Delivery Semantics
 
 - Delivery is at least once.
@@ -595,7 +614,8 @@ Batching must be explicitly enabled:
 
 - .NET isolated sets `IsBatched = true`.
 - Node.js and TypeScript set `cardinality: "many"`.
-- Python sets `cardinality=func.Cardinality.MANY`.
+- Python generic bindings use single cardinality because the Python worker's
+  generic binding decoder does not accept batched `collection_string` input.
 - Generic `function.json` bindings, including PowerShell, set
   `"cardinality": "many"`.
 

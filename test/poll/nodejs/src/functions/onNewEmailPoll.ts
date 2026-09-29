@@ -11,9 +11,6 @@ app.connectorTrigger('OnNewEmailPoll', {
     maxBatchSize: 4,
     concurrency: 4,
     handler: async (inputs: unknown[], context: InvocationContext) => {
-        for (const input of inputs) {
-            const payload = typeof input === 'string' ? JSON.parse(input) : input;
-            context.log(`Poll connector payload: ${JSON.stringify(payload)}`);
-        }
+        context.log(`Received ${inputs.length} Poll connector payload(s).`);
     },
 });

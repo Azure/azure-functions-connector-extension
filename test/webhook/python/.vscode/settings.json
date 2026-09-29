@@ -1,0 +1,8 @@
+{
+  "azureFunctions.projectLanguage": "Python",
+  "azureFunctions.projectRuntime": "~4",
+  "azureFunctions.projectLanguageModel": 2,
+  "azureFunctions.pythonVenv": ".venv",
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+  "debug.internalConsoleOptions": "neverOpen"
+}

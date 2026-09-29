@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Microsoft.Azure.WebJobs.Host.Executors;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -82,6 +83,89 @@ public class ConnectorListenerTests
     }
 
     [Fact]
+    public async Task StartAsync_LogsCapturedWebhookEndpoint()
+    {
+        // Arrange
+        var loggerProvider = new CapturingLoggerProvider();
+        using var loggerFactory = LoggerFactory.Create(
+            builder => builder.AddProvider(loggerProvider));
+        var configProvider = CreateConfigProvider(loggerFactory);
+        configProvider.CaptureWebhookEndpoint(
+            new Uri(
+                "http://localhost:7071/runtime/webhooks/connector?code=secret"));
+        var registration = new ConnectorFunctionRegistration(
+            "TestFunction",
+            _mockExecutor.Object);
+        var listener = new ConnectorListener(configProvider, registration);
+
+        // Act
+        await listener.StartAsync(CancellationToken.None);
+
+        // Assert
+        Assert.Contains(
+            "Connector endpoint: http://localhost:7071/runtime/webhooks/connector",
+            loggerProvider.Messages);
+        Assert.DoesNotContain(
+            loggerProvider.Messages,
+            message => message.Contains("secret", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CaptureWebhookEndpoint_DoesNotLogBeforeWebhookListenerStarts()
+    {
+        // Arrange
+        var loggerProvider = new CapturingLoggerProvider();
+        using var loggerFactory = LoggerFactory.Create(
+            builder => builder.AddProvider(loggerProvider));
+        var configProvider = CreateConfigProvider(loggerFactory);
+
+        // Act
+        configProvider.CaptureWebhookEndpoint(
+            new Uri("http://localhost:7071/runtime/webhooks/connector"));
+
+        // Assert
+        Assert.DoesNotContain(
+            loggerProvider.Messages,
+            message => message.StartsWith(
+                "Connector endpoint:",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task StartAsync_LogsWebhookEndpointOnlyOnce()
+    {
+        // Arrange
+        var loggerProvider = new CapturingLoggerProvider();
+        using var loggerFactory = LoggerFactory.Create(
+            builder => builder.AddProvider(loggerProvider));
+        var configProvider = CreateConfigProvider(loggerFactory);
+        configProvider.CaptureWebhookEndpoint(
+            new Uri("http://localhost:7071/runtime/webhooks/connector"));
+        var firstListener = new ConnectorListener(
+            configProvider,
+            new ConnectorFunctionRegistration(
+                "FirstFunction",
+                _mockExecutor.Object));
+        var secondListener = new ConnectorListener(
+            configProvider,
+            new ConnectorFunctionRegistration(
+                "SecondFunction",
+                _mockExecutor.Object));
+
+        // Act
+        await Task.WhenAll(
+            firstListener.StartAsync(CancellationToken.None),
+            secondListener.StartAsync(CancellationToken.None));
+
+        // Assert
+        Assert.Single(
+            loggerProvider.Messages,
+            message => message.StartsWith(
+                "Connector endpoint:",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task StopAsync_CompletesSuccessfully()
     {
         // Arrange
@@ -113,5 +197,52 @@ public class ConnectorListenerTests
         // Act & Assert (should not throw)
         listener.Dispose();
         listener.Dispose();
+    }
+
+    private static ConnectorExtensionConfigProvider CreateConfigProvider(
+        ILoggerFactory loggerFactory)
+    {
+        var httpRequestProcessor = new ConnectorHttpRequestProcessor(
+            NullLogger<ConnectorHttpRequestProcessor>.Instance);
+        return new ConnectorExtensionConfigProvider(
+            httpRequestProcessor,
+            loggerFactory,
+            Options.Create(new ConnectorOptions()),
+            new StubConnectorConnectionOptionsProvider(),
+            new StubConnectorPollingListenerFactory());
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string>
+            _messages = new();
+
+        internal IReadOnlyCollection<string> Messages => _messages.ToArray();
+
+        public ILogger CreateLogger(string categoryName) =>
+            new CapturingLogger(_messages);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(
+            System.Collections.Concurrent.ConcurrentQueue<string> messages) :
+            ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull =>
+                null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter) =>
+                messages.Enqueue(formatter(state, exception));
+        }
     }
 }

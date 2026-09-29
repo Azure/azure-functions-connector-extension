@@ -1,0 +1,28 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build (functions)",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "PollSample.csproj",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "type": "func",
+      "label": "func: host start",
+      "command": "host start",
+      "dependsOn": "build (functions)",
+      "problemMatcher": "$func-dotnet-watch",
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    }
+  ]
+}

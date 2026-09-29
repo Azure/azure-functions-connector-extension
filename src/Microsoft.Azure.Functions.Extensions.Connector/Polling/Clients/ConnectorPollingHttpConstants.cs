@@ -17,8 +17,11 @@ internal static class ConnectorPollingHttpConstants
     internal const string Utf8CharacterSet = "utf-8";
     internal const int MaximumSafeOperationAttempts = 3;
 
+    // TODO: Move Poll transport timeout and retry policy to the future
+    // Connectors Polling SDK. The extension can map user overrides into SDK
+    // options after Connector Namespace publishes its operational guidance.
     internal static readonly TimeSpan RuntimeTimeout =
-        TimeSpan.FromSeconds(10);
+        TimeSpan.FromSeconds(30);
     internal static readonly TimeSpan LinkedOutputTimeout =
         TimeSpan.FromMinutes(2);
     internal static readonly TimeSpan BaseRetryDelay =

@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text;
+using Azure.Core;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
@@ -209,6 +210,25 @@ public class ConnectorPollDeliveryClientTests
     }
 
     [Fact]
+    public async Task ReceiveAsync_DoesNotApplyHttpTimeoutToTokenAcquisition()
+    {
+        var handler = new SequenceHttpMessageHandler(_ =>
+            JsonResponse(HttpStatusCode.OK, """{"messages":[]}"""));
+        ConnectorPollDeliveryClient client = CreateClient(
+            new DelayedTokenCredential(TimeSpan.FromMilliseconds(100)),
+            handler,
+            TimeSpan.FromMilliseconds(20));
+
+        ConnectorReceiveResult result = await client.ReceiveAsync(
+            Endpoints(),
+            1,
+            CancellationToken.None);
+
+        Assert.Empty(result.Messages);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
     public async Task ReceiveAsync_RejectsMalformedMoreMessagesHeader()
     {
         var handler = new SequenceHttpMessageHandler(_ =>
@@ -345,11 +365,12 @@ public class ConnectorPollDeliveryClientTests
     }
 
     private static ConnectorPollDeliveryClient CreateClient(
-        TestTokenCredential credential,
-        HttpMessageHandler handler) =>
+        TokenCredential credential,
+        HttpMessageHandler handler,
+        TimeSpan? timeout = null) =>
         new(
             credential,
-            new TestHttpClientFactory(handler));
+            new TestHttpClientFactory(handler, timeout));
 
     private static ConnectorPollingEndpoints Endpoints(
         string receiveUri = "https://runtime.test/receive") =>
@@ -369,4 +390,22 @@ public class ConnectorPollDeliveryClientTests
                 "application/json"),
         };
 
+    private sealed class DelayedTokenCredential(TimeSpan delay) :
+        TokenCredential
+    {
+        public override AccessToken GetToken(
+            TokenRequestContext requestContext,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public override async ValueTask<AccessToken> GetTokenAsync(
+            TokenRequestContext requestContext,
+            CancellationToken cancellationToken)
+        {
+            await Task.Delay(delay, cancellationToken);
+            return new AccessToken(
+                "token",
+                DateTimeOffset.UtcNow.AddHours(1));
+        }
+    }
 }

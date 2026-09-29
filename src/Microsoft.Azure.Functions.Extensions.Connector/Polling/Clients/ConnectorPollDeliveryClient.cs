@@ -77,6 +77,8 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
         }
 
         Uri endpoint = AddMaxEvents(endpoints.ReceiveUri, maxEvents);
+        AccessToken token = await GetTokenAsync(cancellationToken)
+            .ConfigureAwait(false);
         HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
         using CancellationTokenSource timeoutSource =
             ConnectorPollingTimeout.CreateCancellationTokenSource(
@@ -88,6 +90,7 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
         {
             response = await SendAuthenticatedAsync(
                 client,
+                token,
                 HttpMethod.Get,
                 endpoint,
                 content: null,
@@ -137,6 +140,8 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
                 CharSet = ConnectorPollingHttpConstants.Utf8CharacterSet,
             };
 
+        AccessToken token = await GetTokenAsync(cancellationToken)
+            .ConfigureAwait(false);
         HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
         using CancellationTokenSource timeoutSource =
             ConnectorPollingTimeout.CreateCancellationTokenSource(
@@ -148,6 +153,7 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
         {
             response = await SendAuthenticatedAsync(
                 client,
+                token,
                 HttpMethod.Post,
                 endpoints.AcknowledgeUri,
                 content,
@@ -180,14 +186,12 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
 
     private async Task<HttpResponseMessage> SendAuthenticatedAsync(
         HttpClient client,
+        AccessToken token,
         HttpMethod method,
         Uri endpoint,
         HttpContent? content,
         CancellationToken cancellationToken)
     {
-        AccessToken token = await _credential.GetTokenAsync(
-            new TokenRequestContext([ApiHubScope]),
-            cancellationToken).ConfigureAwait(false);
         using var request = new HttpRequestMessage(method, endpoint)
         {
             Content = content,
@@ -202,6 +206,12 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
             cancellationToken)
             .ConfigureAwait(false);
     }
+
+    private async ValueTask<AccessToken> GetTokenAsync(
+        CancellationToken cancellationToken) =>
+        await _credential.GetTokenAsync(
+            new TokenRequestContext([ApiHubScope]),
+            cancellationToken).ConfigureAwait(false);
 
     // Polling endpoints are service-generated and may contain opaque query
     // parameters that must remain unchanged. Remove any existing maxEvents

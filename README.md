@@ -172,7 +172,9 @@ events supplied to one invocation:
 
 - .NET isolated: set `IsBatched = true`.
 - Node.js and TypeScript: set `cardinality: "many"`.
-- Python: set `cardinality=func.Cardinality.MANY`.
+- Python generic bindings must use single cardinality. The Python worker's
+  generic binding decoder does not currently accept batched
+  `collection_string` input.
 - Generic `function.json` bindings, including PowerShell: set `cardinality`
   to `"many"`.
 

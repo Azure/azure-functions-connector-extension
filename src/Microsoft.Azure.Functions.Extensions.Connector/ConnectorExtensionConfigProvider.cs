@@ -32,6 +32,8 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
     private readonly IConnectorConnectionOptionsProvider _connectionOptionsProvider;
     private readonly IConnectorPollingListenerFactory _pollingListenerFactory;
     private readonly ConcurrentDictionary<string, ConnectorFunctionRegistration> _functions = new(StringComparer.OrdinalIgnoreCase);
+    private string _webhookEndpoint = string.Empty;
+    private int _webhookEndpointLogged;
 
     public ConnectorExtensionConfigProvider(
         ConnectorHttpRequestProcessor httpRequestProcessor,
@@ -58,6 +60,22 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         _logger.LogDebug("Registered function {Function}", registration.FunctionName);
     }
 
+    internal void CaptureWebhookEndpoint(Uri? webhookUrl)
+    {
+        _webhookEndpoint =
+            webhookUrl?.GetLeftPart(UriPartial.Path) ?? string.Empty;
+    }
+
+    internal void LogWebhookEndpoint()
+    {
+        if (Interlocked.Exchange(ref _webhookEndpointLogged, 1) == 0)
+        {
+            _consoleLogger.LogInformation(
+                "Connector endpoint: {uri}",
+                _webhookEndpoint);
+        }
+    }
+
     public void Initialize(ExtensionConfigContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -66,8 +84,7 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
         var webhookUrl = context.GetWebhookHandler();
 #pragma warning restore CS0618
 
-        var extensionUri = webhookUrl?.GetLeftPart(UriPartial.Path) ?? string.Empty;
-        _consoleLogger.LogInformation("Connector endpoint: {uri}", extensionUri);
+        CaptureWebhookEndpoint(webhookUrl);
 
         var rule = context.AddBindingRule<ConnectorTriggerAttribute>();
         rule.BindToTrigger(new ConnectorTriggerBindingProvider(

@@ -224,7 +224,14 @@ Requirements:
 - Parse `x-ms-more-messages-available`.
 - Process acknowledgement statuses per item.
 - Do not transparently retry Receive or Acknowledge after ambiguous failures.
+- Use an extension-owned 30-second HTTP timeout for Receive, Acknowledge, and
+  queue depth, and a 2-minute timeout for linked-output downloads. Acquire
+  credentials before starting the HTTP timeout.
 - Allow bounded transient retries only for safe queue-depth operations.
+- Follow up by moving transport timeout and retry-policy ownership into the
+  Connectors Polling SDK. The extension can expose user overrides through
+  `ConnectorOptions` and map them into SDK options after Connector Namespace
+  publishes supported latency and retry guidance.
 
 Add a dedicated linked-output client or narrowly scoped collaborator:
 

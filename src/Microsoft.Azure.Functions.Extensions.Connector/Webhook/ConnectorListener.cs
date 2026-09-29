@@ -25,7 +25,11 @@ internal sealed class ConnectorListener : IListener
         _configProvider.RegisterFunction(_registration);
     }
 
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        _configProvider.LogWebhookEndpoint();
+        return Task.CompletedTask;
+    }
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public void Cancel() { }
     public void Dispose() { }
