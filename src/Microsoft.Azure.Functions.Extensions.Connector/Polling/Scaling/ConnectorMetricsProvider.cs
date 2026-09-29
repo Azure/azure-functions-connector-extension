@@ -10,7 +10,7 @@ internal sealed class ConnectorMetricsProvider
     private readonly IConnectorQueueDepthClient _depthClient;
     private readonly string _functionName;
     private readonly ILogger _logger;
-    private long _lastKnownGoodDepth = -1;
+    private ConnectorTriggerMetrics? _lastKnownGoodMetrics;
 
     public ConnectorMetricsProvider(
         IConnectorQueueDepthClient depthClient,
@@ -28,8 +28,9 @@ internal sealed class ConnectorMetricsProvider
         try
         {
             long depth = await _depthClient.GetApproximateQueueDepthAsync(cancellationToken).ConfigureAwait(false);
-            Interlocked.Exchange(ref _lastKnownGoodDepth, depth);
-            return new ConnectorTriggerMetrics(depth, DateTime.UtcNow);
+            var metrics = new ConnectorTriggerMetrics(depth, DateTime.UtcNow);
+            Interlocked.Exchange(ref _lastKnownGoodMetrics, metrics);
+            return metrics;
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
@@ -38,11 +39,12 @@ internal sealed class ConnectorMetricsProvider
         }
         catch (Exception exception)
         {
-            long lastKnownGoodDepth = Volatile.Read(ref _lastKnownGoodDepth);
-            if (lastKnownGoodDepth >= 0)
+            ConnectorTriggerMetrics? lastKnownGoodMetrics =
+                Volatile.Read(ref _lastKnownGoodMetrics);
+            if (lastKnownGoodMetrics is not null)
             {
-                _logger.LogWarning(exception, "Failed to query Connector queue depth for function {FunctionName}; preserving last known good depth {Depth}.", _functionName, lastKnownGoodDepth);
-                return new ConnectorTriggerMetrics(lastKnownGoodDepth, DateTime.UtcNow);
+                _logger.LogWarning(exception, "Failed to query Connector queue depth for function {FunctionName}; preserving last known good depth {Depth}.", _functionName, lastKnownGoodMetrics.ApproximateQueueDepth);
+                return lastKnownGoodMetrics;
             }
 
             _logger.LogError(exception, "Initial Connector queue depth query failed for function {FunctionName}; no successful zero-depth result is available.", _functionName);

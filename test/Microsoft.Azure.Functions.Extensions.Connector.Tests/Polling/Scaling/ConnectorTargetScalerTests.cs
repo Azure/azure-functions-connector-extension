@@ -74,6 +74,8 @@ public class ConnectorTargetScalerTests
 
         Assert.Equal(12, first.ApproximateQueueDepth);
         Assert.Equal(12, second.ApproximateQueueDepth);
+        Assert.Same(first, second);
+        Assert.Equal(first.SampledAtUtc, second.SampledAtUtc);
     }
 
     [Fact]
