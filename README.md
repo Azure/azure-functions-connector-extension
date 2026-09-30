@@ -195,6 +195,31 @@ An omitted or zero `MaxBatchSize` uses
 default is `1`. The resolved value supplied to the listener is always between
 `1` and `32`.
 
+When Receive returns no messages, the listener uses randomized exponential
+backoff starting at one second and resetting whenever messages are received.
+The delay is capped at 30 seconds by default. Configure the cap in `host.json`:
+
+```json
+{
+  "version": "2.0",
+  "extensions": {
+    "connector": {
+      "maxPollingInterval": "00:00:30"
+    }
+  }
+}
+```
+
+`maxPollingInterval` must be at least one second. Receive failures use a
+separate retry backoff and do not change the empty-queue backoff.
+
+Poll delivery is at least once. A failed invocation is not acknowledged and
+can be redelivered with the same `messageId` after its service-managed lock
+expires. Connector Namespace currently exposes neither a delivery count nor a
+dead-letter operation, so redelivery has no attempt limit. Unacknowledged
+messages expire after the service's fixed seven-day queue TTL. Functions must
+use `messageId` for deduplication.
+
 ## Documentation
 
 - **[Operations to Functions Signature Mapping](./docs/operations-functions-match.md)** - Complete reference of all connector trigger operations and their Azure Functions signatures across .NET, Python, and TypeScript SDKs.

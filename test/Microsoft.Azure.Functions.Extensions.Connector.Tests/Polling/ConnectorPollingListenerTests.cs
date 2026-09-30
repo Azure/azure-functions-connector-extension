@@ -228,6 +228,113 @@ public class ConnectorPollingListenerTests
     }
 
     [Fact]
+    public async Task Listener_BacksOffRepeatedEmptyReceivesToConfiguredMaximum()
+    {
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+                Task.FromResult(new ConnectorReceiveResult([], false)),
+        };
+        var delays = new List<TimeSpan>();
+        var expectedDelaysObserved = NewCompletionSource();
+
+        using ConnectorPollingListener listener = CreateListener(
+            Mock.Of<ITriggeredFunctionExecutor>(),
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient(),
+            maxPollingInterval: TimeSpan.FromSeconds(4),
+            delayAsync: async (delay, _) =>
+            {
+                lock (delays)
+                {
+                    delays.Add(delay);
+                    if (delays.Count == 5)
+                    {
+                        expectedDelaysObserved.TrySetResult();
+                    }
+                }
+
+                await Task.Yield();
+            });
+
+        await listener.StartAsync(CancellationToken.None);
+        await expectedDelaysObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        listener.Cancel();
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromSeconds(4),
+                TimeSpan.FromSeconds(4),
+                TimeSpan.FromSeconds(4),
+            ],
+            delays.Take(5));
+    }
+
+    [Fact]
+    public async Task Listener_ResetsEmptyReceiveBackoffWhenMessagesAreFound()
+    {
+        ConnectorPollMessage message =
+            CreateInlineMessage("message-1", "lock-1", """{"value":1}""");
+        int receiveCount = 0;
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+                Task.FromResult(Interlocked.Increment(ref receiveCount) switch
+                {
+                    1 or 2 => new ConnectorReceiveResult([], false),
+                    3 => new ConnectorReceiveResult([message], true),
+                    _ => new ConnectorReceiveResult([], false),
+                }),
+            AcknowledgeAsyncHandler = (_, locks, _) =>
+                Task.FromResult(Acknowledged(locks)),
+        };
+        var executor = new Mock<ITriggeredFunctionExecutor>();
+        executor
+            .Setup(value => value.TryExecuteAsync(
+                It.IsAny<TriggeredFunctionData>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FunctionResult(true));
+        var delays = new List<TimeSpan>();
+        var expectedDelaysObserved = NewCompletionSource();
+
+        using ConnectorPollingListener listener = CreateListener(
+            executor.Object,
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient(),
+            delayAsync: async (delay, _) =>
+            {
+                lock (delays)
+                {
+                    delays.Add(delay);
+                    if (delays.Count == 3)
+                    {
+                        expectedDelaysObserved.TrySetResult();
+                    }
+                }
+
+                await Task.Yield();
+            });
+
+        await listener.StartAsync(CancellationToken.None);
+        await expectedDelaysObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        listener.Cancel();
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromSeconds(1),
+            ],
+            delays.Take(3));
+    }
+
+    [Fact]
     public async Task Listener_GroupsMessagesIntoConcurrentBatchedInvocations()
     {
         ConnectorPollMessage[] messages =
@@ -993,6 +1100,7 @@ public class ConnectorPollingListenerTests
         int maxBatchSize = 1,
         int concurrency = 1,
         bool isBatched = false,
+        TimeSpan? maxPollingInterval = null,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
         ConnectorLinkedOutputInvocationLimiter? linkedOutputInvocationLimiter = null)
     {
@@ -1002,7 +1110,11 @@ public class ConnectorPollingListenerTests
             "OnNewEmail",
             maxBatchSize,
             concurrency,
-            isBatched);
+            isBatched)
+        {
+            MaxPollingInterval =
+                maxPollingInterval ?? TimeSpan.FromSeconds(30),
+        };
         return new ConnectorPollingListener(
             registration,
             options,

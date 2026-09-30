@@ -14,6 +14,11 @@ internal sealed record ConnectorPollingOptions(
     bool IsBatched = false)
 {
     internal const int MaximumBatchSize = ConnectorPollingProtocolLimits.MaximumBatchSize;
+    internal static readonly TimeSpan MinimumPollingInterval =
+        TimeSpan.FromSeconds(1);
+
+    internal TimeSpan MaxPollingInterval { get; init; } =
+        TimeSpan.FromSeconds(30);
 
     internal static ConnectorPollingOptions Create(
         ConnectorTriggerAttribute attribute,
@@ -49,7 +54,11 @@ internal sealed record ConnectorPollingOptions(
             attribute.PollingEndpoint,
             maxBatchSize,
             concurrency,
-            isBatched);
+            isBatched)
+        {
+            MaxPollingInterval =
+                ResolveMaxPollingInterval(defaults.MaxPollingInterval),
+        };
     }
 
     private static int ResolveMaxBatchSize(int configuredValue, int defaultValue)
@@ -86,5 +95,16 @@ internal sealed record ConnectorPollingOptions(
         }
 
         return value;
+    }
+
+    private static TimeSpan ResolveMaxPollingInterval(TimeSpan configuredValue)
+    {
+        if (configuredValue < MinimumPollingInterval)
+        {
+            throw new InvalidOperationException(
+                $"Connector MaxPollingInterval must be at least {MinimumPollingInterval}.");
+        }
+
+        return configuredValue;
     }
 }

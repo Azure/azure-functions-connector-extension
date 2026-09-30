@@ -23,6 +23,7 @@ public class ConnectorOptionsBindingTests
 
         Assert.Equal(1, options.DefaultMaxBatchSize);
         Assert.Equal(16, options.DefaultConcurrency);
+        Assert.Equal(TimeSpan.FromSeconds(30), options.MaxPollingInterval);
     }
 
     [Fact]
@@ -32,6 +33,7 @@ public class ConnectorOptionsBindingTests
         {
             ["AzureWebJobs:extensions:connector:defaultMaxBatchSize"] = "4",
             ["AzureWebJobs:extensions:connector:defaultConcurrency"] = "8",
+            ["AzureWebJobs:extensions:connector:maxPollingInterval"] = "00:00:45",
         };
 
         using IHost host = BuildHost(settings);
@@ -41,6 +43,7 @@ public class ConnectorOptionsBindingTests
 
         Assert.Equal(4, options.DefaultMaxBatchSize);
         Assert.Equal(8, options.DefaultConcurrency);
+        Assert.Equal(TimeSpan.FromSeconds(45), options.MaxPollingInterval);
     }
 
     [Fact]
@@ -50,6 +53,7 @@ public class ConnectorOptionsBindingTests
         {
             ["AzureWebJobs:extensions:connector:defaultMaxBatchSize"] = "4",
             ["AzureWebJobs:extensions:connector:defaultConcurrency"] = "8",
+            ["AzureWebJobs:extensions:connector:maxPollingInterval"] = "00:00:45",
         };
 
         using IHost host = BuildHost(
@@ -58,6 +62,7 @@ public class ConnectorOptionsBindingTests
             {
                 options.DefaultMaxBatchSize = 2;
                 options.DefaultConcurrency = 6;
+                options.MaxPollingInterval = TimeSpan.FromSeconds(20);
             });
 
         ConnectorOptions options =
@@ -65,6 +70,7 @@ public class ConnectorOptionsBindingTests
 
         Assert.Equal(2, options.DefaultMaxBatchSize);
         Assert.Equal(6, options.DefaultConcurrency);
+        Assert.Equal(TimeSpan.FromSeconds(20), options.MaxPollingInterval);
     }
 
     [Fact]
@@ -74,12 +80,14 @@ public class ConnectorOptionsBindingTests
         {
             DefaultMaxBatchSize = 4,
             DefaultConcurrency = 8,
+            MaxPollingInterval = TimeSpan.FromSeconds(30),
         };
 
         string formatted = ((IOptionsFormatter)options).Format();
 
         Assert.Contains("\"DefaultMaxBatchSize\": 4", formatted);
         Assert.Contains("\"DefaultConcurrency\": 8", formatted);
+        Assert.Contains("\"MaxPollingInterval\": \"00:00:30\"", formatted);
     }
 
     [Fact]

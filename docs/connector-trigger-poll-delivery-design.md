@@ -113,6 +113,10 @@ another runtime later needs the same protocol.
 - Add rich Connector SDK client bindings, similar to client bindings offered
   by extensions such as Storage. Applications could then bind to generated
   Connector clients without constructing and managing those clients.
+- Integrate Connector Namespace delivery-count, dead-letter, and failed-message
+  observability capabilities after the service publishes those contracts. The
+  extension must not infer delivery attempts or acknowledge permanently failed
+  messages without a service-owned destination.
 - If the service formally guarantees that every Trigger Config in a Connector
   Namespace shares a stable authority, consider supporting a shared
   `<Connection>__Endpoint` setting together with an explicit

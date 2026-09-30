@@ -27,6 +27,7 @@ public class ConnectorPollingOptionsTests
             result.PollingEndpoint);
         Assert.Equal(4, result.MaxBatchSize);
         Assert.Equal(8, result.Concurrency);
+        Assert.Equal(TimeSpan.FromSeconds(30), result.MaxPollingInterval);
         Assert.True(result.IsBatched);
     }
 
@@ -37,6 +38,7 @@ public class ConnectorPollingOptionsTests
         {
             DefaultMaxBatchSize = 3,
             DefaultConcurrency = 7,
+            MaxPollingInterval = TimeSpan.FromSeconds(45),
         };
 
         var result = ConnectorPollingOptions.Create(
@@ -46,6 +48,7 @@ public class ConnectorPollingOptionsTests
 
         Assert.Equal(3, result.MaxBatchSize);
         Assert.Equal(7, result.Concurrency);
+        Assert.Equal(TimeSpan.FromSeconds(45), result.MaxPollingInterval);
         Assert.True(result.IsBatched);
     }
 
@@ -113,6 +116,25 @@ public class ConnectorPollingOptionsTests
             ConnectorPollingOptions.Create(CreateValidAttribute(), defaults));
 
         Assert.Contains("DefaultConcurrency", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(999)]
+    public void Create_Throws_WhenMaxPollingIntervalIsLessThanOneSecond(
+        int milliseconds)
+    {
+        var defaults = new ConnectorOptions
+        {
+            MaxPollingInterval =
+                TimeSpan.FromMilliseconds(milliseconds),
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ConnectorPollingOptions.Create(CreateValidAttribute(), defaults));
+
+        Assert.Contains("MaxPollingInterval", exception.Message);
     }
 
     [Fact]

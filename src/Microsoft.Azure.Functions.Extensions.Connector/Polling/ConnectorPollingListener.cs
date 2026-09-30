@@ -74,7 +74,8 @@ internal sealed class ConnectorPollingListenerFactory(
 /// </summary>
 internal sealed class ConnectorPollingListener : IListener
 {
-    private static readonly TimeSpan EmptyQueueDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan InitialEmptyQueueDelay =
+        TimeSpan.FromSeconds(1);
     private static readonly TimeSpan InitialFailureDelay =
         TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaximumFailureDelay =
@@ -88,6 +89,7 @@ internal sealed class ConnectorPollingListener : IListener
     private readonly ConnectorLinkedOutputInvocationLimiter _linkedOutputInvocationLimiter;
     private readonly ILogger<ConnectorPollingListener> _logger;
     private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
+    private readonly Func<TimeSpan, CancellationToken, Task> _idleDelayAsync;
     private readonly object _lifecycleLock = new();
 
     private CancellationTokenSource? _receiveCancellation;
@@ -114,6 +116,11 @@ internal sealed class ConnectorPollingListener : IListener
             ?? throw new ArgumentNullException(nameof(linkedOutputInvocationLimiter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _delayAsync = delayAsync ?? DelayWithJitterAsync;
+        _idleDelayAsync = delayAsync ??
+            ((delay, cancellationToken) => DelayWithJitterAsync(
+                delay,
+                Options.MaxPollingInterval,
+                cancellationToken));
     }
 
     internal ConnectorFunctionRegistration Registration { get; }
@@ -202,6 +209,7 @@ internal sealed class ConnectorPollingListener : IListener
         CancellationToken processingCancellationToken)
     {
         var activeInvocations = new HashSet<Task>();
+        TimeSpan emptyQueueDelay = InitialEmptyQueueDelay;
         TimeSpan failureDelay = InitialFailureDelay;
         try
         {
@@ -235,6 +243,11 @@ internal sealed class ConnectorPollingListener : IListener
                             $"Connector Receive returned {receiveResult.Messages.Count} messages when at most {maxEvents} were requested.");
                     }
 
+                    if (receiveResult.Messages.Count > 0)
+                    {
+                        emptyQueueDelay = InitialEmptyQueueDelay;
+                    }
+
                     foreach (ConnectorPollMessage[] batch in
                         receiveResult.Messages.Chunk(Options.MaxBatchSize))
                     {
@@ -244,11 +257,19 @@ internal sealed class ConnectorPollingListener : IListener
                             processingCancellationToken));
                     }
 
-                    if (receiveResult.Messages.Count == 0 ||
-                        !receiveResult.MoreMessagesAvailable)
+                    if (receiveResult.Messages.Count == 0)
                     {
-                        await _delayAsync(
-                            EmptyQueueDelay,
+                        await _idleDelayAsync(
+                            emptyQueueDelay,
+                            receiveCancellationToken).ConfigureAwait(false);
+                        emptyQueueDelay = DoubleDelay(
+                            emptyQueueDelay,
+                            Options.MaxPollingInterval);
+                    }
+                    else if (!receiveResult.MoreMessagesAvailable)
+                    {
+                        await _idleDelayAsync(
+                            InitialEmptyQueueDelay,
                             receiveCancellationToken).ConfigureAwait(false);
                     }
                 }
@@ -458,6 +479,29 @@ internal sealed class ConnectorPollingListener : IListener
             Random.Shared.Next(maximumJitterMilliseconds + 1));
         return Task.Delay(delay + jitter, cancellationToken);
     }
+
+    private static Task DelayWithJitterAsync(
+        TimeSpan delay,
+        TimeSpan maximumDelay,
+        CancellationToken cancellationToken)
+    {
+        int maximumJitterMilliseconds =
+            checked((int)MaximumJitter.TotalMilliseconds);
+        TimeSpan jitter = TimeSpan.FromMilliseconds(
+            Random.Shared.Next(maximumJitterMilliseconds + 1));
+        TimeSpan jitteredDelay = TimeSpan.FromTicks(
+            Math.Min(
+                delay.Ticks + jitter.Ticks,
+                maximumDelay.Ticks));
+        return Task.Delay(jitteredDelay, cancellationToken);
+    }
+
+    private static TimeSpan DoubleDelay(
+        TimeSpan currentDelay,
+        TimeSpan maximumDelay) =>
+        currentDelay.Ticks >= maximumDelay.Ticks / 2
+            ? maximumDelay
+            : TimeSpan.FromTicks(currentDelay.Ticks * 2);
 
     private static int CalculateMaxEvents(
         int availableInvocationSlots,
