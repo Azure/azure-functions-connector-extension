@@ -49,9 +49,7 @@ internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionO
             throw new InvalidOperationException(
                 $"Connector connection '{connectionName}' must configure {ResourceIdPropertyName}.");
         }
-
         ResourceIdentifier resourceId = ParseResourceId(connectionName, resourceIdValue);
-        ValidateIdentitySelectors(connectionSection, connectionName);
         TokenCredential credential =
             (componentFactory ?? _componentFactory)
             .CreateTokenCredential(connectionSection);
@@ -61,28 +59,6 @@ internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionO
 
     internal IConfigurationSection GetConnectionSection(string connectionName) =>
         _configuration.GetWebJobsConnectionSection(connectionName);
-
-    internal static void ValidateIdentitySelectors(
-        IConfigurationSection section,
-        string connectionName)
-    {
-        bool hasCredential = !string.IsNullOrWhiteSpace(section["credential"]);
-        bool hasClientId = !string.IsNullOrWhiteSpace(section["clientId"]);
-        bool hasResourceId =
-            !string.IsNullOrWhiteSpace(section["managedIdentityResourceId"]);
-
-        if (hasClientId && hasResourceId)
-        {
-            throw new InvalidOperationException(
-                $"Connector connection '{connectionName}' must specify only one managed identity selector.");
-        }
-
-        if ((hasClientId || hasResourceId) && !hasCredential)
-        {
-            throw new InvalidOperationException(
-                $"Connector connection '{connectionName}' must configure credential when selecting a managed identity.");
-        }
-    }
 
     internal static ResourceIdentifier ParseResourceId(
         string connectionName,

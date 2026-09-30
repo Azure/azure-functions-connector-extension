@@ -85,6 +85,40 @@ public class ConnectorConnectionOptionsProviderTests
         Assert.Equal(ResourceId, result.ResourceId.ToString());
     }
 
+    [Fact]
+    public void Get_PassesServicePrincipalConfigurationToComponentFactory()
+    {
+        IConfiguration configuration = BuildConfiguration(
+            new Dictionary<string, string?>
+            {
+                ["ConnectorNamespace:resourceId"] = ResourceId,
+                ["ConnectorNamespace:tenantId"] = "tenant-id",
+                ["ConnectorNamespace:clientId"] = "client-id",
+                ["ConnectorNamespace:clientSecret"] = "client-secret",
+            });
+        TokenCredential credential = Mock.Of<TokenCredential>();
+        var componentFactory = new Mock<AzureComponentFactory>();
+        IConfiguration? receivedConfiguration = null;
+        componentFactory
+            .Setup(factory =>
+                factory.CreateTokenCredential(It.IsAny<IConfiguration>()))
+            .Callback<IConfiguration>(
+                value => receivedConfiguration = value)
+            .Returns(credential);
+        var provider = new ConnectorConnectionOptionsProvider(
+            configuration,
+            componentFactory.Object);
+
+        ConnectorConnectionOptions result =
+            provider.Get("ConnectorNamespace");
+
+        Assert.Same(credential, result.Credential);
+        Assert.NotNull(receivedConfiguration);
+        Assert.Equal("tenant-id", receivedConfiguration["tenantId"]);
+        Assert.Equal("client-id", receivedConfiguration["clientId"]);
+        Assert.Equal("client-secret", receivedConfiguration["clientSecret"]);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
