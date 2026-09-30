@@ -32,7 +32,6 @@ internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionO
 
         IConfigurationSection connectionSection =
             GetConnectionSection(connectionName);
-        ValidateIdentitySelectors(connectionSection, connectionName);
         TokenCredential credential =
             (componentFactory ?? _componentFactory)
             .CreateTokenCredential(connectionSection);
@@ -42,27 +41,4 @@ internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionO
 
     internal IConfigurationSection GetConnectionSection(string connectionName) =>
         _configuration.GetWebJobsConnectionSection(connectionName);
-
-    internal static void ValidateIdentitySelectors(
-        IConfigurationSection section,
-        string connectionName)
-    {
-        bool hasCredential = !string.IsNullOrWhiteSpace(section["credential"]);
-        bool hasClientId = !string.IsNullOrWhiteSpace(section["clientId"]);
-        bool hasManagedIdentityResourceId =
-            !string.IsNullOrWhiteSpace(section["managedIdentityResourceId"]);
-
-        if (hasClientId && hasManagedIdentityResourceId)
-        {
-            throw new InvalidOperationException(
-                $"Connector connection '{connectionName}' must specify only one managed identity selector.");
-        }
-
-        if ((hasClientId || hasManagedIdentityResourceId) &&
-            !hasCredential)
-        {
-            throw new InvalidOperationException(
-                $"Connector connection '{connectionName}' must configure credential when selecting a managed identity.");
-        }
-    }
 }

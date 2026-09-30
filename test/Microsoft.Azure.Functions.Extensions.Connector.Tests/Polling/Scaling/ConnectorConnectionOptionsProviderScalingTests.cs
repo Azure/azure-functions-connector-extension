@@ -49,22 +49,25 @@ public class ConnectorConnectionOptionsProviderScalingTests
     }
 
     [Fact]
-    public void Create_RejectsSelectorsWithoutCredentialMarker()
+    public void Create_DelegatesSelectorsWithoutCredentialMarker()
     {
         IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
         {
             ["ConnectorNamespace:clientId"] = "client-id",
         });
+        var credential = new TestTokenCredential();
+        var componentFactory = new TestAzureComponentFactory(credential);
 
-        Assert.Throws<InvalidOperationException>(() =>
-            CreateProvider(
-                configuration,
-                new TestAzureComponentFactory(new TestTokenCredential()))
-                .Get("ConnectorNamespace"));
+        ConnectorConnectionOptions connection =
+            CreateProvider(configuration, componentFactory)
+                .Get("ConnectorNamespace");
+
+        Assert.Same(credential, connection.Credential);
+        Assert.Equal("client-id", componentFactory.LastConfiguration!["clientId"]);
     }
 
     [Fact]
-    public void Create_RejectsBothManagedIdentitySelectors()
+    public void Create_DelegatesBothManagedIdentitySelectors()
     {
         IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
         {
@@ -72,12 +75,22 @@ public class ConnectorConnectionOptionsProviderScalingTests
             ["ConnectorNamespace:clientId"] = "client-id",
             ["ConnectorNamespace:managedIdentityResourceId"] = "/subscriptions/x/resourceGroups/y/providers/Microsoft.ManagedIdentity/userAssignedIdentities/z",
         });
+        var credential = new TestTokenCredential();
+        var componentFactory = new TestAzureComponentFactory(credential);
 
-        Assert.Throws<InvalidOperationException>(() =>
-            CreateProvider(
-                configuration,
-                new TestAzureComponentFactory(new TestTokenCredential()))
-                .Get("ConnectorNamespace"));
+        ConnectorConnectionOptions connection =
+            CreateProvider(configuration, componentFactory)
+                .Get("ConnectorNamespace");
+
+        Assert.NotNull(connection.Credential);
+        Assert.Equal(
+            "managedidentity",
+            componentFactory.LastConfiguration!["credential"]);
+        Assert.Equal(
+            "client-id",
+            componentFactory.LastConfiguration["clientId"]);
+        Assert.NotNull(
+            componentFactory.LastConfiguration["managedIdentityResourceId"]);
     }
 
     private static IConfiguration BuildConfiguration(IDictionary<string, string?> settings) =>
