@@ -84,7 +84,8 @@ Changes:
   value to be from `1` through `32`.
 - Accept non-negative `Concurrency` and require the effective value to be
   greater than zero.
-- Define `Concurrency` as the maximum pending events per worker instance, not the maximum function invocations.
+- Define `Concurrency` as the maximum concurrent function invocations per
+  worker instance.
 - Keep `MaxBatchSize` independent of scaling and map it to Connector Namespace `maxEvents`.
 - Preserve `Webhook` as the default.
 - Keep `Connection` literal; do not apply `%...%` name resolution to it.
@@ -279,19 +280,21 @@ Replace the placeholder with a lifecycle-safe, capacity-aware message pump.
 Capacity calculation:
 
 ```csharp
-int availableEventCapacity = effectiveConcurrency - pendingEventCount;
-int maxEvents = Math.Min(
-    32,
-    Math.Min(effectiveMaxBatchSize, availableEventCapacity));
+int availableInvocationSlots =
+    effectiveConcurrency - activeInvocationCount;
+int availableMessageCapacity =
+    availableInvocationSlots * effectiveMaxBatchSize;
+int maxEvents = Math.Min(32, availableMessageCapacity);
 ```
 
 Requirements:
 
 - Receive only when `maxEvents > 0`.
-- Do not prefetch beyond remaining event capacity.
+- Do not prefetch beyond remaining invocation capacity.
 - Count an event as pending from Receive until acknowledgement completes or a failed attempt finishes without acknowledgement, including hydration and function execution.
 - Supply each Receive batch to one invocation.
-- Allow no more than `Concurrency` pending events per worker instance.
+- Allow no more than `Concurrency` active function invocations per worker
+  instance.
 - Bound linked-output hydration and account for its time in the fixed
   two-minute lock budget.
 - Pass normalized payloads and per-event metadata through the worker binding.
@@ -332,7 +335,9 @@ Requirements:
   `approximateQueueDepthUri`.
 - Scale from approximate queue depth without treating it as an exact count or
   a prerequisite for Receive.
-- Calculate target workers from effective per-worker event capacity:
+- Calculate target workers from effective invocation concurrency.
+  `MaxBatchSize` is listener invocation grouping and must not affect the
+  target:
 
   ```text
   ceil(pendingEvents / effectiveConcurrency)

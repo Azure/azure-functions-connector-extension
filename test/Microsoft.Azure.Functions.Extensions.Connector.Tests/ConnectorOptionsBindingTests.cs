@@ -82,13 +82,15 @@ public class ConnectorOptionsBindingTests
     }
 
     [Fact]
-    public void AddConnector_RegistersConnectionServices()
+    public void AddConnector_RegistersAzureHttpAndPollingFactories()
     {
         using IHost host = BuildHost(new Dictionary<string, string?>());
 
         Assert.NotNull(host.Services.GetRequiredService<AzureComponentFactory>());
+        Assert.NotNull(host.Services.GetRequiredService<IHttpClientFactory>());
         Assert.NotNull(
             host.Services.GetRequiredService<IConnectorConnectionOptionsProvider>());
+        Assert.NotNull(host.Services.GetRequiredService<IConnectorQueueDepthClientFactory>());
     }
 
     private static IHost BuildHost(

@@ -11,7 +11,6 @@ public class ConnectorPollingProtocolModelTests
         var endpoints = new ConnectorPollingEndpoints(
             new Uri("https://example.test/receive?sig=receive-secret"),
             new Uri("https://example.test/acknowledge?sig=ack-secret"),
-            new Uri("https://example.test/hasMessages?sig=has-secret"),
             new Uri("https://example.test/depth?sig=depth-secret"));
 
         string value = endpoints.ToString();
@@ -19,11 +18,9 @@ public class ConnectorPollingProtocolModelTests
         Assert.Contains("https://example.test/[REDACTED]?[REDACTED]", value);
         Assert.DoesNotContain("/receive", value);
         Assert.DoesNotContain("/acknowledge", value);
-        Assert.DoesNotContain("/hasMessages", value);
         Assert.DoesNotContain("/depth", value);
         Assert.DoesNotContain("receive-secret", value);
         Assert.DoesNotContain("ack-secret", value);
-        Assert.DoesNotContain("has-secret", value);
         Assert.DoesNotContain("depth-secret", value);
     }
 
@@ -38,7 +35,6 @@ public class ConnectorPollingProtocolModelTests
             new ConnectorPollingEndpoints(
                 new Uri(uri, UriKind.RelativeOrAbsolute),
                 new Uri("https://example.test/acknowledge"),
-                new Uri("https://example.test/hasMessages"),
                 new Uri("https://example.test/depth")));
 
         Assert.DoesNotContain(uri, exception.Message);

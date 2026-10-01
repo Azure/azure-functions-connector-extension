@@ -28,9 +28,8 @@ public class ConnectorTriggerBindingTests
             Options.Create(_options),
             new StubConnectorConnectionOptionsProvider());
         var connectionOptions = new ConnectorConnectionOptions(
-            new ResourceIdentifier(
-                "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns"),
-            Mock.Of<TokenCredential>());
+            Mock.Of<TokenCredential>(),
+            "https://runtime.test/api/connectorGateways/ns");
         _connectionOptionsProvider =
             new StubConnectorConnectionOptionsProvider(connectionOptions);
         _attribute = new ConnectorTriggerAttribute();
@@ -263,8 +262,8 @@ public class ConnectorTriggerBindingTests
         Assert.Equal(attribute.MaxBatchSize, pollingListener.Options.MaxBatchSize);
         Assert.Equal(attribute.Concurrency, pollingListener.Options.Concurrency);
         Assert.Equal(
-            "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns",
-            pollingListener.ConnectionOptions.ResourceId.ToString());
+            "https://runtime.test/api/connectorGateways/ns",
+            pollingListener.ConnectionOptions.PollingEndpoint);
     }
 
     [Fact]
