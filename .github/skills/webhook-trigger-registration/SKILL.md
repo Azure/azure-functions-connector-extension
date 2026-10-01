@@ -7,9 +7,7 @@ description: 'Register Connector Namespace trigger configs that use Webhook deli
 
 Registers polling trigger configs on a Connector Namespace so that connector events (new email, new file, etc.) call back to your Azure Function via the ConnectorTrigger extension.
 
-This workflow configures Connector Namespace polling with **Webhook delivery**
-to the Function callback endpoint. For the extension's `DeliveryMode = Poll`
-host-pull contract, use the `poll-trigger-registration` skill.
+This workflow configures Connector Namespace polling with **Webhook delivery** to the Function callback endpoint. For the extension's `DeliveryMode = Poll` host-pull contract, use the `poll-trigger-registration` skill.
 
 ## When to Use
 
@@ -37,8 +35,7 @@ POST /runtime/webhooks/connector?functionName={FunctionName}
 
 - `functionName` must exactly match the `[Function("...")]` attribute name
 - `connector_extension` is a system key auto-generated when the extension loads
-- Store the key separately in `notificationDetails.authentication` as a
-  `QueryString` value named `code`; do not embed it in `callbackUrl`
+- Store the key separately in `notificationDetails.authentication` as a `QueryString` value named `code`; do not embed it in `callbackUrl`
 - Locally (`func start`), the system key is not enforced
 
 ### Trigger Config vs Connection
@@ -420,12 +417,7 @@ az connector-namespace trigger create `
 Remove-Item $notifFile -ErrorAction SilentlyContinue
 ```
 
-The `--metadata` object identifies the destination to the Connector Namespace
-portal so it can render the backend as a Function App. Keep the Function App
-subscription, resource group, app name, and function name aligned with the
-callback destination. Runtime delivery and authentication are controlled by
-`notificationDetails`; the metadata object does not replace the callback URL
-or its `QueryString` authentication.
+The `--metadata` object identifies the destination to the Connector Namespace portal so it can render the backend as a Function App. Keep the Function App subscription, resource group, app name, and function name aligned with the callback destination. Runtime delivery and authentication are controlled by `notificationDetails`; the metadata object does not replace the callback URL or its `QueryString` authentication.
 
 **Trigger parameters** — add `--parameters` for connector-specific inputs:
 
@@ -452,9 +444,7 @@ az connector-namespace trigger show `
     -o table
 ```
 
-Expected: `state = Enabled`, `authenticationType = QueryString`, and
-`authenticationName = code`. The authentication value is intentionally not
-displayed.
+Expected: `state = Enabled`, `authenticationType = QueryString`, and `authenticationName = code`. The authentication value is intentionally not displayed.
 
 ### Step 4: Test the Trigger
 

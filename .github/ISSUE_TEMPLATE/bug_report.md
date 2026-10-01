@@ -58,9 +58,7 @@ What actually happened instead.
 Paste relevant logs from the Functions host output here.
 ```
 
-Remove or redact access tokens, system keys, complete Poll endpoint URLs,
-signed `outputsLink` URLs, lock tokens, payload contents, email addresses, and
-other customer data.
+Remove or redact access tokens, system keys, complete Poll endpoint URLs, signed `outputsLink` URLs, lock tokens, payload contents, email addresses, and other customer data.
 
 ## Connector Namespace Run Logs
 

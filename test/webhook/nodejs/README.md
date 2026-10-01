@@ -2,10 +2,7 @@
 
 This sample demonstrates how to use the Connector Extension with the Node.js v4 programming model (TypeScript) using `@azure/functions-extensions-connectors`.
 
-When Connector Namespace detects a connector event (for example, a new Office
-365 email), it sends a Webhook callback to the function. The extension package
-normalizes the payload into a strongly typed context. The sample logs key
-fields and persists the raw payload to Azure Blob Storage.
+When Connector Namespace detects a connector event (for example, a new Office 365 email), it sends a Webhook callback to the function. The extension package normalizes the payload into a strongly typed context. The sample logs key fields and persists the raw payload to Azure Blob Storage.
 
 ## Prerequisites
 

@@ -2,10 +2,7 @@
 
 This sample demonstrates how to use the Connector Extension with the Python v2 programming model.
 
-When Connector Namespace detects a connector event (for example, a new Office
-365 email), it sends a Webhook callback to the function. The Connector binding
-converts the callback into typed `ClientReceiveMessage` values. The sample
-logs key fields and persists the serialized batch to Azure Blob Storage.
+When Connector Namespace detects a connector event (for example, a new Office 365 email), it sends a Webhook callback to the function. The Connector binding converts the callback into typed `ClientReceiveMessage` values. The sample logs key fields and persists the serialized batch to Azure Blob Storage.
 
 ## Prerequisites
 

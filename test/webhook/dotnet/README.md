@@ -1,9 +1,6 @@
 # .NET Isolated Webhook Sample
 
-This sample validates Connector Namespace Webhook delivery with the .NET
-isolated worker. `OnNewEmail` binds the callback payload to
-`Office365OnNewEmailTriggerPayload` and writes the serialized payload to Blob
-Storage.
+This sample validates Connector Namespace Webhook delivery with the .NET isolated worker. `OnNewEmail` binds the callback payload to `Office365OnNewEmailTriggerPayload` and writes the serialized payload to Blob Storage.
 
 ## Prerequisites
 
@@ -46,8 +43,7 @@ public string OnNewEmail(
 }
 ```
 
-The sample references the repository-local Connector worker extension and
-`Azure.Connectors.Sdk` `0.14.0-preview.1`.
+The sample references the repository-local Connector worker extension and `Azure.Connectors.Sdk` `0.14.0-preview.1`.
 
 ## Local callback test
 
@@ -59,6 +55,4 @@ Invoke-RestMethod `
     -Body '{"body":{"value":[{"subject":"Test email","from":"sender@example.com"}]}}'
 ```
 
-Local Core Tools runs do not enforce the Connector system key unless
-authentication is explicitly enabled. Deployed callbacks must include the
-`connector_extension` system key.
+Local Core Tools runs do not enforce the Connector system key unless authentication is explicitly enabled. Deployed callbacks must include the `connector_extension` system key.

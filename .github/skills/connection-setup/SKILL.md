@@ -167,7 +167,5 @@ az connector-namespace delete -g $resourceGroup -n $namespaceName
 
 ## Next Steps
 
-- **Webhook delivery:** Use
-  [`webhook-trigger-registration`](../webhook-trigger-registration/SKILL.md).
-- **Host-pull Poll delivery:** Use
-  [`poll-trigger-registration`](../poll-trigger-registration/SKILL.md).
+- **Webhook delivery:** Use [`webhook-trigger-registration`](../webhook-trigger-registration/SKILL.md).
+- **Host-pull Poll delivery:** Use [`poll-trigger-registration`](../poll-trigger-registration/SKILL.md).

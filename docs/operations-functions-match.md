@@ -28,6 +28,8 @@ This document maps connector trigger operation names to their corresponding Azur
 
 ## Table of Contents
 
+- [Python: Choosing a Decorator](#python-choosing-a-decorator)
+- [Python: Choosing Packages by Trigger Operation](#python-choosing-packages-by-trigger-operation)
 - [Office 365 Connector](#office-365-connector)
 - [SharePoint Online Connector](#sharepoint-online-connector)
 - [Microsoft Teams Connector](#microsoft-teams-connector)

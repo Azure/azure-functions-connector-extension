@@ -14,9 +14,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://dev.azure.com/azfunc/public/_apis/build/status/1710?branchName=main)](https://dev.azure.com/azfunc/public/_build?definitionId=1710&branchName=main)
 
-An Azure Functions trigger extension for receiving Webhook and preview Poll
-events from Connector Namespace managed connectors (Office 365, Teams,
-SharePoint, etc.).
+An Azure Functions trigger extension for receiving Webhook and preview Poll events from Connector Namespace managed connectors (Office 365, Teams, SharePoint, etc.).
 
 - [Learn Documentation](https://learn.microsoft.com/azure/azure-functions/functions-connectors-overview)
 - [Try Samples](https://aka.ms/functions-connectors-samples)
@@ -43,10 +41,7 @@ For non-.NET languages (Node.js, Python, etc.), use the **preview extension bund
 
 ## Overview
 
-This extension enables Azure Functions to receive events from Connector
-Namespace managed connectors. Webhook delivery sends callbacks to the
-extension endpoint; preview Poll delivery has the Functions host receive and
-acknowledge leased events from Connector Namespace.
+This extension enables Azure Functions to receive events from Connector Namespace managed connectors. Webhook delivery sends callbacks to the extension endpoint; preview Poll delivery has the Functions host receive and acknowledge leased events from Connector Namespace.
 
 **Webhook endpoint pattern:**
 
@@ -138,13 +133,11 @@ The underlying Connector SDKs provide typed models:
 - `string` - raw JSON body
 - POCO/model types - strongly-typed SDK models (see individual SDK docs for available types)
 - `T[]` - an array-shaped binding containing the delivered event payload
-- `ConnectorEvent<T>` and `ConnectorEvent<T>[]` - payloads with the stable Poll
-  `MessageId` for application-level deduplication
+- `ConnectorEvent<T>` and `ConnectorEvent<T>[]` - payloads with the stable Poll `MessageId` for application-level deduplication
 
 ### Poll delivery
 
-Poll functions configure a credential connection separately from their
-Trigger Config name:
+Poll functions configure a credential connection separately from their Trigger Config name:
 
 ```csharp
 [ConnectorTrigger(
@@ -156,8 +149,7 @@ Trigger Config name:
     Concurrency = 4)]
 ```
 
-`Connection` provides the gateway-level Poll endpoint and runtime token
-credential:
+`Connection` provides the gateway-level Poll endpoint and runtime token credential:
 
 ```text
 ConnectorNamespace__pollingEndpoint=https://<host>/api/connectorGateways/<connector-namespace-id>
@@ -166,50 +158,24 @@ ConnectorNamespace__clientId=<optional-user-assigned-client-id>
 ConnectorNamespace__managedIdentityResourceId=<optional-user-assigned-resource-id>
 ```
 
-For currently deployed Connector Namespace environments, `<host>` is a
-`logic.azure.com` subdomain. Upcoming environments use regional
-`connectornamespaces` hosts. The extension treats the complete authority and
-gateway identifier as opaque, trusted application configuration rather than
-enforcing cloud-specific DNS suffixes.
+For currently deployed Connector Namespace environments, `<host>` is a `logic.azure.com` subdomain. Upcoming environments use regional `connectornamespaces` hosts. The extension treats the complete authority and gateway identifier as opaque, trusted application configuration rather than enforcing cloud-specific DNS suffixes.
 
-`TriggerConfigName` identifies one Trigger Config and may be a literal or a
-Functions app-setting expression. The extension appends only
-`/triggerConfigs/<TriggerConfigName>` and the fixed `/receive`,
-`/acknowledge`, and `/approximateQueueDepth` operations. It performs no
-Connector Namespace resource-ID parsing or control-plane endpoint discovery.
+`TriggerConfigName` identifies one Trigger Config and may be a literal or a Functions app-setting expression. The extension appends only `/triggerConfigs/<TriggerConfigName>` and the fixed `/receive`, `/acknowledge`, and `/approximateQueueDepth` operations. It performs no Connector Namespace resource-ID parsing or control-plane endpoint discovery.
 
-Poll triggers use one event per invocation by default. Enable batched
-invocations explicitly, then set `MaxBatchSize` to the maximum number of
-events supplied to one invocation:
+Poll triggers use one event per invocation by default. Enable batched invocations explicitly, then set `MaxBatchSize` to the maximum number of events supplied to one invocation:
 
 - .NET isolated: set `IsBatched = true`.
 - Node.js and TypeScript: set `cardinality: "many"`.
-- Python generic bindings must use single cardinality. The Python worker's
-  generic binding decoder does not currently accept batched
-  `collection_string` input.
-- Generic `function.json` bindings, including PowerShell: set `cardinality`
-  to `"many"`.
+- Python generic bindings must use single cardinality. The Python worker's generic binding decoder does not currently accept batched `collection_string` input.
+- Generic `function.json` bindings, including PowerShell: set `cardinality` to `"many"`.
 
-Scalar cardinality requires an effective `MaxBatchSize` of `1`. Batched
-cardinality supports effective values from `1` through `32`; a final
-invocation may contain fewer events. See the [Poll test samples](./test/poll)
-for language-specific examples.
+Scalar cardinality requires an effective `MaxBatchSize` of `1`. Batched cardinality supports effective values from `1` through `32`; a final invocation may contain fewer events. See the [Poll test samples](./test/poll) for language-specific examples.
 
-The extension defensively implements `outputsLink` delivery, but Connector
-Namespace does not yet emit linked-output messages in the available test
-environment. Service-backed validation is tracked in [#39](https://github.com/Azure/azure-functions-connector-extension/issues/39)
-before this behavior is advertised as supported. The implementation supplies
-linked outputs in single-event invocations and serializes them across the host
-to bound retained payload memory.
+The extension defensively implements `outputsLink` delivery, but Connector Namespace does not yet emit linked-output messages in the available test environment. Service-backed validation is tracked in [#39](https://github.com/Azure/azure-functions-connector-extension/issues/39) before this behavior is advertised as supported. The implementation supplies linked outputs in single-event invocations and serializes them across the host to bound retained payload memory.
 
-An omitted or zero `MaxBatchSize` uses
-`extensions.connector.defaultMaxBatchSize` from `host.json`; the built-in
-default is `1`. The resolved value supplied to the listener is always between
-`1` and `32`.
+An omitted or zero `MaxBatchSize` uses `extensions.connector.defaultMaxBatchSize` from `host.json`; the built-in default is `1`. The resolved value supplied to the listener is always between `1` and `32`.
 
-When Receive returns no messages, the listener uses randomized exponential
-backoff starting at one second and resetting whenever messages are received.
-The delay is capped at 30 seconds by default. Configure the cap in `host.json`:
+When Receive returns no messages, the listener uses randomized exponential backoff starting at one second and resetting whenever messages are received. The delay is capped at 30 seconds by default. Configure the cap in `host.json`:
 
 ```json
 {
@@ -222,15 +188,9 @@ The delay is capped at 30 seconds by default. Configure the cap in `host.json`:
 }
 ```
 
-`maxPollingInterval` must be at least one second. Receive failures use a
-separate retry backoff and do not change the empty-queue backoff.
+`maxPollingInterval` must be at least one second. Receive failures use a separate retry backoff and do not change the empty-queue backoff.
 
-Poll delivery is at least once. A failed invocation is not acknowledged and
-can be redelivered with the same `messageId` after its service-managed lock
-expires. Connector Namespace currently exposes neither a delivery count nor a
-dead-letter operation, so redelivery has no attempt limit. Unacknowledged
-messages expire after the service's fixed seven-day queue TTL. Functions must
-use `messageId` for deduplication.
+Poll delivery is at least once. A failed invocation is not acknowledged and can be redelivered with the same `messageId` after its service-managed lock expires. Connector Namespace currently exposes neither a delivery count nor a dead-letter operation, so redelivery has no attempt limit. Unacknowledged messages expire after the service's fixed seven-day queue TTL. Functions must use `messageId` for deduplication.
 
 ## Documentation
 

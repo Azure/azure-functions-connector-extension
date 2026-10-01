@@ -5,32 +5,23 @@ description: 'Register Connector Namespace trigger configs for Azure Functions h
 
 # Connector Poll Trigger Registration for Azure Functions
 
-Registers a Connector Namespace Trigger Config with `deliveryMode: Poll`,
-returns the service-generated `pollingEndpoints`, and configures the values
-required by the Azure Functions Connector extension.
+Registers a Connector Namespace Trigger Config with `deliveryMode: Poll`, returns the service-generated `pollingEndpoints`, and configures the values required by the Azure Functions Connector extension.
 
 ## When to Use
 
 - The Function binding uses `DeliveryMode = Poll`.
 - The Function host must receive and acknowledge leased Connector events.
-- A Poll Trigger Config must be created through ARM because the current portal
-  and `az connector-namespace trigger create` command do not expose the Poll
-  delivery contract.
-- The user needs the generated Poll endpoints and ready-to-copy Function app
-  settings.
+- A Poll Trigger Config must be created through ARM because the current portal and `az connector-namespace trigger create` command do not expose the Poll delivery contract.
+- The user needs the generated Poll endpoints and ready-to-copy Function app settings.
 
-For Connector Namespace callback delivery, use the
-[`webhook-trigger-registration` skill](../webhook-trigger-registration/SKILL.md).
+For Connector Namespace callback delivery, use the [`webhook-trigger-registration` skill](../webhook-trigger-registration/SKILL.md).
 
 ## Prerequisites
 
 - Azure CLI authenticated with permission to manage the Connector Namespace.
-- An existing connected Connector Namespace connection. Use
-  [`connection-setup`](../connection-setup/SKILL.md) first if needed.
-- A Function App identity for Azure deployments, or a signed-in developer
-  identity for local development.
-- The identity must have a connection-level access policy on the connection
-  referenced by the Trigger Config.
+- An existing connected Connector Namespace connection. Use [`connection-setup`](../connection-setup/SKILL.md) first if needed.
+- A Function App identity for Azure deployments, or a signed-in developer identity for local development.
+- The identity must have a connection-level access policy on the connection referenced by the Trigger Config.
 
 ## Required Inputs
 
@@ -61,13 +52,9 @@ $parameters = @(
 
 ## Step 1: Create the Poll Trigger Config
 
-Ask whether the Function App, Poll binding, and connection access policy are
-ready. Use `Enabled` by default. If the Function is not ready, ask the user
-whether to create the Trigger Config as `Disabled`; do not choose the disabled
-state without confirmation.
+Ask whether the Function App, Poll binding, and connection access policy are ready. Use `Enabled` by default. If the Function is not ready, ask the user whether to create the Trigger Config as `Disabled`; do not choose the disabled state without confirmation.
 
-Set the confirmed initial state, then build the ARM resource ID and request
-body:
+Set the confirmed initial state, then build the ARM resource ID and request body:
 
 ```powershell
 $initialState = "Enabled" # Use "Disabled" only when the user confirms.
@@ -137,17 +124,13 @@ if ($triggerConfig.properties.state -ne $initialState) {
 }
 ```
 
-Do not add `notificationDetails`, a callback URL, or callback authentication.
-Those properties belong to Webhook delivery.
+Do not add `notificationDetails`, a callback URL, or callback authentication. Those properties belong to Webhook delivery.
 
-Create the Trigger Config enabled unless the user explicitly chooses disabled
-because the Function is not ready. Configure the Function settings immediately
-after retrieving its service-generated endpoints.
+Create the Trigger Config enabled unless the user explicitly chooses disabled because the Function is not ready. Configure the Function settings immediately after retrieving its service-generated endpoints.
 
 ## Step 2: Retrieve and Share `pollingEndpoints`
 
-Use the PUT response when it contains `properties.pollingEndpoints`; otherwise
-retrieve the resource:
+Use the PUT response when it contains `properties.pollingEndpoints`; otherwise retrieve the resource:
 
 ```powershell
 if ($null -eq $triggerConfig.properties.pollingEndpoints) {
@@ -173,14 +156,11 @@ Share the complete service-generated object with the requesting user:
 - `hasMessagesUri`
 - `approximateQueueDepthUri`
 
-These values are application configuration. Show them directly to the user,
-but do not commit them, copy them into issue reports, or include them in
-general logs or summaries.
+These values are application configuration. Show them directly to the user, but do not commit them, copy them into issue reports, or include them in general logs or summaries.
 
 ## Step 3: Derive the Function Settings
 
-Validate the Receive URI and remove only the final
-`/triggerConfigs/<name>/receive` path:
+Validate the Receive URI and remove only the final `/triggerConfigs/<name>/receive` path:
 
 ```powershell
 $receiveUri = [Uri]$pollingEndpoints.receiveUri
@@ -203,8 +183,7 @@ Write-Output "${connectionPrefix}__pollingEndpoint=$pollingEndpoint"
 Write-Output "$triggerConfigSetting=$triggerConfigName"
 ```
 
-Preserve the service-generated authority, gateway identifier, and query
-exactly. Do not derive them from the Connector Namespace resource ID.
+Preserve the service-generated authority, gateway identifier, and query exactly. Do not derive them from the Connector Namespace resource ID.
 
 The resulting binding is:
 
@@ -219,8 +198,7 @@ The resulting binding is:
 
 ### Connector Namespace identity
 
-The Connector Namespace managed identity polls the connector operation. Grant
-that identity its own connection-level access policy:
+The Connector Namespace managed identity polls the connector operation. Grant that identity its own connection-level access policy:
 
 ```powershell
 $namespacePrincipalId = az resource show `
@@ -244,9 +222,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 ```
 
-This policy authorizes Connector Namespace to run the connector trigger. It is
-separate from the policy for the identity that calls the Poll runtime
-endpoints.
+This policy authorizes Connector Namespace to run the connector trigger. It is separate from the policy for the identity that calls the Poll runtime endpoints.
 
 ### Function or developer identity
 
@@ -264,14 +240,11 @@ az functionapp config appsettings set `
 
 For local development, omit `${connectionPrefix}__credential`; the extension uses the standard Functions developer credential behavior.
 
-Grant the selected identity an access policy on the connection referenced by
-the Trigger Config. There is no namespace-level access policy.
+Grant the selected identity an access policy on the connection referenced by the Trigger Config. There is no namespace-level access policy.
 
 ## Step 5: Enable a Trigger Config Created Disabled
 
-Skip this step when the Trigger Config was created enabled. If the user chose
-`Disabled` because the Function was not ready, confirm that the Function
-settings and both connection access policies are now complete, then enable it:
+Skip this step when the Trigger Config was created enabled. If the user chose `Disabled` because the Function was not ready, confirm that the Function settings and both connection access policies are now complete, then enable it:
 
 ```powershell
 if ($triggerConfig.properties.state -eq "Disabled") {
@@ -295,8 +268,7 @@ if ($triggerConfig.properties.state -eq "Disabled") {
 
 Always return:
 
-1. The Trigger Config resource ID and current state. If it remains disabled,
-   explain that the Function will not receive events until it is enabled.
+1. The Trigger Config resource ID and current state. If it remains disabled, explain that the Function will not receive events until it is enabled.
 2. The complete `properties.pollingEndpoints` object.
 3. The derived gateway-level setting:
 
@@ -310,11 +282,9 @@ Always return:
    <TriggerConfigSetting>=<trigger-config-name>
    ```
 
-5. Whether the Connector Namespace and Function/developer connection-level
-   access policies and Function app settings were configured.
+5. Whether the Connector Namespace and Function/developer connection-level access policies and Function app settings were configured.
 
-Never return credentials, bearer tokens, lock tokens, connector payloads, or
-signed linked-output URLs.
+Never return credentials, bearer tokens, lock tokens, connector payloads, or signed linked-output URLs.
 
 ## Troubleshooting
 
