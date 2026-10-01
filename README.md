@@ -192,6 +192,8 @@ When Receive returns no messages, the listener uses randomized exponential backo
 
 Poll delivery is at least once. A failed invocation is not acknowledged and can be redelivered with the same `messageId` after its service-managed lock expires. Connector Namespace currently exposes neither a delivery count nor a dead-letter operation, so redelivery has no attempt limit. Unacknowledged messages expire after the service's fixed seven-day queue TTL. Functions must use `messageId` for deduplication.
 
+During shutdown, the listener stops receiving and follows the Functions host's drain-mode policy. In drain mode, existing work can finish and be acknowledged; otherwise, processing cancellation is requested immediately. The listener does not impose a separate shutdown grace timer.
+
 ### Poll target scaling
 
 Poll target scaling uses the Connector Namespace approximate queue depth and the trigger concurrency to calculate the desired instance count. Configure the Connector connection and Trigger Config separately:

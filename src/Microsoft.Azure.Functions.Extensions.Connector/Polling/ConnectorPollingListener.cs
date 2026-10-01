@@ -22,7 +22,8 @@ internal sealed class ConnectorPollingListenerFactory(
     IConnectorLinkedOutputClient linkedOutputClient,
     ConnectorLinkedOutputInvocationLimiter linkedOutputInvocationLimiter,
     INameResolver nameResolver,
-    ILoggerFactory loggerFactory) : IConnectorPollingListenerFactory
+    ILoggerFactory loggerFactory,
+    IDrainModeManager drainModeManager) : IConnectorPollingListenerFactory
 {
     private readonly IConnectorPollDeliveryClientFactory _deliveryClientFactory =
         deliveryClientFactory ?? throw new ArgumentNullException(nameof(deliveryClientFactory));
@@ -35,6 +36,8 @@ internal sealed class ConnectorPollingListenerFactory(
         nameResolver ?? throw new ArgumentNullException(nameof(nameResolver));
     private readonly ILoggerFactory _loggerFactory =
         loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+    private readonly IDrainModeManager _drainModeManager =
+        drainModeManager ?? throw new ArgumentNullException(nameof(drainModeManager));
 
     public ConnectorPollingListener Create(
         ConnectorFunctionRegistration registration,
@@ -65,7 +68,8 @@ internal sealed class ConnectorPollingListenerFactory(
             _deliveryClientFactory.Create(connectionOptions.Credential),
             _linkedOutputClient,
             _linkedOutputInvocationLimiter,
-            _loggerFactory.CreateLogger<ConnectorPollingListener>());
+            _loggerFactory.CreateLogger<ConnectorPollingListener>(),
+            _drainModeManager);
     }
 }
 
@@ -82,16 +86,17 @@ internal sealed class ConnectorPollingListener : IListener
     private static readonly TimeSpan MaximumFailureDelay =
         TimeSpan.FromSeconds(30);
     private static readonly TimeSpan MaximumJitter = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(30);
 
     private readonly ConnectorPollingEndpoints _endpoints;
     private readonly IConnectorPollDeliveryClient _deliveryClient;
     private readonly IConnectorLinkedOutputClient _linkedOutputClient;
     private readonly ConnectorLinkedOutputInvocationLimiter _linkedOutputInvocationLimiter;
     private readonly ILogger<ConnectorPollingListener> _logger;
+    private readonly IDrainModeManager _drainModeManager;
     private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
     private readonly Func<TimeSpan, CancellationToken, Task> _idleDelayAsync;
     private readonly object _lifecycleLock = new();
+    private readonly SemaphoreSlim _lifecycleSemaphore = new(1, 1);
 
     private CancellationTokenSource? _receiveCancellation;
     private CancellationTokenSource? _processingCancellation;
@@ -106,6 +111,7 @@ internal sealed class ConnectorPollingListener : IListener
         IConnectorLinkedOutputClient linkedOutputClient,
         ConnectorLinkedOutputInvocationLimiter linkedOutputInvocationLimiter,
         ILogger<ConnectorPollingListener> logger,
+        IDrainModeManager drainModeManager,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null)
     {
         Registration = registration ?? throw new ArgumentNullException(nameof(registration));
@@ -116,6 +122,8 @@ internal sealed class ConnectorPollingListener : IListener
         _linkedOutputInvocationLimiter = linkedOutputInvocationLimiter
             ?? throw new ArgumentNullException(nameof(linkedOutputInvocationLimiter));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _drainModeManager =
+            drainModeManager ?? throw new ArgumentNullException(nameof(drainModeManager));
         _delayAsync = delayAsync ?? DelayWithJitterAsync;
         _idleDelayAsync = delayAsync ??
             ((delay, cancellationToken) => DelayWithJitterAsync(
@@ -128,40 +136,66 @@ internal sealed class ConnectorPollingListener : IListener
 
     internal ConnectorPollingOptions Options { get; }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        lock (_lifecycleLock)
+        await _lifecycleSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            ThrowIfDisposed();
-            if (_messagePump is not null || _receiveCancellation is not null)
+            lock (_lifecycleLock)
             {
-                return Task.CompletedTask;
+                ThrowIfDisposed();
+                if (_messagePump is { IsCompleted: false } &&
+                    _receiveCancellation is { IsCancellationRequested: false })
+                {
+                    return;
+                }
             }
 
-            var receiveCancellation = new CancellationTokenSource();
-            var processingCancellation = new CancellationTokenSource();
-            _receiveCancellation = receiveCancellation;
-            _processingCancellation = processingCancellation;
-            _messagePump = RunMessagePumpAsync(
-                _endpoints,
-                receiveCancellation.Token,
-                processingCancellation.Token);
-        }
+            await StopMessagePumpAsync(cancellationToken).ConfigureAwait(false);
 
-        return Task.CompletedTask;
+            lock (_lifecycleLock)
+            {
+                ThrowIfDisposed();
+                cancellationToken.ThrowIfCancellationRequested();
+                _receiveCancellation = new CancellationTokenSource();
+                _processingCancellation = new CancellationTokenSource();
+                _messagePump = RunMessagePumpAsync(
+                    _endpoints,
+                    _receiveCancellation.Token,
+                    _processingCancellation.Token);
+            }
+        }
+        finally
+        {
+            _lifecycleSemaphore.Release();
+        }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        await _lifecycleSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await StopMessagePumpAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lifecycleSemaphore.Release();
+        }
+    }
+
+    private async Task StopMessagePumpAsync(CancellationToken cancellationToken)
+    {
         Task? messagePump;
-        CancellationTokenSource? processingCancellation;
         lock (_lifecycleLock)
         {
             _receiveCancellation?.Cancel();
+            if (!_drainModeManager.IsDrainModeEnabled)
+            {
+                _processingCancellation?.Cancel();
+            }
+
             messagePump = _messagePump;
-            processingCancellation = _processingCancellation;
         }
 
         if (messagePump is null)
@@ -169,13 +203,31 @@ internal sealed class ConnectorPollingListener : IListener
             return;
         }
 
-        Task timeout = Task.Delay(ShutdownTimeout, cancellationToken);
-        if (await Task.WhenAny(messagePump, timeout).ConfigureAwait(false) != messagePump)
+        try
         {
-            processingCancellation?.Cancel();
+            await messagePump.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
+        finally
+        {
+            ClearCompletedMessagePump(messagePump);
+        }
+    }
 
-        await messagePump.WaitAsync(cancellationToken).ConfigureAwait(false);
+    private void ClearCompletedMessagePump(Task messagePump)
+    {
+        lock (_lifecycleLock)
+        {
+            if (!messagePump.IsCompleted)
+            {
+                return;
+            }
+
+            _receiveCancellation?.Dispose();
+            _processingCancellation?.Dispose();
+            _receiveCancellation = null;
+            _processingCancellation = null;
+            _messagePump = null;
+        }
     }
 
     public void Cancel()
@@ -189,6 +241,7 @@ internal sealed class ConnectorPollingListener : IListener
 
     public void Dispose()
     {
+        Task? messagePump;
         lock (_lifecycleLock)
         {
             if (_disposed)
@@ -199,8 +252,16 @@ internal sealed class ConnectorPollingListener : IListener
             _disposed = true;
             _receiveCancellation?.Cancel();
             _processingCancellation?.Cancel();
-            _receiveCancellation?.Dispose();
-            _processingCancellation?.Dispose();
+            messagePump = _messagePump;
+        }
+
+        if (messagePump is not null)
+        {
+            _ = messagePump.ContinueWith(
+                ClearCompletedMessagePump,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
         }
     }
 

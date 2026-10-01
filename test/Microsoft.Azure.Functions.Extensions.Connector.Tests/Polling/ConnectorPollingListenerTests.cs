@@ -3,6 +3,7 @@
 
 using Azure.Core;
 using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Azure.WebJobs.Host.Executors;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -30,7 +31,8 @@ public class ConnectorPollingListenerTests
             new StubConnectorLinkedOutputClient(),
             new ConnectorLinkedOutputInvocationLimiter(),
             nameResolver,
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance,
+            Mock.Of<IDrainModeManager>());
 
         ConnectorPollingListener listener = factory.Create(
             new ConnectorFunctionRegistration(
@@ -60,7 +62,8 @@ public class ConnectorPollingListenerTests
             new StubConnectorLinkedOutputClient(),
             new ConnectorLinkedOutputInvocationLimiter(),
             nameResolver,
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance,
+            Mock.Of<IDrainModeManager>());
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
             () => factory.Create(
@@ -92,6 +95,438 @@ public class ConnectorPollingListenerTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             listener.StartAsync(cancellation.Token));
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task Listener_RestartsAfterStopOrCancel(
+        bool cancelBeforeRestart,
+        bool stopBeforeRestart)
+    {
+        int receiveCount = 0;
+        var firstReceive = NewCompletionSource();
+        var secondReceive = NewCompletionSource();
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+            {
+                int count = Interlocked.Increment(ref receiveCount);
+                (count == 1 ? firstReceive : secondReceive).TrySetResult();
+                return Task.FromResult(new ConnectorReceiveResult([], false));
+            },
+        };
+        using ConnectorPollingListener listener = CreateListener(
+            Mock.Of<ITriggeredFunctionExecutor>(),
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient());
+
+        await listener.StartAsync(CancellationToken.None);
+        await firstReceive.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (cancelBeforeRestart)
+        {
+            listener.Cancel();
+        }
+
+        if (stopBeforeRestart)
+        {
+            await listener.StopAsync(CancellationToken.None);
+        }
+
+        await listener.StartAsync(CancellationToken.None);
+        await secondReceive.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(2, receiveCount);
+    }
+
+    [Fact]
+    public async Task Listener_ConcurrentStartsCreateOnlyOnePump()
+    {
+        int receiveCount = 0;
+        var receiveStarted = NewCompletionSource();
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+            {
+                Interlocked.Increment(ref receiveCount);
+                receiveStarted.TrySetResult();
+                return Task.FromResult(new ConnectorReceiveResult([], false));
+            },
+        };
+        using ConnectorPollingListener listener = CreateListener(
+            Mock.Of<ITriggeredFunctionExecutor>(),
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient());
+
+        await Task.WhenAll(
+            listener.StartAsync(CancellationToken.None),
+            listener.StartAsync(CancellationToken.None));
+        await receiveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(1, receiveCount);
+    }
+
+    [Fact]
+    public async Task Listener_RestartWaitsForAcknowledgementToDrain()
+    {
+        int receiveCount = 0;
+        var acknowledgementStarted = NewCompletionSource();
+        var releaseAcknowledgement = NewCompletionSource();
+        var restartedReceive = NewCompletionSource();
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
+                {
+                    return Task.FromResult(new ConnectorReceiveResult(
+                        [CreateInlineMessage("message-1", "lock-1", "{}")],
+                        false));
+                }
+
+                restartedReceive.TrySetResult();
+                return Task.FromResult(new ConnectorReceiveResult([], false));
+            },
+            AcknowledgeAsyncHandler = async (_, locks, cancellationToken) =>
+            {
+                acknowledgementStarted.TrySetResult();
+                await releaseAcknowledgement.Task.WaitAsync(cancellationToken);
+                return Acknowledged(locks);
+            },
+        };
+        var executor = new Mock<ITriggeredFunctionExecutor>();
+        executor.Setup(value => value.TryExecuteAsync(
+            It.IsAny<TriggeredFunctionData>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FunctionResult(true));
+        using ConnectorPollingListener listener = CreateListener(
+            executor.Object,
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient());
+
+        await listener.StartAsync(CancellationToken.None);
+        await acknowledgementStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task stop = listener.StopAsync(CancellationToken.None);
+        using var startCancellation = new CancellationTokenSource();
+        Task cancelledStart = listener.StartAsync(startCancellation.Token);
+        startCancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelledStart);
+        Task restart = listener.StartAsync(CancellationToken.None);
+        Assert.False(stop.IsCompleted);
+        Assert.False(restart.IsCompleted);
+        Assert.Equal(1, receiveCount);
+
+        releaseAcknowledgement.TrySetResult();
+        await Task.WhenAll(stop, restart).WaitAsync(TimeSpan.FromSeconds(5));
+        await restartedReceive.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(2, receiveCount);
+    }
+
+    [Fact]
+    public async Task Listener_ConcurrentStopsAllowSubsequentRestart()
+    {
+        var receiveStarted = NewCompletionSource();
+        var releaseReceive = NewCompletionSource();
+        var restartedReceive = NewCompletionSource();
+        int receiveCount = 0;
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = async (_, _, cancellationToken) =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
+                {
+                    receiveStarted.TrySetResult();
+                    await releaseReceive.Task;
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                restartedReceive.TrySetResult();
+                return new ConnectorReceiveResult([], false);
+            },
+        };
+        using ConnectorPollingListener listener = CreateListener(
+            Mock.Of<ITriggeredFunctionExecutor>(),
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient());
+
+        await listener.StartAsync(CancellationToken.None);
+        await receiveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task firstStop = listener.StopAsync(CancellationToken.None);
+        Task secondStop = listener.StopAsync(CancellationToken.None);
+        Assert.False(firstStop.IsCompleted);
+        Assert.False(secondStop.IsCompleted);
+        releaseReceive.TrySetResult();
+        await Task.WhenAll(firstStop, secondStop).WaitAsync(TimeSpan.FromSeconds(5));
+
+        await listener.StartAsync(CancellationToken.None);
+        await restartedReceive.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StopAsync(CancellationToken.None);
+        Assert.Equal(2, receiveCount);
+    }
+
+    [Fact]
+    public async Task Listener_CancelledStopDoesNotAllowOverlappingPump()
+    {
+        var receiveStarted = NewCompletionSource();
+        var releaseReceive = NewCompletionSource();
+        var restartedReceive = NewCompletionSource();
+        int receiveCount = 0;
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = async (_, _, cancellationToken) =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
+                {
+                    receiveStarted.TrySetResult();
+                    await releaseReceive.Task;
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                restartedReceive.TrySetResult();
+                return new ConnectorReceiveResult([], false);
+            },
+        };
+        using ConnectorPollingListener listener = CreateListener(
+            Mock.Of<ITriggeredFunctionExecutor>(),
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient());
+        using var stopCancellation = new CancellationTokenSource();
+
+        await listener.StartAsync(CancellationToken.None);
+        await receiveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task stop = listener.StopAsync(stopCancellation.Token);
+        stopCancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stop);
+        Task restart = listener.StartAsync(CancellationToken.None);
+        Assert.False(restart.IsCompleted);
+        Assert.Equal(1, receiveCount);
+
+        releaseReceive.TrySetResult();
+        await restart.WaitAsync(TimeSpan.FromSeconds(5));
+        await restartedReceive.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StopAsync(CancellationToken.None);
+        Assert.Equal(2, receiveCount);
+    }
+
+    [Fact]
+    public async Task Listener_DisposeDuringStopKeepsCancellationSourceAliveUntilPumpCompletes()
+    {
+        var receiveStarted = NewCompletionSource();
+        var releaseReceive = NewCompletionSource();
+        var tokenChecked = NewCompletionSource();
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = async (_, _, cancellationToken) =>
+            {
+                receiveStarted.TrySetResult();
+                await releaseReceive.Task;
+                using CancellationTokenRegistration registration =
+                    cancellationToken.Register(() => tokenChecked.TrySetResult());
+                cancellationToken.ThrowIfCancellationRequested();
+                return new ConnectorReceiveResult([], false);
+            },
+        };
+        using ConnectorPollingListener listener = CreateListener(
+            Mock.Of<ITriggeredFunctionExecutor>(),
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient());
+
+        await listener.StartAsync(CancellationToken.None);
+        await receiveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task stop = listener.StopAsync(CancellationToken.None);
+        Task restart = listener.StartAsync(CancellationToken.None);
+        listener.Dispose();
+        listener.Dispose();
+        listener.Cancel();
+        Assert.False(stop.IsCompleted);
+        releaseReceive.TrySetResult();
+        await stop.WaitAsync(TimeSpan.FromSeconds(5));
+        await tokenChecked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => restart);
+        await listener.StopAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            listener.StartAsync(CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StopAsync_UsesHostDrainModeForInFlightExecution(bool drainModeEnabled)
+    {
+        var executionStarted = NewCompletionSource();
+        var releaseExecution = NewCompletionSource();
+        CancellationToken executionToken = default;
+        int receiveCount = 0;
+        int acknowledgementCount = 0;
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+            {
+                Interlocked.Increment(ref receiveCount);
+                return Task.FromResult(new ConnectorReceiveResult(
+                    [CreateInlineMessage("message-1", "lock-1", "{}")],
+                    false));
+            },
+            AcknowledgeAsyncHandler = (_, locks, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Interlocked.Increment(ref acknowledgementCount);
+                return Task.FromResult(Acknowledged(locks));
+            },
+        };
+        var executor = new Mock<ITriggeredFunctionExecutor>();
+        executor.Setup(value => value.TryExecuteAsync(
+            It.IsAny<TriggeredFunctionData>(),
+            It.IsAny<CancellationToken>()))
+            .Returns<TriggeredFunctionData, CancellationToken>(async (_, cancellationToken) =>
+            {
+                executionToken = cancellationToken;
+                executionStarted.TrySetResult();
+                await releaseExecution.Task.WaitAsync(cancellationToken);
+                return new FunctionResult(true);
+            });
+        using ConnectorPollingListener listener = CreateListener(
+            executor.Object,
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient(),
+            drainModeEnabled: drainModeEnabled);
+
+        await listener.StartAsync(CancellationToken.None);
+        await executionStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task stop = listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(!drainModeEnabled, executionToken.IsCancellationRequested);
+        if (drainModeEnabled)
+        {
+            Assert.False(stop.IsCompleted);
+            Assert.Equal(0, acknowledgementCount);
+            releaseExecution.TrySetResult();
+        }
+
+        await stop.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(drainModeEnabled ? 1 : 0, acknowledgementCount);
+        Assert.Equal(1, receiveCount);
+    }
+
+    [Fact]
+    public async Task StopAsync_CancelledDrainWaitDoesNotCancelProcessing()
+    {
+        var executionStarted = NewCompletionSource();
+        var releaseExecution = NewCompletionSource();
+        CancellationToken executionToken = default;
+        int receiveCount = 0;
+        int acknowledgementCount = 0;
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+                Task.FromResult(Interlocked.Increment(ref receiveCount) == 1
+                    ? new ConnectorReceiveResult(
+                        [CreateInlineMessage("message-1", "lock-1", "{}")],
+                        false)
+                    : new ConnectorReceiveResult([], false)),
+            AcknowledgeAsyncHandler = (_, locks, _) =>
+            {
+                Interlocked.Increment(ref acknowledgementCount);
+                return Task.FromResult(Acknowledged(locks));
+            },
+        };
+        var executor = new Mock<ITriggeredFunctionExecutor>();
+        executor.Setup(value => value.TryExecuteAsync(
+            It.IsAny<TriggeredFunctionData>(),
+            It.IsAny<CancellationToken>()))
+            .Returns<TriggeredFunctionData, CancellationToken>(async (_, cancellationToken) =>
+            {
+                executionToken = cancellationToken;
+                executionStarted.TrySetResult();
+                await releaseExecution.Task.WaitAsync(cancellationToken);
+                return new FunctionResult(true);
+            });
+        using ConnectorPollingListener listener = CreateListener(
+            executor.Object,
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient(),
+            drainModeEnabled: true);
+        using var stopCancellation = new CancellationTokenSource();
+
+        await listener.StartAsync(CancellationToken.None);
+        await executionStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task stop = listener.StopAsync(stopCancellation.Token);
+        stopCancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stop);
+        Assert.False(executionToken.IsCancellationRequested);
+
+        Task restart = listener.StartAsync(CancellationToken.None);
+        Assert.False(restart.IsCompleted);
+        releaseExecution.TrySetResult();
+        await restart.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(1, acknowledgementCount);
+        Assert.Equal(2, receiveCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Listener_CancelAndDisposeOverrideDrainMode(bool dispose)
+    {
+        var executionStarted = NewCompletionSource();
+        int acknowledgementCount = 0;
+        var executor = new Mock<ITriggeredFunctionExecutor>();
+        executor.Setup(value => value.TryExecuteAsync(
+            It.IsAny<TriggeredFunctionData>(),
+            It.IsAny<CancellationToken>()))
+            .Returns<TriggeredFunctionData, CancellationToken>(async (_, cancellationToken) =>
+            {
+                executionStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                return new FunctionResult(true);
+            });
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, _, _) =>
+                Task.FromResult(new ConnectorReceiveResult(
+                    [CreateInlineMessage("message-1", "lock-1", "{}")],
+                    false)),
+            AcknowledgeAsyncHandler = (_, locks, _) =>
+            {
+                Interlocked.Increment(ref acknowledgementCount);
+                return Task.FromResult(Acknowledged(locks));
+            },
+        };
+        using ConnectorPollingListener listener = CreateListener(
+            executor.Object,
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient(),
+            drainModeEnabled: true);
+
+        await listener.StartAsync(CancellationToken.None);
+        await executionStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (dispose)
+        {
+            listener.Dispose();
+        }
+        else
+        {
+            listener.Cancel();
+        }
+
+        await listener.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, acknowledgementCount);
     }
 
     [Fact]
@@ -1104,7 +1539,8 @@ public class ConnectorPollingListenerTests
         bool isBatched = false,
         TimeSpan? maxPollingInterval = null,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
-        ConnectorLinkedOutputInvocationLimiter? linkedOutputInvocationLimiter = null)
+        ConnectorLinkedOutputInvocationLimiter? linkedOutputInvocationLimiter = null,
+        bool drainModeEnabled = true)
     {
         var registration = new ConnectorFunctionRegistration("TestFunction", executor);
         var options = new ConnectorPollingOptions(
@@ -1126,6 +1562,8 @@ public class ConnectorPollingListenerTests
             linkedOutputInvocationLimiter
                 ?? new ConnectorLinkedOutputInvocationLimiter(),
             NullLogger<ConnectorPollingListener>.Instance,
+            Mock.Of<IDrainModeManager>(
+                manager => manager.IsDrainModeEnabled == drainModeEnabled),
             delayAsync ?? WaitUntilCancelledAsync);
     }
 

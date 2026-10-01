@@ -727,16 +727,18 @@ The isolated-worker transport follows the modern deferred-binding approach used 
 - Validate Poll configuration.
 - Resolve endpoints.
 - Start exactly one message-pump task per listener instance.
+- Serialize Start/Stop calls so a restart waits for the previous pump to finish draining before starting a new one.
 
-`StopAsync` and `Cancel`:
+`StopAsync`:
 
 - Stop issuing new Receive calls.
 - Cancel empty-queue waits promptly.
-- Allow in-flight function executions a bounded completion period.
+- Use the host's `IDrainModeManager` policy: leave processing uncancelled in drain mode so existing work can finish; otherwise request processing cancellation immediately. Do not impose a listener-owned grace timer.
 - Acknowledge completed successes when possible.
 - Leave unfinished items unacknowledged for redelivery.
+- After the pump completes, clear its lifecycle state and dispose its cancellation sources so the listener can restart. A cancelled Stop wait must not clear a pump that is still running.
 
-`Dispose` must be idempotent.
+`Cancel` and `Dispose` cancel both receiving and processing, regardless of drain mode. `Dispose` must be idempotent and prevent future starts. Dispose cancellation sources only after their message pump completes.
 
 ### 7. Message Locks and Redelivery
 
@@ -900,6 +902,8 @@ Record without payload or token content:
 - `lockToken` is never exposed to function code.
 - `x-ms-more-messages-available` drains immediately.
 - Stop and cancellation behavior.
+- Host drain mode preserves in-flight processing and acknowledgement; ordinary Stop requests processing cancellation immediately, while Cancel and Dispose cancel even during drain mode.
+- Start/Stop/Start resumes Receive without overlapping pumps, including concurrent lifecycle calls, cancelled Stop waits, and disposal during shutdown.
 - Expired locks and acknowledgement `NotFound`.
 - Duplicate `messageId` delivery.
 

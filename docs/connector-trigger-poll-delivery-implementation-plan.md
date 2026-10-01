@@ -283,7 +283,8 @@ Requirements:
 - Drain immediately only when the service reports more messages and capacity is available.
 - Add cancellation-aware empty-queue backoff with jitter.
 - Make start, stop, cancel, and dispose behavior idempotent.
-- Stop receiving during shutdown, allow bounded in-flight completion, and leave unfinished events unacknowledged.
+- Serialize Start/Stop, release completed pump state before restarting, and retain cancellation sources until their pump finishes even when Stop is cancelled or Dispose races with shutdown.
+- Stop receiving during shutdown, use host drain mode to finish in-flight work without a listener-owned grace timer, otherwise cancel processing immediately, and leave unfinished events unacknowledged. Cancel and Dispose always cancel processing.
 
 Inline processing remains concurrent. Only linked-output invocations are serialized host-wide to bound retained payload memory.
 

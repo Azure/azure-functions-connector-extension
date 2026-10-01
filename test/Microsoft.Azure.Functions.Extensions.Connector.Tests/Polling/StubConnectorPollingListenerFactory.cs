@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
@@ -21,7 +23,8 @@ internal sealed class StubConnectorPollingListenerFactory :
             new StubConnectorPollDeliveryClient(),
             new StubConnectorLinkedOutputClient(),
             new ConnectorLinkedOutputInvocationLimiter(),
-            NullLogger<ConnectorPollingListener>.Instance);
+            NullLogger<ConnectorPollingListener>.Instance,
+            Mock.Of<IDrainModeManager>());
 }
 
 internal sealed class StubConnectorPollDeliveryClient :
