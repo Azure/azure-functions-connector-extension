@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ConnectorPackageVersion Condition="'$(ConnectorPackageVersion)' == ''"></ConnectorPackageVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.0.7" />
+    <PackageReference Include="Azure.Connectors.Sdk" Version="0.14.0-preview.1" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ConnectorPackageVersion)' == ''">
+    <ProjectReference Include="$(SrcRoot)Microsoft.Azure.Functions.Worker.Extensions.Connector\Worker.Extensions.Connector.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ConnectorPackageVersion)' != ''">
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Connector"
+                      Version="$(ConnectorPackageVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="host.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="local.settings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+</Project>

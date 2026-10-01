@@ -28,11 +28,19 @@ public sealed class ConnectorOptions : IOptionsFormatter
     /// </summary>
     public int DefaultConcurrency { get; set; } = 16;
 
+    /// <summary>
+    /// Gets or sets the maximum delay between Receive requests while a Poll
+    /// trigger's queue remains empty.
+    /// </summary>
+    public TimeSpan MaxPollingInterval { get; set; } =
+        TimeSpan.FromSeconds(30);
+
     string IOptionsFormatter.Format() => JsonSerializer.Serialize(
         new
         {
             DefaultMaxBatchSize,
             DefaultConcurrency,
+            MaxPollingInterval,
         },
         SerializerOptions);
 }

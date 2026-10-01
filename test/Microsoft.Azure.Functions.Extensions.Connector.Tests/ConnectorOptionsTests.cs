@@ -12,5 +12,6 @@ public class ConnectorOptionsTests
 
         Assert.Equal(1, options.DefaultMaxBatchSize);
         Assert.Equal(16, options.DefaultConcurrency);
+        Assert.Equal(TimeSpan.FromSeconds(30), options.MaxPollingInterval);
     }
 }

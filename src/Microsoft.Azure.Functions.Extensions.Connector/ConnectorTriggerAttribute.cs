@@ -23,15 +23,16 @@ public sealed class ConnectorTriggerAttribute : Attribute
     public string? Connection { get; set; }
 
     /// <summary>
-    /// Gets or sets the name of the Connector Namespace trigger configuration.
+    /// Gets or sets the Connector Namespace Trigger Config name.
     /// </summary>
     [AutoResolve]
     public string? TriggerConfigName { get; set; }
 
     /// <summary>
     /// Gets or sets the maximum number of events supplied to one function invocation.
-    /// Valid values are zero through 32. A value of zero uses
+    /// Valid batch sizes are one through 32. A value of zero uses
     /// <see cref="ConnectorOptions.DefaultMaxBatchSize"/>.
+    /// Values greater than one require a batched function parameter.
     /// </summary>
     public int MaxBatchSize { get; set; }
 

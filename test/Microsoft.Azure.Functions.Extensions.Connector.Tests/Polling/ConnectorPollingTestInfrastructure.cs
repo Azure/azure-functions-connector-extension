@@ -125,6 +125,14 @@ internal sealed class TestConnectionOptionsProvider(
         get(connectionName, componentFactory);
 }
 
+internal sealed class TestPollDeliveryClientFactory(
+    Func<TokenCredential, IConnectorPollDeliveryClient> create) :
+    IConnectorPollDeliveryClientFactory
+{
+    public IConnectorPollDeliveryClient Create(TokenCredential credential) =>
+        create(credential);
+}
+
 internal sealed class TestNameResolver(Func<string, string?> resolve) : INameResolver
 {
     public string? Resolve(string name) => resolve(name);

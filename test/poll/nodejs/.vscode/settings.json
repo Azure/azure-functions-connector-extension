@@ -1,0 +1,6 @@
+{
+  "azureFunctions.projectLanguage": "TypeScript",
+  "azureFunctions.projectRuntime": "~4",
+  "azureFunctions.projectLanguageModel": 4,
+  "debug.internalConsoleOptions": "neverOpen"
+}

@@ -20,16 +20,6 @@ public class ConnectorTriggerAttributeTests
     }
 
     [Fact]
-    public void Attribute_HasCorrectBindingType()
-    {
-        // Arrange
-        var attribute = new ConnectorTriggerAttribute();
-
-        // Assert - verify it can be created (binding type is set via WebJobsAttribute)
-        Assert.IsType<ConnectorTriggerAttribute>(attribute);
-    }
-
-    [Fact]
     public void Properties_AcceptPollMetadata()
     {
         // Arrange & Act
@@ -37,7 +27,7 @@ public class ConnectorTriggerAttributeTests
         {
             DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
             Connection = "ConnectorNamespace",
-            TriggerConfigName = "OnNewEmail",
+            TriggerConfigName = "%OnNewEmailTriggerConfigName%",
             MaxBatchSize = 4,
             Concurrency = 8,
         };
@@ -45,7 +35,9 @@ public class ConnectorTriggerAttributeTests
         // Assert
         Assert.Equal(ConnectorTriggerDeliveryMode.Poll, attribute.DeliveryMode);
         Assert.Equal("ConnectorNamespace", attribute.Connection);
-        Assert.Equal("OnNewEmail", attribute.TriggerConfigName);
+        Assert.Equal(
+            "%OnNewEmailTriggerConfigName%",
+            attribute.TriggerConfigName);
         Assert.Equal(4, attribute.MaxBatchSize);
         Assert.Equal(8, attribute.Concurrency);
     }

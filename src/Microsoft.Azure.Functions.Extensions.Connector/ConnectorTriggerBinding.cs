@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Reflection;
+using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Host.Bindings;
 using Microsoft.Azure.WebJobs.Host.Listeners;
 using Microsoft.Azure.WebJobs.Host.Protocols;
@@ -19,13 +20,15 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
     private readonly ConnectorTriggerAttribute _attribute;
     private readonly ConnectorOptions _options;
     private readonly IConnectorConnectionOptionsProvider _connectionOptionsProvider;
+    private readonly IConnectorPollingListenerFactory _pollingListenerFactory;
 
     public ConnectorTriggerBinding(
         ParameterInfo parameter,
         ConnectorExtensionConfigProvider configProvider,
         ConnectorTriggerAttribute attribute,
         ConnectorOptions options,
-        IConnectorConnectionOptionsProvider connectionOptionsProvider)
+        IConnectorConnectionOptionsProvider connectionOptionsProvider,
+        IConnectorPollingListenerFactory pollingListenerFactory)
     {
         _parameter = parameter ?? throw new ArgumentNullException(nameof(parameter));
         _configProvider = configProvider ?? throw new ArgumentNullException(nameof(configProvider));
@@ -33,31 +36,48 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _connectionOptionsProvider = connectionOptionsProvider
             ?? throw new ArgumentNullException(nameof(connectionOptionsProvider));
+        _pollingListenerFactory = pollingListenerFactory
+            ?? throw new ArgumentNullException(nameof(pollingListenerFactory));
     }
 
-    public Type TriggerValueType => typeof(string);
+    public Type TriggerValueType => typeof(ConnectorTriggerInput);
 
     public IReadOnlyDictionary<string, Type> BindingDataContract { get; } =
         new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
 
     public Task<ITriggerData> BindAsync(object value, ValueBindingContext context)
     {
-        var bindingData = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        var valueProvider = new StringValueProvider(value as string);
-        return Task.FromResult<ITriggerData>(new TriggerData(valueProvider, bindingData));
+        ConnectorTriggerInput triggerInput = value switch
+        {
+            ConnectorTriggerInput connectorTriggerInput => connectorTriggerInput,
+            string json => ConnectorTriggerInput.FromSingle(
+                BinaryData.FromString(json),
+                messageId: null,
+                _attribute.DeliveryMode),
+            _ => throw new InvalidOperationException(
+                $"Unsupported Connector trigger value type '{value?.GetType()}'."),
+        };
+        var bindingData = new Dictionary<string, object?>(
+            StringComparer.OrdinalIgnoreCase);
+        ConnectorTriggerInputValueProvider valueProvider = CreateValueProvider(
+            triggerInput);
+        return Task.FromResult<ITriggerData>(
+            new TriggerData(valueProvider, bindingData));
     }
 
     public Task<IListener> CreateListenerAsync(ListenerFactoryContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        string functionName = context.Descriptor.ShortName.Split('.').Last();
-
-        var registration = new ConnectorFunctionRegistration(functionName, context.Executor);
+        var registration = new ConnectorFunctionRegistration(
+            context.Descriptor.ShortName,
+            context.Executor);
 
         IListener listener = _attribute.DeliveryMode switch
         {
-            ConnectorTriggerDeliveryMode.Webhook => new ConnectorListener(_configProvider, registration),
-            ConnectorTriggerDeliveryMode.Poll => CreatePollingListener(registration),
+            ConnectorTriggerDeliveryMode.Webhook =>
+                new ConnectorListener(_configProvider, registration),
+            ConnectorTriggerDeliveryMode.Poll =>
+                CreatePollingListener(registration),
             _ => throw new InvalidOperationException(
                 $"Unsupported Connector trigger delivery mode '{_attribute.DeliveryMode}'."),
         };
@@ -69,27 +89,107 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
         ConnectorFunctionRegistration registration)
     {
         ConnectorPollingOptions options =
-            ConnectorPollingOptions.Create(_attribute, _options);
+            ConnectorPollingOptions.Create(
+                _attribute,
+                _options,
+                IsBatchedParameter(_parameter.ParameterType));
         ConnectorConnectionOptions connectionOptions =
             _connectionOptionsProvider.Get(options.Connection);
 
-        return new ConnectorPollingListener(registration, options, connectionOptions);
+        return _pollingListenerFactory.Create(
+            registration,
+            options,
+            connectionOptions);
     }
 
-    public ParameterDescriptor ToParameterDescriptor() => new TriggerParameterDescriptor
+    private ConnectorTriggerInputValueProvider CreateValueProvider(
+        ConnectorTriggerInput triggerInput)
     {
-        Name = _parameter.Name ?? "payload"
-    };
+        string invokeString = triggerInput.IsBatched
+            ? $"Connector trigger batch ({triggerInput.Events.Count} events)"
+            : "Connector trigger event";
+        bool usesDeferredBinding =
+            _parameter.ParameterType == typeof(ParameterBindingData) ||
+            _parameter.ParameterType == typeof(ParameterBindingData[]);
+        if (usesDeferredBinding)
+        {
+            if (triggerInput.IsBatched)
+            {
+                ParameterBindingData[] values = triggerInput.Events
+                    .Select(ConnectorExtensionConfigProvider
+                        .ConvertTriggerEventToBindingData)
+                    .ToArray();
+                return new ConnectorTriggerInputValueProvider(
+                    values,
+                    typeof(ParameterBindingData[]),
+                    invokeString);
+            }
 
-    /// <summary>
-    /// Value provider for trigger binding.
-    /// </summary>
-    private sealed class StringValueProvider(string? value) : IValueProvider
+            return new ConnectorTriggerInputValueProvider(
+                ConnectorExtensionConfigProvider
+                    .ConvertTriggerEventToBindingData(
+                        triggerInput.Events.Single()),
+                typeof(ParameterBindingData),
+                invokeString);
+        }
+
+        if (triggerInput.IsBatched)
+        {
+            string[] values = triggerInput.Events
+                .Select(static connectorEvent =>
+                    connectorEvent.Outputs.ToString())
+                .ToArray();
+            return new ConnectorTriggerInputValueProvider(
+                values,
+                typeof(string[]),
+                invokeString);
+        }
+
+        string payloadJson = triggerInput.ToSinglePayloadJson();
+        return new ConnectorTriggerInputValueProvider(
+            payloadJson,
+            typeof(string),
+            invokeString);
+    }
+
+    private static bool IsBatchedParameter(Type parameterType) =>
+        parameterType.IsArray && parameterType != typeof(byte[]);
+
+    public ParameterDescriptor ToParameterDescriptor() =>
+        new TriggerParameterDescriptor
+        {
+            Name = _parameter.Name ?? "payload",
+        };
+
+    private sealed class ConnectorTriggerInputValueProvider : IValueProvider
     {
-        public Type Type => typeof(string);
+        private readonly Task<object?> _valueAsTask;
+        private readonly string _invokeString;
 
-        public Task<object?> GetValueAsync() => Task.FromResult<object?>(value);
+        internal ConnectorTriggerInputValueProvider(
+            object value,
+            Type type,
+            string invokeString)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            ArgumentNullException.ThrowIfNull(type);
+            ArgumentNullException.ThrowIfNull(invokeString);
+            if (!type.IsInstanceOfType(value))
+            {
+                throw new ArgumentException(
+                    $"Cannot use value of type '{value.GetType()}' as '{type}'.",
+                    nameof(value));
+            }
 
-        public string? ToInvokeString() => value;
+            _valueAsTask = Task.FromResult<object?>(value);
+            _invokeString = invokeString;
+            Type = type;
+        }
+
+        public Type Type { get; }
+
+        public Task<object?> GetValueAsync() => _valueAsTask;
+
+        public string? ToInvokeString() => _invokeString;
     }
 }

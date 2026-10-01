@@ -12,53 +12,51 @@
   - [Receive](#receive)
   - [Large Trigger Outputs](#large-trigger-outputs)
   - [Acknowledge](#acknowledge)
-  - [Queue Status](#queue-status)
+  - [Queue Depth](#queue-depth)
   - [Authentication](#authentication)
+  - [Timeouts and Retry Policy](#timeouts-and-retry-policy)
   - [Delivery Semantics](#delivery-semantics)
 - [Proposed User Contract](#proposed-user-contract)
   - [Connector Namespace Trigger Configuration](#connector-namespace-trigger-configuration)
-  - [Current ARM Discovery Configuration](#current-arm-discovery-configuration)
+  - [Polling Endpoint Configuration](#polling-endpoint-configuration)
   - [Identity and Permissions](#identity-and-permissions)
   - [Ordering Guidance](#ordering-guidance)
+  - [Batching and Concurrency](#batching-and-concurrency)
   - [Payload and Message Metadata](#payload-and-message-metadata)
 - [Internal Architecture](#internal-architecture)
-  - [Endpoint Resolver](#1-endpoint-resolver)
+  - [Polling Endpoint Configuration](#1-polling-endpoint-configuration)
   - [Poll-delivery HTTP Client](#2-poll-delivery-http-client)
   - [Listener Selection](#3-listener-selection)
   - [Polling Listener](#4-polling-listener)
   - [Function Registration and Trigger Values](#5-function-registration-and-trigger-values)
   - [Lifecycle and Shutdown](#6-lifecycle-and-shutdown)
-  - [Lock Budget](#7-lock-budget)
+  - [Message Locks and Redelivery](#7-message-locks-and-redelivery)
   - [Scaling](#8-scaling)
   - [Dependency Registration](#9-dependency-registration)
 - [Error Handling](#error-handling)
 - [Telemetry](#telemetry)
 - [Testing Plan](#testing-plan)
   - [Attribute and binding tests](#attribute-and-binding-tests)
-  - [Endpoint resolver tests](#endpoint-resolver-tests)
+  - [Endpoint configuration tests](#endpoint-configuration-tests)
   - [HTTP client tests](#http-client-tests)
   - [Listener tests](#listener-tests)
   - [Scale tests](#scale-tests)
   - [End-to-end test](#end-to-end-test)
-- [Stacked PR Delivery Sequence](#stacked-pr-delivery-sequence)
-  - [PR 1: Trigger contract](#pr-1-trigger-contract)
-  - [PR 2: Configuration](#pr-2-configuration)
-  - [PR 3: Protocol models](#pr-3-protocol-models)
-  - [PR 4: Endpoint resolver](#pr-4-endpoint-resolver)
-  - [PR 5: Runtime client](#pr-5-runtime-client)
-  - [PR 6: Worker binding](#pr-6-worker-binding)
-  - [PR 7: Poll listener](#pr-7-poll-listener)
-  - [PR 8: Scaling and completion](#pr-8-scaling-and-completion)
-- [Initial File-Level Work](#initial-file-level-work)
+- [Deferred Linked-Output Release Work](#deferred-linked-output-release-work)
+- [Delivery Plan](#delivery-plan)
 - [Open Questions](#open-questions)
 - [Supporting Information: Provisioning a Poll Trigger Configuration](#supporting-information-provisioning-a-poll-trigger-configuration)
 - [Reference](#reference)
 
 ## Status
 
-Working implementation design. The trigger-contract seam is implemented on
-`feature/connector-trigger-poll-delivery`; the production Poll components
-remain to be delivered through the stacked PR sequence below.
+Working implementation design. The stacked Poll branches now include the trigger contract, configuration, protocol models, target scaler, runtime clients, a concurrent listener with explicit invocation batching, and the isolated-worker binding. The final stacked PR uses the configured, connection-scoped `pollingEndpoint` plus `TriggerConfigName` contract and completes cross-stack validation.
+
+Read the document in three layers:
+
+1. **Connector Namespace Runtime Contract** describes the observed service protocol.
+2. **Proposed User Contract** defines the configuration and function-facing contract implemented by the final stacked PR.
+3. **Internal Architecture** describes the implemented stack.
 
 ## Summary
 
@@ -71,9 +69,9 @@ Connector Namespace supports two event delivery modes for a connector trigger:
 
 Poll is another delivery mode of the existing Connector trigger, not a different event source. A trigger such as Office 365 `OnNewEmailV3` produces the same trigger output in either mode.
 
-The initial implementation should live entirely in this extension repository. Use an internal Azure SDK-style HTTP client built with `HttpClient` and `TokenCredential`; do not require a new public poll-delivery NuGet package for the first implementation.
+The implementation lives in this extension repository and uses an internal Azure SDK-style HTTP client built with `HttpClient` and `TokenCredential`. It does not require a separate public poll-delivery NuGet package.
 
-Keep the protocol client, listener, scaler, and ARM endpoint resolver behind separate internal interfaces. This preserves a clean extraction path if another runtime later needs the same protocol.
+Keep the protocol client, listener, scaler, and endpoint configuration behind separate internal interfaces. This preserves a clean extraction path if another runtime later needs the same protocol.
 
 ## Goals
 
@@ -84,7 +82,7 @@ Keep the protocol client, listener, scaler, and ARM endpoint resolver behind sep
 - Respect the service's leasing, redelivery, and acknowledgement semantics.
 - Support clean listener startup and shutdown.
 - Add scaling support, including scale from zero.
-- Keep control-plane endpoint discovery separate from data-plane polling.
+- Keep endpoint configuration separate from data-plane polling.
 
 ## Non-goals
 
@@ -97,38 +95,60 @@ Keep the protocol client, listener, scaler, and ARM endpoint resolver behind sep
 
 ## Future Enhancements
 
-- Add rich Connector SDK client bindings, similar to client bindings offered by extensions such as Storage. This would let applications bind to generated Connector clients without constructing and managing those clients themselves. This is useful beyond Poll delivery but is not required for the initial Poll implementation.
+- Extract the Azure SDK-style Poll transport into a Connectors Polling SDK. The SDK should own API Hub authentication, HTTP operations, timeout and retry policy, protocol serialization and validation, and secret-safe errors. The Functions extension should retain binding and listener lifecycle, concurrency and batching, and mapping extension configuration into SDK options.
+- Add rich Connector SDK client bindings, similar to client bindings offered by extensions such as Storage. Applications could then bind to generated Connector clients without constructing and managing those clients.
+- Integrate Connector Namespace delivery-count, dead-letter, and failed-message observability capabilities after the service publishes those contracts. The extension must not infer delivery attempts or acknowledge permanently failed messages without a service-owned destination.
+- Integrate the Connector Namespace stable DNS authority when deployed. The configured `<Connection>__pollingEndpoint` remains the complete gateway-level base through `/api/connectorGateways/<gateway-id>`, so the extension treats both the current `logic.azure.com` authority and upcoming `connectornamespaces` authority as opaque service-provided values.
 
 ## Current Extension Architecture
 
-The trigger-contract seam has been implemented:
+The implemented trigger contract includes:
 
 - `ConnectorTriggerDeliveryMode` defines `Webhook` and `Poll`.
-- The host and isolated-worker attributes expose the initial Poll metadata.
+- The host and isolated-worker attributes expose the Poll metadata.
 - `Webhook` remains the default.
-- `ConnectorTriggerBinding.CreateListenerAsync` selects `ConnectorListener`
-  for Webhook and the placeholder `ConnectorPollingListener` for Poll.
-- `ConnectorListener` still registers the function for webhook routing and
-  otherwise has inert lifecycle methods.
-- `ConnectorExtensionConfigProvider` registers the webhook handler and
-  dispatches callback payloads through `ITriggeredFunctionExecutor`.
-- `ConnectorPollingListener.StartAsync` intentionally throws
-  `NotSupportedException` until the production message pump is implemented.
+- `ConnectorTriggerBinding` directly implements `ITriggerBinding`, avoiding obsolete WebJobs binding-strategy APIs.
+- `ConnectorTriggerBinding.CreateListenerAsync` selects `ConnectorListener` for Webhook and `ConnectorPollingListener` for Poll.
+- `ConnectorListener` still registers the function for webhook routing and otherwise has inert lifecycle methods.
+- `ConnectorExtensionConfigProvider` registers the webhook handler and dispatches callback payloads through `ITriggeredFunctionExecutor`.
+- `ConnectorPollingListener` runs a lifecycle-safe message pump with bounded concurrency, host-wide serialization of linked-output invocations, and acknowledgement of successful single-event or batched invocations.
+- Invocation cardinality is explicit. Scalar cardinality supplies one event to each invocation; batched cardinality partitions Receive results into groups of at most the effective `MaxBatchSize`.
 
-The baseline seam used an earlier `MaxEvents` property. PR 1 replaces it with the public `MaxBatchSize` and `Concurrency` properties described below. `MaxBatchSize` maps to the service `maxEvents` parameter, while `Concurrency` remains independent and defines the maximum concurrent function invocations per instance for target-based scaling.
+The public contract uses independent `MaxBatchSize` and `Concurrency` properties. `MaxBatchSize` contributes to the capacity-based service `maxEvents` calculation, while `Concurrency` remains independent and defines the maximum concurrent function invocations per instance for target-based scaling.
 
 Poll delivery must run in the host extension, not in a language worker. This allows the same acquisition behavior to support .NET, Python, Node.js, and other extension-bundle consumers.
 
 ## Connector Namespace Runtime Contract
 
-A Poll trigger configuration exposes four opaque, server-generated endpoints:
+A Poll trigger configuration currently exposes four opaque, server-generated endpoints:
 
 - `receiveUri`
 - `acknowledgeUri`
 - `hasMessagesUri`
 - `approximateQueueDepthUri`
 
-Clients must obtain these URLs from the trigger configuration response. They must not manually construct the runtime hostname or substitute a Connector Namespace resource name for the complete ARM resource identifier.
+The current APIM URLs have this observed shape:
+
+```text
+https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<connector-namespace-id>/triggerconfigs/<trigger-config-name>/<operation>
+```
+
+For example, `pollingEndpoints.receiveUri` ends in `/triggerconfigs/<name>/receive`. Split the service-returned URI into the gateway-level Poll endpoint and Trigger Config name:
+
+```text
+receiveUri:
+https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<id>/triggerconfigs/<name>/receive
+
+Connection pollingEndpoint:
+https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<id>
+
+TriggerConfigName:
+<name>
+```
+
+Do not derive these values with unrestricted string replacement. Preserve the service-provided host and gateway identifier exactly. The gateway-level endpoint is shared by Trigger Configs in that Connector Namespace; each binding supplies its own Trigger Config name.
+
+For the current contract, the extension requires HTTPS on the default port and the exact path `/api/connectorGateways/<gateway-id>`. The authority, gateway identifier, and any query remain opaque, trusted application configuration. This follows other identity-based Functions extensions, which validate service endpoint structure without maintaining cloud-specific DNS allowlists.
 
 ### Receive
 
@@ -194,27 +214,30 @@ Each message must contain exactly one output source:
 | Present | Present | Invalid protocol response |
 | Absent | Absent | Invalid protocol response |
 
-The extension normalizes both forms into the same complete trigger `outputs`
-JSON before worker conversion. Function code must not need to distinguish
-between inline and linked delivery.
+The extension normalizes both forms into the same complete trigger `outputs` JSON before worker conversion. Function code must not need to distinguish between inline and linked delivery.
 
 Linked-output processing:
 
 1. Validate `outputsLink.uri`.
 2. Download the complete trigger outputs.
-3. Enforce configured and absolute byte limits while streaming the response,
-   with an absolute maximum of 100 MiB (104,857,600 bytes).
-4. Validate that the downloaded content is complete JSON in the expected
-   trigger-output shape.
-5. Pass the normalized outputs through the same payload conversion used for
-   inline messages.
+3. Enforce the 100 MiB (104,857,600-byte) protocol limit while streaming the response.
+4. Validate that the downloaded content is complete JSON in the expected trigger-output shape.
+5. Pass the normalized outputs through the same payload conversion used for inline messages.
 6. Invoke the function.
-7. Acknowledge only after content retrieval, conversion, and function
-   execution all succeed.
+7. Acknowledge only after content retrieval, conversion, and function execution all succeed.
 
-If linked content cannot be retrieved or validated, the extension must not
-invoke the function for that message and must not acknowledge it. Other
-messages from the same Receive response remain independently processable.
+If linked content cannot be retrieved or validated, the extension must not invoke the function for that message and must not acknowledge it. Other messages from the same Receive response remain independently processable.
+
+Linked outputs use a stricter invocation policy because each payload can be up to 100 MiB and worker conversion requires materialization:
+
+- Inline messages continue to use normal invocation batching.
+- Every linked-output message is delivered in its own invocation. A batched function receives an array containing one event.
+- A singleton host-wide limiter permits only one linked-output invocation at a time across all Connector Poll listeners.
+- The limiter is process-local. Every scaled-out Functions host receives its own slot; do not use distributed coordination that would serialize linked outputs across instances.
+- The limiter is held from before download through function execution and acknowledgement, so another linked payload cannot be hydrated while the first remains live.
+- `MaxBatchSize` remains a maximum; it does not guarantee that every invocation contains that number of events.
+
+This follows the serialized batch execution and backpressure patterns used by other Functions extensions while leaving ordinary inline invocations concurrent.
 
 The signed `outputsLink.uri` is sensitive:
 
@@ -222,43 +245,23 @@ The signed `outputsLink.uri` is sensitive:
 - Never include its query string in exception messages or telemetry.
 - Require an absolute HTTPS URI.
 - Reject user information and fragments.
-- Do not attach the API Hub bearer token; the URI signature fully authorizes
-  the GET.
-- Do not follow redirects. The content endpoint does not return
-  application-level redirects.
+- Do not attach the API Hub bearer token; the URI signature fully authorizes the GET.
+- Do not follow redirects. The content endpoint does not return application-level redirects.
 - Dispose download responses and streams promptly.
 
-The service does not return `contentSize`. The implementation must count
-actual bytes read and stop when the configured or absolute 100 MiB maximum is
-exceeded. The service limit is calculated from compact, uncompressed UTF-8
-JSON. Linked-content responses are `application/json; charset=utf-8` and do
-not use gzip or Brotli transfer encoding.
+The service does not return `contentSize`. The implementation must count actual bytes read and stop when the configured or absolute 100 MiB maximum is exceeded. The service limit is calculated from compact, uncompressed UTF-8 JSON. Linked-content responses are `application/json; charset=utf-8` and do not use gzip or Brotli transfer encoding.
 
-The signed GET returns the complete `outputs` object directly, including
-`headers` and `body`. Repeating the GET is safe and idempotent while the link
-is valid and the content remains available. No public ETag, checksum, or
-content hash is currently returned.
+The signed GET returns the complete `outputs` object directly, including `headers` and `body`. Repeating the GET is safe and idempotent while the link is valid and the content remains available. No public ETag, checksum, or content hash is currently returned.
 
-Signed links remain valid for three to four hours; the exact expiration is
-encoded in the URI. The service signs the link on every Receive, although the
-text can remain identical within the same expiration hour. The lock token is
-always renewed on redelivery. Acknowledgement removes the queue message but
-does not invalidate an issued link. Linked content is normally deleted by
-eight-day retention cleanup, or earlier if the trigger or Connector Namespace
-is deleted.
+Signed links remain valid for three to four hours; the exact expiration is encoded in the URI. The service signs the link on every Receive, although the text can remain identical within the same expiration hour. The lock token is always renewed on redelivery. Acknowledgement removes the queue message but does not invalidate an issued link. Linked content is normally deleted by eight-day retention cleanup, or earlier if the trigger or Connector Namespace is deleted.
 
-The outputs-link authority can vary by cloud, region, scale unit, and
-environment. Treat the absolute HTTPS URI as opaque rather than allow-listing
-a hostname or Azure domain.
+The outputs-link authority can vary by cloud, region, scale unit, and environment. Treat the absolute HTTPS URI as opaque rather than allow-listing a hostname or Azure domain.
 
-The first implementation may buffer one complete hydrated output in memory
-because existing worker conversion is JSON-based, but it must not download all
-large outputs in a Receive batch simultaneously. Linked-output hydration must
-be bounded and included in concurrency and memory-budget decisions.
+The implementation may buffer one complete hydrated linked output in memory because existing worker conversion is JSON-based. It must not retain multiple linked outputs concurrently in one host process.
 
-The two-minute message lock starts when Receive leases the message. Download
-and validation time therefore consume lock budget and must be included in
-lock-budget telemetry and execution-admission decisions.
+The 100 MiB wire limit is not a 100 MiB process-memory guarantee. Deferred worker conversion can temporarily retain the UTF-8 payload, a UTF-16 JSON string, and the worker binding envelope at the same time. The host-wide limiter bounds concurrent amplification but does not eliminate the peak for one message. Validate the supported maximum under constrained host memory when Connector Namespace begins emitting linked outputs; reduce the advertised limit or change the worker transport if one message can exhaust the host.
+
+The service owns the message-lock duration and may change it independently. The current response does not expose lock-expiration metadata, so the extension must not infer a fixed client-side deadline.
 
 ### Acknowledge
 
@@ -285,36 +288,41 @@ The request accepts at most 32 messages. The response contains an ordered result
 
 A successful HTTP response can contain mixed per-message statuses.
 
-### Queue Status
+### Queue Depth
 
 ```http
-GET {hasMessagesUri}
 GET {approximateQueueDepthUri}
 ```
 
-Both values are approximate and must not be treated as prerequisites for Receive.
+Approximate queue depth is used only for target scaling and must not be treated as a prerequisite for Receive. The service also returns `hasMessagesUri`, but the extension does not call it because Receive already reports `x-ms-more-messages-available`; a separate preflight request would add latency and create a time-of-check/time-of-use race.
 
 ### Authentication
 
 | Operation | Plane | Token audience/scope |
 | --- | --- | --- |
-| Read trigger configuration | ARM control plane | `https://management.azure.com/.default` |
-| Receive, acknowledge, queue status | Runtime data plane | `https://apihub.azure.com/.default` |
+| Receive, acknowledge, queue depth | Runtime data plane | `https://apihub.azure.com/.default` |
+
+### Timeouts and Retry Policy
+
+Receive, acknowledge, and approximate queue-depth HTTP operations use a shared 30-second timeout. Linked-output downloads use a 2-minute timeout. Credential acquisition occurs before the HTTP timeout begins.
+
+Receive and acknowledge requests are not transparently retried after ambiguous failures. If acknowledgement fails, the messages remain unacknowledged and can be redelivered after their locks expire. Long term, the Connectors Polling SDK should own the transport timeout and retry policy. The extension can expose user overrides through `ConnectorOptions` and map them into SDK options after Connector Namespace publishes supported latency and retry guidance.
 
 ### Delivery Semantics
 
 - Delivery is at least once.
-- The message lock is exactly two minutes and is not caller-configurable.
+- The message-lock duration is controlled by Connector Namespace and is not caller-configurable.
 - An unacknowledged message becomes visible again with the same `messageId` and a new `lockToken`.
 - An expired lock token produces a per-message `NotFound` acknowledgement result.
 - Unacknowledged messages can be redelivered without an attempt limit.
 - Queue message TTL is fixed at seven days and is not caller-configurable.
 - Ordering is not guaranteed.
 - Consumers must use `messageId` as the deduplication key.
+- The current design assumes `messageId` is unique across Poll deliveries. Connector Namespace confirmation of the exact uniqueness scope is pending.
 
 ## Proposed User Contract
 
-Add delivery mode and Poll configuration to both trigger attributes:
+The target Connector trigger binding surface is:
 
 ```csharp
 public enum ConnectorTriggerDeliveryMode
@@ -332,7 +340,8 @@ public void Run(
     [ConnectorTrigger(
         DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
         Connection = "ConnectorNamespace",
-        TriggerConfigName = "%CONNECTOR_TRIGGER_CONFIG_NAME%",
+        TriggerConfigName = "%OnNewEmailTriggerConfigName%",
+        IsBatched = true,
         MaxBatchSize = 4,
         Concurrency = 8)]
     Office365OnNewEmailTriggerPayload[] payloads)
@@ -352,55 +361,45 @@ As part of setting up Poll delivery, the customer provisions a trigger configura
 - `deliveryMode` set to `Poll`.
 - The trigger configuration enabled before the Function listener starts.
 
-The Connector Namespace portal does not currently support provisioning a Poll trigger configuration, and the current `az connector-namespace trigger create` command does not expose `deliveryMode`. Until those surfaces support Poll, provisioning must use a raw ARM PUT request, such as `az rest --method put`, with `deliveryMode` set to `Poll`. Customer documentation must provide that provisioning flow separately from the Function trigger configuration.
+The extension does not create, update, enable, or convert Connector Namespace trigger configurations. Customers obtain `pollingEndpoints.receiveUri` from the provisioned Trigger Config, configure its gateway-level base and Trigger Config name separately, and grant the Function identity an access policy on the connection referenced by that Trigger Config.
 
-The Function's `TriggerConfigName` identifies this service-side trigger configuration. It is not the Function name, and the Functions extension does not provision it.
+### Polling Endpoint Configuration
 
-The extension does not create, update, enable, or convert Connector Namespace trigger configurations. It reads the named trigger configuration, obtains its server-generated polling endpoints, and validates that it is enabled and uses Poll delivery. Customers must also grant the Function identity an access policy on the connection referenced by that trigger configuration.
-
-### Current ARM Discovery Configuration
-
-`Connection` is a literal app setting name or configuration prefix, consistent with other Azure Functions extensions. It is not itself resolved through `%...%` substitution. The Connector Namespace resource ID and credential configuration belong in app settings rather than function metadata:
+`Connection` is a literal app setting name or configuration prefix, consistent with other Azure Functions extensions. It is not itself resolved through `%...%` substitution. It identifies the Poll endpoint and credential configuration shared by Functions that use the same Connector Namespace:
 
 ```text
-ConnectorNamespace__resourceId=/subscriptions/{subscription}/resourceGroups/{resource-group}/providers/Microsoft.Web/connectorGateways/{gateway}
+ConnectorNamespace__pollingEndpoint=https://<host>/api/connectorGateways/<gateway-id>
 ConnectorNamespace__credential=managedidentity
 ConnectorNamespace__clientId={optional-user-assigned-managed-identity-client-id}
 ConnectorNamespace__managedIdentityResourceId={optional-user-assigned-managed-identity-resource-id}
-ConnectorNamespace__token={debug-only-token-for-all-audiences}
-ConnectorNamespace__managementToken={debug-only-arm-token}
-ConnectorNamespace__apiHubToken={debug-only-apihub-token}
 ```
 
-`TriggerConfigName` remains trigger metadata because it identifies the event source within the namespace. It should support Functions name resolution so environment-specific configuration is not embedded in attributes.
-
-The full Connector Namespace resource ID is required by the current service contract because the polling endpoints are exposed by the ARM GET operation for a trigger configuration. A Connector Namespace name alone does not identify its subscription and resource group and is not sufficient to build that request. Using the full ID also permits a Function App and Connector Namespace to reside in different resource groups or subscriptions when authorization allows it.
-
-This differs from bindings such as Service Bus and Event Hubs, where the configured fully qualified namespace is itself a stable data-plane endpoint. Connector Poll currently requires an ARM bootstrap step:
+`TriggerConfigName` identifies one Trigger Config and may use Functions app-setting resolution:
 
 ```text
-Connector Namespace resource ID + trigger config name
-    -> ARM GET trigger configuration
-    -> opaque polling endpoints
+OnNewEmailTriggerConfigName=Email-Polling1
 ```
 
-This is a requirement of the current ARM resolver, not an intrinsic part of the public Poll trigger contract. Endpoint discovery stays behind `IConnectorPollingEndpointResolver` so a future fully qualified namespace or non-ARM discovery endpoint can replace the bootstrap path without changing the trigger attribute.
+The setting may contain a direct value, a platform-level Key Vault reference, or a platform-level Azure App Configuration reference. Configuration providers loaded only inside a language worker are insufficient because the host extension must resolve the Trigger Config name before starting the listener.
 
-Before listener startup succeeds, the resolver must verify that the referenced trigger configuration:
+The connection's `pollingEndpoint` is the complete HTTPS gateway-level base including the exact `/api/connectorGateways/<gateway-id>` path. The extension appends `/triggerConfigs/<TriggerConfigName>` and only:
 
-- Exists and is enabled.
-- Has `deliveryMode` set to `Poll`.
-- Returns all required polling endpoints.
+- `/receive`
+- `/acknowledge`
+- `/approximateQueueDepth`
 
-A Webhook trigger configuration cannot be used by a Function configured for Poll delivery.
+Multiple Trigger Configs share the same connection prefix and gateway-level endpoint. The endpoint must use the default HTTPS port and end exactly at the non-empty gateway identifier. It must not contain `triggerConfigs`, a trailing slash, or an operation. `TriggerConfigName` must be one non-empty path segment. The extension performs no Connector Namespace resource-ID parsing, control-plane endpoint discovery, or endpoint caching.
 
 ### Identity and Permissions
 
-The target Connector Namespace and the caller identity are separate:
+The Poll endpoint, Trigger Config name, and caller identity are configured as:
 
 ```text
-ConnectorNamespace__resourceId
-    Target Connector Namespace
+ConnectorNamespace__pollingEndpoint
+    Gateway-level Poll endpoint
+
+OnNewEmailTriggerConfigName
+    Trigger Config name
 
 ConnectorNamespace__credential and identity selectors
     Identity used to access it
@@ -409,39 +408,24 @@ ConnectorNamespace__credential and identity selectors
 The extension follows the standard Functions identity-based connection pattern used by Service Bus, Event Hubs, Storage, Event Grid, and Cosmos DB. It passes the complete named connection section to `AzureComponentFactory.CreateTokenCredential`.
 
 | Environment | Configuration | Behavior |
-|---|---|---|
-| Local development | Omit `credential`, or use `credential=managedidentity` with an unavailable MI selector | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
-| Azure, system-assigned identity | `credential=managedidentity` | Use the Function App's system-assigned managed identity; if the managed identity endpoint reports authentication unavailable, the extension falls back to `DefaultAzureCredential` for local/private-stamp diagnostics |
+| --- | --- | --- |
+| Local development | Omit `credential` | Use the Functions developer-identity behavior provided by `AzureComponentFactory`; for example, the account authenticated through `az login` |
+| Azure, system-assigned identity | `credential=managedidentity` | Use only the Function App's system-assigned managed identity |
 | Azure, user-assigned identity | `credential=managedidentity` plus `clientId` or `managedIdentityResourceId` | Use the selected user-assigned managed identity |
-| Private-stamp diagnostics only | `token`, or `managementToken` plus `apiHubToken` | Bypass SDK credential creation and use caller-provided bearer token strings without logging them |
 
-Authentication uses two token audiences:
+Poll runtime operations use the API Hub token audience:
 
 | Operation | Token audience/scope |
-|---|---|
-| Read the trigger configuration through ARM | `https://management.azure.com/.default` |
-| Receive, acknowledge, and query queue status | `https://apihub.azure.com/.default` |
+| --- | --- |
+| Receive, acknowledge, and query queue depth | `https://apihub.azure.com/.default` |
 
-The request URI identifies the target Connector Namespace; the credential does not receive or infer that target resource ID. ARM and Connector Namespace authorize the caller represented by the bearer token against the requested resource.
-
-When Scale Controller hosts the scaler, it may inject dedicated app-identity credentials for ARM and API Hub through `ConnectorScaleCredentialProperties`. The extension routes ARM discovery to the former and queue-depth operations to the latter. This lets Scale Controller use its existing fixed-audience `ManagedIdentityTokenCredential` without making the extension impersonate the Function App.
-
-The debug token override is intentionally for private-stamp diagnostics. A single `ConnectorNamespace__token` is returned for every requested scope, but normal scaling uses different ARM and API Hub audiences; use `ConnectorNamespace__managementToken` and `ConnectorNamespace__apiHubToken` when testing both endpoint discovery and queue-depth calls with copied tokens. The extension parses JWT `exp` for the returned `AccessToken` expiry when present; otherwise it treats the configured token as a short-lived five-minute diagnostic token. The token setting can also be supplied with a single underscore, such as `ConnectorNamespace_token`, for environments where hierarchical app settings are inconvenient.
-
-ARM endpoint discovery requires the following control-plane action:
-
-```text
-Microsoft.Web/connectorGateways/triggerconfigs/read
-```
+The configured endpoint identifies the target Trigger Config. Connector Namespace authorizes the caller represented by the bearer token against the connection used by that Trigger Config.
 
 Required permissions:
 
 | Access | Requirement | Scope |
-|---|---|---|
-| ARM endpoint discovery | `Microsoft.Web/connectorGateways/triggerconfigs/read`, included in the built-in **Reader** role | Connector Namespace resource, or inherited from its resource group or subscription |
+| --- | --- | --- |
 | Poll runtime endpoints | Access policy for the Function identity | Connection referenced by the trigger config |
-
-**Reader** is an Azure built-in role definition; it is not assigned to the Function App automatically. The Function identity must receive an explicit Reader role assignment covering the target Connector Namespace unless it already inherits Reader from the target resource group or subscription. This assignment is also required when the Connector Namespace is in another subscription.
 
 The runtime access policy is configured under:
 
@@ -453,6 +437,8 @@ Connector Namespace
 
 Obtaining a token for `https://apihub.azure.com/.default` authenticates the identity, and the connection access policy authorizes that identity to use the Poll runtime endpoints.
 
+A service-backed queue-depth authorization test confirmed this separation: the same API Hub token and endpoint returned `200 OK` with the connection access policy, `403 Forbidden` after the policy was removed, and `200 OK` after the policy was restored.
+
 ### Ordering Guidance
 
 Connector Poll delivery does not guarantee ordering. `messageId` is stable across redelivery and is intended for deduplication; it does not define event order.
@@ -461,49 +447,44 @@ Connector Namespace does not currently add a sequence number, enqueue time, part
 
 Applications that require ordering must use source-specific ordering information when the connector payload provides it. They may buffer and reorder events in application code or forward events to an ordered downstream system, such as a Service Bus entity using sessions with an appropriate source event identifier as the session ID. The extension cannot infer a universal ordering key across connectors.
 
+### Batching and Concurrency
+
 Max batch size and concurrency are separate settings:
 
-- `MaxBatchSize` is the maximum number of Connector events requested in one Receive operation and supplied to one function invocation.
+- Cardinality controls whether the function receives one event or an array.
+- `MaxBatchSize` is the maximum number of Connector events supplied to one function invocation. Receive capacity may cover multiple concurrent invocation batches.
 - `Concurrency` is the maximum number of concurrent function invocations allowed on one worker instance.
 - A value of `0` on either attribute property means to use the host-level default.
 - `MaxBatchSize = 1` preserves one event per function invocation.
-- `MaxBatchSize` must be between `0` and `32`; the effective value must be
-  between `1` and `32`.
-- `Concurrency` must be zero or greater; the effective value must be greater
-  than zero.
+- `MaxBatchSize` must be `0` to use the host-level default, or between `1` and `32`; the effective value is always between `1` and `32`.
+- `Concurrency` must be zero or greater; the effective value must be greater than zero.
 - `MaxBatchSize` controls batching only and does not participate in the target-based scaling calculation.
 - Maximum in-flight messages are approximately `MaxBatchSize * Concurrency`.
+- Linked-output messages are an exception to normal grouping: each is invoked individually and host-wide linked-output execution is serialized.
 
-The effective max batch size must be compatible with the declared function
-parameter:
+Batching must be explicitly enabled:
 
-| Function parameter | Allowed effective `MaxBatchSize` |
-|---|---:|
-| `T` | Exactly `1` |
-| `ConnectorEvent<T>` | Exactly `1` |
-| `T[]` | `1` or greater |
-| `ConnectorEvent<T>[]` | `1` or greater |
+- .NET isolated sets `IsBatched = true`.
+- Node.js and TypeScript set `cardinality: "many"`.
+- Python generic bindings use single cardinality because the Python worker's generic binding decoder does not accept batched `collection_string` input.
+- Generic `function.json` bindings, including PowerShell, set `"cardinality": "many"`.
 
-Validation uses the effective value after applying host-level defaults. A
-scalar parameter with `MaxBatchSize = 0` is therefore invalid when
-`DefaultMaxBatchSize` is greater than `1`.
+The effective max batch size must be compatible with the declared cardinality and resulting function parameter:
 
-The language binding or worker converter that can see the real target type
-must reject an incompatible scalar binding during function indexing or
-listener startup with an actionable error. Host-side PR 1 cannot reliably
-infer the target shape for every language worker, so this validation belongs
-to PR 6. The extension must not silently ignore `MaxBatchSize`, truncate received
-events, or automatically change the function parameter shape.
+| Cardinality | Function parameter | Allowed effective `MaxBatchSize` |
+| --- | --- | ---: |
+| One | `T` | Exactly `1` |
+| One | `ConnectorEvent<T>` | Exactly `1` |
+| Many | `T[]` | `1` through `32` |
+| Many | `ConnectorEvent<T>[]` | `1` through `32` |
 
-`Concurrency` is independent of parameter shape. For example, a scalar
-parameter with `MaxBatchSize = 1` and `Concurrency = 8` is valid and permits
-up to eight concurrent single-event invocations. With a batched parameter,
-the same concurrency permits up to eight concurrent invocation batches.
+Validation uses the effective value after applying host-level defaults. A scalar parameter with `MaxBatchSize = 0` is therefore invalid when `DefaultMaxBatchSize` is greater than `1`.
 
-An event counts as in flight from the time Receive leases it until the
-listener acknowledges it or finishes handling a failed attempt without
-acknowledgement. This includes linked-output hydration, function execution,
-and acknowledgement processing.
+The language binding or worker converter that can see the real target type must reject an incompatible scalar binding during function indexing or listener startup with an actionable error. The extension must not silently ignore `MaxBatchSize`, truncate received events, or automatically change the function parameter shape.
+
+`Concurrency` is independent of parameter shape. For example, a scalar parameter with `MaxBatchSize = 1` and `Concurrency = 8` is valid and permits up to eight concurrent single-event invocations. With a batched parameter, the same concurrency permits up to eight concurrent invocation batches.
+
+An event counts as in flight from the time Receive leases it until the listener acknowledges it or finishes handling a failed attempt without acknowledgement. This includes linked-output hydration, function execution, and acknowledgement processing.
 
 Host-level defaults:
 
@@ -516,8 +497,7 @@ public sealed class ConnectorOptions
 }
 ```
 
-The service `maxEvents` query parameter is calculated from the remaining
-invocation capacity and capped at 32:
+The service `maxEvents` query parameter is calculated from the remaining invocation capacity and capped at 32:
 
 ```csharp
 int availableInvocationSlots =
@@ -545,38 +525,20 @@ Examples:
 | 32 | 16 | 0 | 32 |
 | 4 | 8 | 8 | 0 |
 
-The initial implementation does not prefetch beyond remaining invocation
-capacity. Every received message immediately starts its fixed two-minute lock
-budget, so leasing messages into a local waiting buffer increases lock
-expiration and duplicate-delivery risk.
+The listener does not prefetch beyond remaining invocation capacity. Leasing messages into a local waiting buffer consumes an unknown portion of the service-managed lock and increases duplicate-delivery risk.
 
-When the concurrent-invocation limit is reached, the listener does not issue
-Receive. Even when `x-ms-more-messages-available` is true, immediate draining
-occurs only when invocation capacity is available.
+When the concurrent-invocation limit is reached, the listener does not issue Receive. Even when `x-ms-more-messages-available` is true, immediate draining occurs only when invocation capacity is available.
 
 ### Payload and Message Metadata
 
-The extension supports both payload-only and metadata-rich bindings.
+The extension supports payload-only and metadata-rich bindings in scalar and batched forms:
 
-Payload-only, one event per invocation:
+| Invocation shape | Payload-only parameter | Metadata-rich parameter |
+| --- | --- | --- |
+| One event | `T` | `ConnectorEvent<T>` |
+| Batched events | `T[]` | `ConnectorEvent<T>[]` |
 
-```csharp
-public void OnNewEmail(
-    [ConnectorTrigger(MaxBatchSize = 1)]
-    Office365OnNewEmailTriggerPayload email)
-{
-}
-```
-
-Payload-only batch:
-
-```csharp
-public void OnNewEmail(
-    [ConnectorTrigger(MaxBatchSize = 8)]
-    Office365OnNewEmailTriggerPayload[] emails)
-{
-}
-```
+These are parameter-shape examples, not complete trigger declarations. Every Poll binding must also satisfy the configuration contract in [Proposed User Contract](#proposed-user-contract). Batched .NET isolated bindings additionally set `IsBatched = true`; generic language bindings use cardinality `many`. `MaxBatchSize` controls only the maximum number of events in one invocation.
 
 Applications that need the stable Connector delivery `messageId` use a per-event envelope:
 
@@ -594,48 +556,11 @@ public sealed class ConnectorEvent<T>
 }
 ```
 
-Metadata-rich single event:
-
-```csharp
-public void OnNewEmail(
-    [ConnectorTrigger(MaxBatchSize = 1)]
-    ConnectorEvent<Office365OnNewEmailTriggerPayload> email)
-{
-    if (email.MessageId is { } deduplicationId)
-    {
-        Deduplicate(deduplicationId);
-    }
-}
-```
-
-Metadata-rich batch:
-
-```csharp
-public void OnNewEmail(
-    [ConnectorTrigger(MaxBatchSize = 8)]
-    ConnectorEvent<Office365OnNewEmailTriggerPayload>[] emails)
-{
-    foreach (ConnectorEvent<Office365OnNewEmailTriggerPayload> email in emails)
-    {
-        Process(email.Data, email.MessageId);
-    }
-}
-```
-
 This follows the Kafka and Event Hubs pattern in which metadata remains attached to each event. It is preferred over scalar `[BindingName("messageId")]` parameters or parallel `messageIds[]` arrays because those contracts become ambiguous or index-sensitive for batched invocations.
 
-`ConnectorEvent<T>` exposes only application-safe metadata. Poll always
-populates `MessageId`. Webhook populates it only if Connector Namespace later
-supplies an equivalent stable identifier with documented retry semantics;
-otherwise it is `null`. The extension must not generate a replacement
-`MessageId`, because an invocation-local identifier would not remain stable
-across delivery retries.
+`ConnectorEvent<T>` exposes only application-safe metadata. Poll always populates `MessageId`. Webhook populates it only if Connector Namespace later supplies an equivalent stable identifier with documented retry semantics; otherwise it is `null`. The extension must not generate a replacement `MessageId`, because an invocation-local identifier would not remain stable across delivery retries.
 
-Do not add speculative metadata such as `CorrelationId`, `DeliveryAttempt`, or
-`EnqueuedTime` until Connector Namespace supplies those fields and defines their
-semantics. Public metadata can be extended later without changing the payload
-type. The `lockToken` is an acknowledgement capability and must remain internal
-to the host extension.
+Do not add speculative metadata such as `CorrelationId`, `DeliveryAttempt`, or `EnqueuedTime` until Connector Namespace supplies those fields and defines their semantics. Public metadata can be extended later without changing the payload type. The `lockToken` is an acknowledgement capability and must remain internal to the host extension.
 
 The extension does not map trigger-config names to `Azure.Connectors.Sdk` model types. The function parameter's declared type remains the source of truth. The worker converter supports:
 
@@ -670,49 +595,21 @@ if (targetType.IsGenericType &&
 
 For a batch target, the converter inspects the array element type and creates one closed `ConnectorEvent<T>` for every received message.
 
-Open generic function signatures are not supported:
-
-```csharp
-// Not supported: Azure Functions cannot index an unresolved payload type.
-[Function("GenericFunction")]
-public void Run<T>(
-    [ConnectorTrigger] ConnectorEvent<T> message)
-{
-}
-```
+Open generic function signatures such as `Run<T>(ConnectorEvent<T> message)` are not supported because Azure Functions cannot index an unresolved payload type.
 
 Azure Functions must discover concrete binding types during function indexing. The Connector extension remains connector-agnostic because it uses the closed type declared by the function rather than referencing or registering every generated `Azure.Connectors.Sdk` model.
 
 ## Internal Architecture
 
-### 1. Endpoint Resolver
+### 1. Polling Endpoint Configuration
 
-Introduce:
+The host resolves `<Connection>__pollingEndpoint` from the connection section and resolves `TriggerConfigName` through Functions app-setting resolution during listener startup and scale-controller reconstruction. Before acquiring an API Hub token, it validates a default-port HTTPS base with exactly the path `/api/connectorGateways/<non-empty-gateway-id>`. It validates the Trigger Config name as one path segment, then constructs immutable Receive, Acknowledge, and Approximate Queue Depth URIs.
 
-```csharp
-internal interface IConnectorPollingEndpointResolver
-{
-    Task<ConnectorPollingEndpoints> ResolveAsync(
-        ConnectorPollingTriggerOptions options,
-        CancellationToken cancellationToken);
-}
-```
-
-Responsibilities:
-
-- Read the trigger configuration through ARM.
-- Authenticate using the ARM audience.
-- Extract the four `pollingEndpoints` URLs.
-- Validate that required endpoints are absolute HTTPS URLs.
-- Resolve the namespace resource ID and credential from the named connection configuration.
-- Cache resolved endpoints by connection and trigger-config name.
-- Refresh cached endpoints after endpoint-specific stale/not-found failures.
-
-The resolver must not be part of the runtime data-plane client.
+The authority and gateway identifier remain opaque. The implementation performs no control-plane lookup, resource-identifier parsing, alternate endpoint discovery, or endpoint caching. Invalid connection or binding configuration fails startup before any runtime request or token acquisition.
 
 ### 2. Poll-delivery HTTP Client
 
-Introduce an internal client:
+The runtime client contract is:
 
 ```csharp
 internal interface IConnectorPollDeliveryClient
@@ -726,16 +623,10 @@ internal interface IConnectorPollDeliveryClient
         ConnectorPollingEndpoints endpoints,
         IReadOnlyList<ConnectorMessageLock> messages,
         CancellationToken cancellationToken);
-
-    Task<ConnectorQueueStatus> GetQueueStatusAsync(
-        ConnectorPollingEndpoints endpoints,
-        CancellationToken cancellationToken);
 }
 ```
 
-The runtime client also needs a dedicated linked-output download operation or
-an equivalent narrowly scoped collaborator. It must not use a general client
-that automatically attaches bearer tokens to signed content URLs.
+Queue-depth queries and linked-output downloads use dedicated narrowly scoped collaborators. The linked-output client must not use a general client that automatically attaches bearer tokens to signed content URLs.
 
 Implementation guidance:
 
@@ -743,14 +634,13 @@ Implementation guidance:
 - Use `TokenCredential` for `https://apihub.azure.com/.default`.
 - Validate `maxEvents` before sending.
 - Merge `maxEvents` into an existing query string safely.
-- Treat endpoint URLs as opaque.
+- Preserve validated endpoint identifiers and queries without reconstruction.
 - Use explicit JSON models and `System.Text.Json`.
 - Deserialize into nullable wire DTOs, then validate once into immutable protocol models.
 - Model `outputs` and `outputsLink` as mutually exclusive content sources.
 - Preserve inline `outputs` as owned `BinaryData`; do not retain a borrowed `JsonElement` or deserialize into connector-specific models.
-- Normalize linked content to the same logical `outputs` representation used
-  by inline messages.
-- Apply actual-bytes-read limits to linked outputs, capped at 100 MiB.
+- Normalize linked content to the same logical `outputs` representation used by inline messages.
+- Apply actual-bytes-read limits to every runtime response. Cap Receive, Acknowledge, and linked outputs at 100 MiB, and cap the queue-depth JSON response at 64 KiB.
 - Never log bearer tokens, lock tokens, or payload bodies.
 - Never log signed outputs-link URLs.
 - Preserve unknown acknowledgement statuses as unsuccessful extensible string values so a future service status does not break the entire response.
@@ -760,13 +650,13 @@ Avoid automatic HTTP retries for Receive and Acknowledge:
 
 - A lost Receive response may already have leased messages.
 - A lost Acknowledge response may already have deleted messages.
-- Queue-status requests can use ordinary bounded transient retries.
+- Queue-depth requests can use ordinary bounded transient retries.
 
 ### 3. Listener Selection
 
 Keep the existing Webhook listener behavior unchanged.
 
-Change `ConnectorTriggerBinding.CreateListenerAsync` to select:
+Use `ConnectorTriggerBinding.CreateListenerAsync` to select:
 
 - `ConnectorListener` for Webhook.
 - `ConnectorPollingListener` for Poll.
@@ -777,33 +667,29 @@ Do not turn the current class into a large mode-switching listener.
 
 `ConnectorPollingListener` owns the message pump:
 
-1. Resolve polling endpoints.
+1. Validate the configured polling base and construct the three runtime routes.
 2. Determine available invocation capacity from effective `MaxBatchSize` and `Concurrency`.
 3. Call Receive with `maxEvents` capped by 32 and no greater than current processing capacity.
-4. If Receive is empty, apply cancellation-aware backoff with jitter.
-5. Hydrate linked outputs using bounded content-download concurrency.
-6. Exclude messages whose linked outputs could not be retrieved or validated;
-   leave them unacknowledged.
-7. Partition successfully hydrated messages into invocation batches of at
-   most `MaxBatchSize`.
-8. Dispatch no more than `Concurrency` function invocations at once.
-9. For each invocation batch, pass normalized `outputs` values and safe
-    metadata through the binding/conversion path.
-10. Retain each message's `messageId` and `lockToken` internally.
-11. If an invocation succeeds, mark every message in that invocation batch
-    for acknowledgement.
-12. If an invocation fails or is cancelled, leave every message in that
-    invocation batch unacknowledged.
-13. Batch-acknowledge successful message locks in requests of at most 32 items.
-14. If `x-ms-more-messages-available` is true and invocation capacity is
+4. If Receive is empty, apply cancellation-aware backoff with jitter. Reset the failure backoff after every successful Receive.
+5. Partition received messages into chunks of at most `MaxBatchSize`.
+6. Within each chunk, group inline messages into one invocation and split linked-output messages into single-event invocations.
+7. Process the sub-invocations sequentially within that chunk.
+8. Before downloading a linked output, acquire the singleton host-wide linked-output limiter and hold it through acknowledgement.
+9. Exclude a linked message whose output cannot be retrieved or validated and leave it unacknowledged.
+10. Dispatch no more than `Concurrency` chunk-processing tasks at once.
+11. Pass normalized `outputs` values and safe metadata through the
+    binding/conversion path.
+12. Retain each message's `messageId` and `lockToken` internally.
+13. If an invocation succeeds, acknowledge every message in that invocation.
+14. If an invocation fails or is cancelled, leave every message in that
+    invocation unacknowledged.
+15. If `x-ms-more-messages-available` is true and invocation capacity is
     available, immediately drain another Receive batch.
-15. Otherwise continue using the normal polling cadence.
+16. Otherwise continue using the normal polling cadence.
 
-Concurrency counts function invocations, not individual messages. For
-example, `MaxBatchSize = 4` and `Concurrency = 8` permits up to eight active
-invocations and approximately 32 in-flight messages.
+Concurrency counts function invocations, not individual messages. For example, `MaxBatchSize = 4` and `Concurrency = 8` permits up to eight active invocations and approximately 32 in-flight messages.
 
-Acknowledgement is initially all-or-none per function invocation. Partial success within one invocation requires a future explicit per-item result contract; the extension must not infer which messages completed before a function failure.
+Acknowledgement is all-or-none per function invocation. Partial success within one invocation requires a future explicit per-item result contract; the extension must not infer which messages completed before a function failure.
 
 ### 5. Function Registration and Trigger Values
 
@@ -819,16 +705,20 @@ Both delivery modes should preserve the same logical connector payload. Poll tra
 
 For payload-only bindings, the function receives only the connector `outputs` value or array of values. For metadata-rich bindings, each `outputs` value and its available `messageId` are converted into one `ConnectorEvent<T>`.
 
-The host-side canonical message representation is:
+The host-side canonical input representation is:
 
 ```csharp
-internal sealed record ConnectorTriggerMessage(
-    string MessageId,
-    string LockToken,
-    JsonElement Outputs);
+internal sealed class ConnectorTriggerEventInput
+{
+    internal BinaryData Outputs { get; }
+
+    internal string? MessageId { get; }
+
+    internal ConnectorTriggerDeliveryMode DeliveryMode { get; }
+}
 ```
 
-The isolated-worker transport should follow the modern deferred-binding approach used by Kafka and Event Hubs so each item retains its metadata during conversion. Exact transport serialization remains internal and must not change the public payload-only shape.
+The isolated-worker transport follows the modern deferred-binding approach used by Kafka and Event Hubs so each item retains its metadata during conversion. Exact transport serialization remains internal and does not change the public payload-only shape.
 
 ### 6. Lifecycle and Shutdown
 
@@ -837,30 +727,26 @@ The isolated-worker transport should follow the modern deferred-binding approach
 - Validate Poll configuration.
 - Resolve endpoints.
 - Start exactly one message-pump task per listener instance.
+- Serialize Start/Stop calls so a restart waits for the previous pump to finish draining before starting a new one.
 
-`StopAsync` and `Cancel`:
+`StopAsync`:
 
 - Stop issuing new Receive calls.
 - Cancel empty-queue waits promptly.
-- Allow in-flight function executions a bounded completion period.
+- Use the host's `IDrainModeManager` policy: leave processing uncancelled in drain mode so existing work can finish; otherwise request processing cancellation immediately. Do not impose a listener-owned grace timer.
 - Acknowledge completed successes when possible.
 - Leave unfinished items unacknowledged for redelivery.
+- After the pump completes, clear its lifecycle state and dispose its cancellation sources so the listener can restart. A cancelled Stop wait must not clear a pump that is still running.
 
-`Dispose` must be idempotent.
+`Cancel` and `Dispose` cancel both receiving and processing, regardless of drain mode. `Dispose` must be idempotent and prevent future starts. Dispose cancellation sources only after their message pump completes.
 
-### 7. Lock Budget
+### 7. Message Locks and Redelivery
 
-The service does not return `lockedUntil`; the listener only knows the fixed two-minute duration.
+The service does not return `lockedUntil` or a lock duration, and Connector Namespace may change the duration in the future. The extension therefore does not infer a fixed client-side expiration deadline or skip work based on local elapsed time.
 
-The extension should:
+Long-running functions, host failures, acknowledgement failures, and lock expiration can all produce duplicate execution. Applications must implement idempotency or deduplication using `messageId`.
 
-- Record the local Receive completion time.
-- Emit a warning when processing approaches the lock limit.
-- Avoid beginning new work from a batch when too little lock budget remains.
-- Accept that long-running functions can produce duplicate execution.
-- Document application-level deduplication using `messageId`.
-
-Do not invent client-side lock renewal because the service has no renewal endpoint.
+Do not invent client-side lock renewal because the service has no renewal endpoint. If Connector Namespace later returns per-message expiration metadata, the listener can use that service-owned value to avoid starting work that cannot be acknowledged.
 
 ### 8. Scaling
 
@@ -883,56 +769,39 @@ targetWorkerCount =
     ceil(approximateQueueDepth / effectiveConcurrency)
 ```
 
-`Concurrency` is the effective number of active function invocations per
-worker and therefore the target-scaling capacity. `MaxBatchSize` controls
-listener invocation grouping; it does not reduce the worker target. Keeping
-it out of target arithmetic avoids under-scaling for partially filled batches
-or when approximate depth does not map to immediately receivable full
-batches. Connector Namespace `maxEvents` remains the listener calculation
-`min(32, (effectiveConcurrency - activeInvocations) *
-effectiveMaxBatchSize)`.
+`Concurrency` is the effective number of active function invocations per worker and therefore the target-scaling capacity. `MaxBatchSize` controls listener invocation grouping; it does not reduce the worker target. Keeping it out of target arithmetic avoids under-scaling for partially filled batches or when approximate depth does not map to immediately receivable full batches. Connector Namespace `maxEvents` remains the listener calculation `min(32, (effectiveConcurrency - activeInvocations) * effectiveMaxBatchSize)`.
 
-Historical PR #26 is useful only as a reference for the Functions
-scale-controller integration. Reusable extension-side patterns include:
+The queue-depth contract does not identify inline versus linked-output events. The scaler therefore continues to use effective invocation concurrency for the aggregate backlog. This preserves normal inline scaling but can underestimate the worker count for a linked-output-heavy backlog because each host processes only one linked-output invocation at a time. Using a target of one for every backlog would instead over-scale ordinary inline traffic. When linked-output delivery becomes service-testable, validate this tradeoff and prefer a service-provided payload-class or byte-oriented backlog signal if stronger linked-output scaling is required.
+
+Historical PR #26 is useful only as a reference for the Functions scale-controller integration. Reusable extension-side patterns include:
 
 - `ITargetScaler` and `ITargetScalerProvider`.
-- The reflectively discovered
-  `AddConnectorScaleForTrigger(IWebJobsBuilder, TriggerMetadata)` registration
-  signature.
-- Reading trigger metadata and host-level `ConnectorOptions` inside the scaler
-  provider.
-- Calculating target workers from approximate queue depth and effective
-  invocation concurrency:
+- The reflectively discovered `AddConnectorScaleForTrigger(IWebJobsBuilder, TriggerMetadata)` registration signature.
+- Reading trigger metadata and host-level `ConnectorOptions` inside the scaler provider.
+- Calculating target workers from approximate queue depth and effective invocation concurrency:
 
   ```text
   ceil(pendingEvents / effectiveConcurrency)
   ```
 
-- Scale Monitor validation through trigger registration and scale-status
-  requests.
+- Scale Monitor validation through trigger registration and scale-status requests.
 
 Do not reuse the Connector Namespace side of #26:
 
 - Its positional `connectorNamespace` and `triggerName` attribute contract.
-- Its Namespace API paths, request/response models, or authentication
-  assumptions.
+- Its Namespace API paths, request/response models, or authentication assumptions.
 - Its mock queue-depth provider.
-- Any metadata names that conflict with the current `Connection` and
-  `TriggerConfigName` contract.
+- Any metadata names that conflict with the target `Connection` and `TriggerConfigName` contract.
 
-The production metrics provider must use the current endpoint-discovery and
-runtime contracts in this document, specifically the server-provided
-`approximateQueueDepthUri`. Before implementing PR 8, verify that the host and
-Scale Monitor still require the interfaces and reflective registration
-signature demonstrated by #26.
+The production metrics provider combines the connection's `pollingEndpoint` with `TriggerConfigName` and appends `/approximateQueueDepth`. The final cross-stack validation verifies that the host and Scale Monitor still use the interfaces and reflective registration signature demonstrated by #26.
 
 ### 9. Dependency Registration
 
-Update `ConnectorWebJobsBuilderExtensions.AddConnector` to register:
+`ConnectorWebJobsBuilderExtensions.AddConnector` registers:
 
 - A default `TokenCredential`.
-- Named ARM and runtime `HttpClient` instances or equivalent handlers.
-- Endpoint resolver.
+- A named runtime `HttpClient` or equivalent handler.
+- Configured-endpoint validation and route construction.
 - Poll-delivery client.
 - Poll listener factory.
 - Scale provider/monitor.
@@ -942,11 +811,11 @@ Register `Microsoft.Extensions.Azure` services and reuse `AzureComponentFactory.
 ## Error Handling
 
 - Invalid Poll attribute/configuration: fail listener startup with an actionable error.
-- Trigger config missing or not in Poll mode: fail startup.
-- Missing polling endpoints: fail startup or endpoint refresh.
+- Missing or invalid connection `pollingEndpoint` or `TriggerConfigName`: fail startup.
+- Unreachable configured endpoint: report the endpoint operation without logging the complete URL or attempting alternate endpoint discovery.
 - Authentication/authorization failure: log resource identity and audience, never the token.
-- Receive failure: do not assume whether a batch was leased; retry only after backoff.
-- Function failure: log and leave the message unacknowledged.
+- Receive failure: do not assume whether a batch was leased; retry with cancellation-aware exponential backoff capped at 30 seconds.
+- Function failure: log and leave every message in the invocation batch unacknowledged.
 - Acknowledge `NotFound`: treat as an expired/already-used lock, not an extension crash.
 - Acknowledge `Failed`: log per item and allow redelivery.
 - Partial acknowledgement: process each result independently.
@@ -955,15 +824,13 @@ Register `Microsoft.Extensions.Azure` services and reuse `AzureComponentFactory.
 
 Record without payload or token content:
 
-- Function name and trigger-config name.
+- Function name and a safe trigger identifier; do not record the complete connection `pollingEndpoint`.
 - Receive duration and returned message count.
 - Linked-output download count, declared size, actual size, and duration.
 - Linked-output retrieval and validation failures.
 - Empty receives and backoff duration.
 - Function execution success/failure count.
 - Acknowledgement status counts.
-- Lock-budget warnings.
-- Endpoint refresh count.
 - Approximate queue depth and scale decision.
 - Stable correlation using hashed or safe identifiers where required.
 
@@ -976,49 +843,49 @@ Record without payload or token content:
 - Attribute `MaxBatchSize` and `Concurrency` overrides flow correctly.
 - Zero-valued overrides use host-level defaults.
 - Max batch size and concurrency ranges are validated.
-- Scalar `T` and `ConnectorEvent<T>` reject an effective `MaxBatchSize` greater
-  than `1`.
-- Scalar parameters using `MaxBatchSize = 0` are validated against
-  `DefaultMaxBatchSize`.
+- Scalar `T` and `ConnectorEvent<T>` reject an effective `MaxBatchSize` greater than `1`.
+- Scalar parameters using `MaxBatchSize = 0` are validated against `DefaultMaxBatchSize`.
 - Array parameters accept an effective `MaxBatchSize` of `1` or greater.
 - `Concurrency` remains valid and independent for scalar and array bindings.
 - Invalid combinations fail clearly.
 - Binding chooses the correct listener.
 - Payload-only and metadata-rich target types are recognized.
 
-### Endpoint resolver tests
+### Endpoint configuration tests
 
-- Correct ARM URI and API version.
-- Correct ARM token scope.
-- Polling endpoint parsing.
-- Cache hit and refresh behavior.
-- Missing/invalid endpoint handling.
+- Connection-prefix `pollingEndpoint` resolution.
+- `TriggerConfigName` app-setting resolution.
+- Absolute HTTPS base validation.
+- Default HTTPS port and opaque authority handling.
+- Correct Receive, Acknowledge, and Approximate Queue Depth route construction.
+- Opaque gateway identifier, Trigger Config name, and query preservation.
+- Exact `/api/connectorGateways/<gateway-id>` path validation.
+- Rejection of bases that already include `triggerConfigs`, an operation, or another trailing segment.
+- Missing or invalid endpoint handling.
+- No alternate discovery for endpoint-specific `404 Not Found` or `410 Gone`.
 
 ### HTTP client tests
 
 - Correct API Hub token scope.
-- `maxEvents` omitted/default and range validation.
+- Explicit `maxEvents`, existing-query replacement, and range validation.
 - Existing endpoint query parameters are preserved.
 - Receive and acknowledgement serialization.
 - Mixed inline and linked message deserialization.
 - Exactly one of `outputs` and `outputsLink` is required.
 - Signed outputs-link URI validation and log redaction.
-- Configured and absolute actual-bytes-read limit enforcement, including the
-  104,857,600-byte boundary and over-limit behavior.
+- Actual-bytes-read limit enforcement, including the 104,857,600-byte boundary and over-limit behavior.
 - Linked-output download response parsing.
 - Linked-output retrieval does not attach an unintended bearer token.
 - Redirect behavior follows the finalized service contract.
-- Transient linked-output retry behavior follows the finalized service
-  contract.
+- Transient linked-output retry behavior follows the finalized service contract.
 - Mixed acknowledgement statuses.
-- Queue-status parsing.
+- Queue-depth parsing.
 - No unsafe retries for lease-sensitive operations.
 
 ### Listener tests
 
 - Empty queue backoff.
-- Receive size is capped by remaining invocation capacity multiplied by
-  effective `MaxBatchSize`, and by the protocol maximum of 32.
+- Receive size is capped by remaining invocation capacity multiplied by effective `MaxBatchSize`, and by the protocol maximum of 32.
 - Each invocation receives no more than effective `MaxBatchSize`.
 - Active function invocations never exceed effective `Concurrency`.
 - A successful invocation acknowledges every message in that invocation batch.
@@ -1026,13 +893,17 @@ Record without payload or token content:
 - Concurrent invocation results remain associated with the correct message locks.
 - Inline and linked outputs produce the same function-facing payload shape.
 - A linked-output failure leaves only that message unacknowledged.
-- Large-output hydration is bounded and consumes lock budget.
+- Mixed Receive results preserve normal inline batching and invoke each linked output individually.
+- Linked-output invocations do not overlap across listeners sharing one host.
+- Large-output hydration is bounded.
 - Payload-only `T` and `T[]` conversion.
 - Metadata-rich `ConnectorEvent<T>` and `ConnectorEvent<T>[]` conversion.
 - `MessageId` remains paired with the correct payload under batching and concurrency.
 - `lockToken` is never exposed to function code.
 - `x-ms-more-messages-available` drains immediately.
 - Stop and cancellation behavior.
+- Host drain mode preserves in-flight processing and acknowledgement; ordinary Stop requests processing cancellation immediately, while Cancel and Dispose cancel even during drain mode.
+- Start/Stop/Start resumes Receive without overlapping pumps, including concurrent lifecycle calls, cancelled Stop waits, and disposal during shutdown.
 - Expired locks and acknowledgement `NotFound`.
 - Duplicate `messageId` delivery.
 
@@ -1048,131 +919,98 @@ Record without payload or token content:
 Use a Poll trigger configuration such as Office 365 `OnNewEmailV3`:
 
 1. Register with `deliveryMode: Poll`.
-2. Send test email.
-3. Start Function host.
-4. Receive one event with `maxEvents=1`.
-5. Execute function.
-6. Acknowledge the event.
-7. Verify it does not reappear.
-8. Run a failure case and verify redelivery after two minutes.
+2. Configure the gateway-level connection `pollingEndpoint` and trigger-specific `TriggerConfigName`.
+3. Send enough test emails to produce more than one invocation batch.
+4. Start the Function host.
+5. Verify the expected invocation batch sizes.
+6. Verify every successful event is acknowledged and does not reappear.
+7. Run a failure case and verify redelivery after the service-managed lock expires.
 
-## Stacked PR Delivery Sequence
+Connector Namespace does not yet emit linked-output messages in the available test environment. Validate linked-output splitting, serialization, failure, and memory-safety behavior with synthetic unit tests until the service feature is available for an end-to-end test.
 
-Each PR targets the preceding branch until the lower PR merges. Every PR must
-preserve Webhook behavior and pass its focused build and tests.
+## Deferred Linked-Output Release Work
 
-### PR 1: Trigger contract
+The extension implements the linked-output protocol defensively, but linked outputs are not release-validated because Connector Namespace does not yet emit them in the available test environment. This does not block or change inline Poll delivery.
 
-- Replace public `MaxEvents` with `MaxBatchSize` and `Concurrency` in both
-  attributes.
-- Add host-level defaults of `DefaultMaxBatchSize = 1` and
-  `DefaultConcurrency = 16`.
-- Preserve `Webhook` as the default and keep host/worker metadata synchronized.
-- Update contract and listener-selection tests.
+Before linked outputs are enabled or advertised as customer-supported, complete the following service-backed work:
 
-### PR 2: Configuration
+1. **Payload-size validation**
+   - Exercise representative linked outputs, including approximately 1 MiB,
+     10 MiB, 50 MiB, and the 100 MiB service maximum.
+   - Measure peak host and worker working set, allocation rate, GC pauses,
+     download time, conversion time, invocation time, and acknowledgement
+     success for .NET, Node.js, and Python.
+   - Treat 100 MiB as a defensive wire ceiling until this evidence establishes
+     a supported customer payload size. Reduce the supported limit or change
+     the worker transport if one message can exhaust a supported host SKU.
 
-- Resolve the literal `Connection` prefix through Functions configuration.
-- Add immutable Poll and connection options.
-- Validate the configured resource ID with `ResourceIdentifier`.
-- Require a resource-group-scoped
-  `Microsoft.Web/connectorGateways/{gateway}` resource with a valid
-  subscription GUID and no child-resource path.
-- Add credential selection and dependency registration.
+2. **Worker transport and memory amplification**
+   - Measure simultaneous retention of downloaded UTF-8 bytes, the UTF-16 JSON
+     string used by current conversion, and the deferred worker binding
+     envelope.
+   - Avoid additional full-payload copies where the worker protocol permits.
+   - Retain the host-wide linked-output limiter until an alternative is proven
+     to keep aggregate process memory bounded.
 
-### PR 3: Protocol models
+3. **Host-wide admission and waiter policy**
+   - Measure wait time and retained leased-message metadata when multiple Poll
+     functions share one host.
+   - Evaluate a bounded global admission queue, non-waiting admission, or a
+     byte-budget limiter if the current `functions × concurrency` waiter bound
+     causes material memory pressure, lock expiration, or duplicate execution.
+   - Verify that linked waiters do not starve inline traffic in mixed
+     workloads.
 
-- Add explicit Receive, acknowledgement, queue-status, and endpoint models.
-- Model `outputs` and `outputsLink` as mutually exclusive output sources.
-- Add safe validation and serialization tests.
+4. **Message-lock contract**
+   - Request per-message `lockedUntil` or equivalent expiration metadata from
+     Connector Namespace.
+   - Do not introduce a client-configured or hardcoded lock duration.
+   - If expiration metadata becomes available, use the service-owned value to
+     avoid starting work that cannot be acknowledged.
+   - Continue requiring application-level idempotency or deduplication using
+     `messageId`.
 
-### PR 4: Endpoint resolver
+5. **Scaling signals**
+   - Measure linked-heavy and mixed queue behavior with multiple host
+     instances.
+   - Request payload-class, linked-message count, or byte-backlog metrics if
+     aggregate approximate queue depth materially under-scales linked
+     workloads.
+   - Revisit the target calculation only with service-backed evidence; do not
+     penalize ordinary inline traffic for a theoretical linked backlog.
 
-- Read the trigger configuration through ARM using API version
-  `2026-05-01-preview`.
-- Extract and cache the four opaque runtime endpoints.
-- Verify Poll mode, enabled state, HTTPS endpoints, and ARM authentication.
+6. **End-to-end correctness and operations**
+   - Verify signed-link authentication, no bearer-token forwarding, redirect
+     rejection, content-type validation, actual-bytes enforcement, retries,
+     function invocation, acknowledgement, redelivery, retention, and
+     deletion behavior.
+   - Verify cancellation and host shutdown with an active download, an active
+     invocation, and multiple limiter waiters.
+   - Verify logs and exceptions never contain the complete signed URI, query,
+     payload, bearer token, message ID, or lock token.
+   - Define telemetry for linked download duration, actual bytes, limiter wait
+     duration, waiter count, failures, acknowledgement status, and duplicate
+     delivery without recording sensitive values.
 
-### PR 5: Runtime client
+The likely implementation changes depend on these measurements. Do not select an arbitrary payload limit, waiter limit, lock reserve, or scaling multiplier before the service-backed results are available.
 
-- Implement Receive, acknowledgement, and queue-status operations.
-- Add linked-output retrieval with URI redaction, bounded size, and finalized
-  authentication and retry semantics.
-- Avoid transparent retries for lease-sensitive Receive and acknowledgement
-  operations.
+## Delivery Plan
 
-### PR 6: Worker binding
-
-- Add the deferred-binding transport needed to preserve per-event metadata.
-- Support `T`, `T[]`, `ConnectorEvent<T>`, and `ConnectorEvent<T>[]`.
-- Keep the host independent of generated `Azure.Connectors.Sdk` types.
-
-### PR 7: Poll listener
-
-- Implement capacity-based Receive using calculated `maxEvents`.
-- Add invocation batching and bounded concurrency.
-- Hydrate linked outputs within lock and memory budgets.
-- Acknowledge all messages in a successful invocation batch and none from a
-  failed or cancelled invocation.
-- Add lifecycle, backoff, telemetry, endpoint-refresh, and shutdown behavior.
-
-### PR 8: Scaling and completion
-
-- Add the scale monitor or target scaler using approximate queue depth.
-- Validate scale from zero.
-- Add integration tests, samples, and final documentation.
-- Decide whether demonstrated reuse justifies extracting the internal client
-  into a public package.
-
-## Initial File-Level Work
-
-Expected new or changed surfaces:
-
-```text
-src/Microsoft.Azure.Functions.Extensions.Connector/
-  ConnectorTriggerAttribute.cs
-  ConnectorTriggerBinding.cs
-  ConnectorListener.cs
-  ConnectorWebJobsBuilderExtensions.cs
-  Polling/
-    ConnectorPollingListener.cs
-    ConnectorPollingEndpoints.cs
-    ConnectorPollingEndpointResolver.cs
-    ConnectorPollDeliveryClient.cs
-    ConnectorPollDeliveryModels.cs
-    ConnectorPollingOptions.cs
-    ConnectorPollingScaleMonitor.cs
-
-src/Microsoft.Azure.Functions.Worker.Extensions.Connector/
-  ConnectorTriggerAttribute.cs
-  ConnectorTriggerDeliveryMode.cs
-
-test/Microsoft.Azure.Functions.Extensions.Connector.Tests/
-  ConnectorTriggerAttributeTests.cs
-  ConnectorTriggerBindingTests.cs
-  ConnectorPollingEndpointResolverTests.cs
-  ConnectorPollDeliveryClientTests.cs
-  ConnectorPollingListenerTests.cs
-  ConnectorPollingScaleMonitorTests.cs
-```
-
-Names and file boundaries are preliminary and should follow repository conventions discovered during implementation.
+The stacked PR sequence, completion criteria, and file-level implementation work are maintained in [`connector-trigger-poll-delivery-implementation-plan.md`](connector-trigger-poll-delivery-implementation-plan.md). Keeping delivery tracking in one document prevents the design from becoming stale as branches are implemented and rebased.
 
 ## Open Questions
 
-1. Should endpoint discovery be mandatory, or should advanced users be able to provide the four runtime URLs directly?
-2. Will Connector Namespace expose a fully qualified namespace or stable non-ARM discovery endpoint so clients do not need ARM access to bootstrap polling endpoints?
-3. Does the complete ARM discovery and Poll runtime path support a Function App and Connector Namespace in different subscriptions?
-4. Which Functions scaling interface is appropriate for this extension version?
-5. Should future service concurrency signals augment the current `ceil(depth / effectiveConcurrency)` target model?
-6. What default empty-queue backoff and jitter should be used?
-7. Should a long-running execution be allowed to finish after the two-minute lock budget, or should the extension cancel it?
-8. When should endpoint cache entries be refreshed?
-9. What evidence would justify extracting the internal protocol client into a separate public package?
+1. Should future service concurrency signals augment the current `ceil(depth / effectiveConcurrency)` target model?
+2. Should Connector Namespace expose per-message lock-expiration metadata so the extension can avoid starting work that cannot be acknowledged?
+3. What linked-output payload size can each supported language and host SKU process without unacceptable memory amplification?
+4. Should linked-output admission remain one invocation per host, become a byte-budget limiter, or use non-waiting admission?
+5. What evidence would justify extracting the internal protocol client into a separate public package?
 
 ## Supporting Information: Provisioning a Poll Trigger Configuration
 
 The Connector Namespace portal does not currently support provisioning a Poll trigger configuration, and the current `az connector-namespace trigger create` command does not expose `deliveryMode`. Until those surfaces support Poll, use a raw ARM PUT request.
+
+This control-plane request is a customer setup step only and is not used by the Functions extension at runtime.
 
 Create a request body such as:
 
@@ -1192,7 +1030,7 @@ Create a request body such as:
         "value": "Inbox"
       }
     ],
-    "state": "Disabled",
+    "state": "Enabled",
     "type": "NotSpecified"
   }
 }
@@ -1212,13 +1050,12 @@ az rest `
 
 Do not include `pollingEndpoints`, `id`, `name`, `systemData`, or other server-generated response properties in the request body. Connector Namespace generates the polling endpoints.
 
-Creating the trigger configuration as `Disabled` allows the Function and its connection access policy to be configured before polling begins. Set the trigger configuration to `Enabled` before starting the Function listener. The listener fails startup when the trigger configuration is disabled.
+Create the Poll trigger configuration as `Enabled` by default. If the Function is not ready, it may be created as `Disabled` only as an explicit setup choice; enable it after retrieving the generated polling endpoints, configuring the Function settings, and adding the connection-level access policy.
 
 ## Reference
 
 - AzureUX-BPM PR 16351458: Connector Namespace trigger-config pull-delivery runtime design.
-- #26: historical Functions scale-controller integration reference only; its
-  Connector Namespace contract is obsolete.
+- #26: historical Functions scale-controller integration reference only; its Connector Namespace contract is obsolete.
 - Connector Namespace runtime behavior verified against `receive`, `acknowledge`, `hasMessages`, and `approximateQueueDepth`.
 - Kafka per-event metadata envelope: `KafkaEventData<T>` in `Azure/azure-functions-kafka-extension`.
 - Event Hubs batch metadata model: `EventData[]` in `Azure/azure-sdk-for-net`.

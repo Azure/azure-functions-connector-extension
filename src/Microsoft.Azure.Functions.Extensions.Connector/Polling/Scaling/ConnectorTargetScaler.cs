@@ -18,16 +18,9 @@ internal sealed class ConnectorTargetScaler : ITargetScaler
         _metricsProvider = metricsProvider ?? throw new ArgumentNullException(nameof(metricsProvider));
         options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        if (attributeConcurrency < 0)
-        {
-            throw new InvalidOperationException("Connector trigger Concurrency must be zero or greater.");
-        }
-
-        _effectiveConcurrency = attributeConcurrency > 0 ? attributeConcurrency : options.DefaultConcurrency;
-        if (_effectiveConcurrency <= 0)
-        {
-            throw new InvalidOperationException("Connector DefaultConcurrency must be greater than zero.");
-        }
+        _effectiveConcurrency = ConnectorPollingOptions.ResolveConcurrency(
+            attributeConcurrency,
+            options.DefaultConcurrency);
 
         TargetScalerDescriptor = new TargetScalerDescriptor(functionName);
     }

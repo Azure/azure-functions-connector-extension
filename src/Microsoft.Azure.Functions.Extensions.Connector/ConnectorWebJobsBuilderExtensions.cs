@@ -1,12 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-using System.Globalization;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Host.Scale;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using System.Globalization;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
@@ -40,18 +40,36 @@ public static class ConnectorWebJobsBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
+        // Register the HTTP request processor as a singleton
         builder.Services.TryAddSingleton<ConnectorHttpRequestProcessor>();
         builder.Services.AddAzureClientsCore();
         builder.Services.AddHttpClient(
-            ConnectorQueueDepthClient.HttpClientName,
-            client => client.Timeout = TimeSpan.FromSeconds(30))
+            ConnectorPollDeliveryClient.HttpClientName,
+            client =>
+                client.Timeout = ConnectorPollingHttpConstants.RuntimeTimeout)
+            .RemoveAllLoggers();
+        builder.Services.AddHttpClient(
+            ConnectorLinkedOutputClient.HttpClientName,
+            client =>
+                client.Timeout =
+                    ConnectorPollingHttpConstants.LinkedOutputTimeout)
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false,
+                AutomaticDecompression = System.Net.DecompressionMethods.None,
+            })
             .RemoveAllLoggers();
         builder.Services.TryAddSingleton<ConnectorConnectionOptionsProvider>();
         builder.Services.TryAddSingleton<IConnectorConnectionOptionsProvider>(
             serviceProvider =>
                 serviceProvider.GetRequiredService<ConnectorConnectionOptionsProvider>());
         builder.Services.TryAddSingleton<IConnectorQueueDepthClientFactory, ConnectorQueueDepthClientFactory>();
+        builder.Services.TryAddSingleton<IConnectorPollDeliveryClientFactory, ConnectorPollDeliveryClientFactory>();
+        builder.Services.TryAddSingleton<IConnectorLinkedOutputClient, ConnectorLinkedOutputClient>();
+        builder.Services.TryAddSingleton<ConnectorLinkedOutputInvocationLimiter>();
+        builder.Services.TryAddSingleton<IConnectorPollingListenerFactory, ConnectorPollingListenerFactory>();
 
+        // Register the extension config provider
         builder.AddExtension<ConnectorExtensionConfigProvider>()
             .BindOptions<ConnectorOptions>();
 

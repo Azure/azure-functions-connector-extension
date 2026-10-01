@@ -1,0 +1,28 @@
+<Project>
+  <PropertyGroup>
+    <_WorkerExtensionsPath>$(BaseIntermediateOutputPath)$(Configuration)\WorkerExtensions\WorkerExtensions.csproj</_WorkerExtensionsPath>
+    <_ConnectorProjectPath>$(SrcRoot)Microsoft.Azure.Functions.Extensions.Connector\Extensions.Connector.csproj</_ConnectorProjectPath>
+    <_PkgBlockRegex><![CDATA[(?s)\s*<PackageReference\s+Include="Microsoft\.Azure\.Functions\.Extensions\.Connector"[\s\S]*?\/>\s*]]></_PkgBlockRegex>
+    <_CloseProjRegex><![CDATA[(?m)^\s*</Project>\s*$]]></_CloseProjRegex>
+    <_InjectBlock>
+<![CDATA[
+    <ItemGroup>
+        <ProjectReference Include="$(_ConnectorProjectPath)" GlobalPropertiesToRemove="IsRestoring;RestoreSources;ImportDirectoryBuildProps;ImportDirectoryBuildTargets;ImportDirectoryPackagesProps;Configuration" />
+    </ItemGroup>
+</Project>]]>
+    </_InjectBlock>
+  </PropertyGroup>
+
+  <Target Name="FixWorkerExtensionsProject"
+          BeforeTargets="_WorkerExtensionsRestore"
+          Condition="'$(ConnectorPackageVersion)' == '' AND Exists('$(_WorkerExtensionsPath)')">
+    <PropertyGroup>
+      <_Text>$([System.IO.File]::ReadAllText('$(_WorkerExtensionsPath)'))</_Text>
+      <_Text>$([System.Text.RegularExpressions.Regex]::Replace('$(_Text)', '$(_PkgBlockRegex)', ''))</_Text>
+      <_Text>$([System.Text.RegularExpressions.Regex]::Replace('$(_Text)', '$(_CloseProjRegex)', '$(_InjectBlock)'))</_Text>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_WorkerExtensionsPath)"
+                      Lines="$(_Text)"
+                      Overwrite="true" />
+  </Target>
+</Project>

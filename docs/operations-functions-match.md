@@ -20,10 +20,16 @@ This document maps connector trigger operation names to their corresponding Azur
 > [!NOTE]
 > **Typed Payloads:** Where columns show `string` / `str` / `unknown` (raw JSON), typed SDK models are in development. Use the raw type and parse JSON manually in your function.
 >
-> **Trigger Types:** Operations are classified as `batch` (returns multiple items) or `single` (returns one item). The SDKs always return a list — for `single` triggers, the list contains one element.
+> **Trigger Types:** Operations are classified as `batch` (the connector
+> output contains multiple items) or `single` (the connector output contains
+> one item). This describes the connector operation payload, not Functions
+> Poll invocation cardinality or `MaxBatchSize`; configure those separately on
+> the `ConnectorTrigger` binding.
 
 ## Table of Contents
 
+- [Python: Choosing a Decorator](#python-choosing-a-decorator)
+- [Python: Choosing Packages by Trigger Operation](#python-choosing-packages-by-trigger-operation)
 - [Office 365 Connector](#office-365-connector)
 - [SharePoint Online Connector](#sharepoint-online-connector)
 - [Microsoft Teams Connector](#microsoft-teams-connector)

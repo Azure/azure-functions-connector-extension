@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+    <WarningsAsErrors></WarningsAsErrors>
+    <DefaultItemExcludes>**</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(SrcRoot)Microsoft.Azure.Functions.Extensions.Connector\Extensions.Connector.csproj" />
+    <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="4.6.0" />
+  </ItemGroup>
+  <Target Name="CopyExtensionsToBin" AfterTargets="Build">
+    <ItemGroup>
+      <ExtensionFiles Include="$(OutputPath)bin\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ExtensionFiles)"
+          DestinationFolder="$(ProjectDir)bin\%(RecursiveDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

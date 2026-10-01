@@ -47,8 +47,10 @@ internal sealed class ConnectorQueueDepthClientFactory : IConnectorQueueDepthCli
 
 internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
 {
-    internal const string HttpClientName = "ConnectorPollingRuntime";
-    internal const string ApiHubScope = "https://apihub.azure.com/.default";
+    internal const string HttpClientName =
+        ConnectorPollDeliveryClient.HttpClientName;
+    internal const string ApiHubScope =
+        ConnectorPollDeliveryClient.ApiHubScope;
 
     private readonly ConnectorPollingEndpoints _endpoints;
     private readonly TokenCredential _credential;
@@ -90,7 +92,7 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
                 cancellationToken).ConfigureAwait(false);
             using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
             request.Headers.Authorization = new AuthenticationHeaderValue(
-                "Bearer",
+                ConnectorPollingHttpConstants.BearerAuthenticationScheme,
                 token.Token);
 
             HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
