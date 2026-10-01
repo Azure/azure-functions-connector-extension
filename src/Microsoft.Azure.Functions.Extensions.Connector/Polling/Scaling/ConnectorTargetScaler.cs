@@ -42,7 +42,7 @@ internal sealed class ConnectorTargetScaler : ITargetScaler
             (metrics.ApproximateQueueDepth / _effectiveConcurrency) +
             (metrics.ApproximateQueueDepth % _effectiveConcurrency == 0 ? 0 : 1);
         int target = (int)Math.Min(targetWorkerCount, int.MaxValue);
-        _logger.LogInformation("Connector target scale for function {FunctionName}: approximateDepth={Depth}, effectiveConcurrency={Concurrency}, targetWorkers={TargetWorkers}.", TargetScalerDescriptor.FunctionId, metrics.ApproximateQueueDepth, _effectiveConcurrency, target);
+        _logger.LogDebug("Connector target scale for function {FunctionName}: approximateDepth={Depth}, effectiveConcurrency={Concurrency}, targetWorkers={TargetWorkers}.", TargetScalerDescriptor.FunctionId, metrics.ApproximateQueueDepth, _effectiveConcurrency, target);
         return new TargetScalerResult { TargetWorkerCount = target };
     }
 }

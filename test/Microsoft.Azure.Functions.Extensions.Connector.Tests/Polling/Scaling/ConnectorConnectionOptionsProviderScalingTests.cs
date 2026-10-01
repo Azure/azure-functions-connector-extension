@@ -1,36 +1,30 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-using System.Text;
-using Azure.Core;
-using Azure.Identity;
 using Microsoft.Extensions.Configuration;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
 public class ConnectorConnectionOptionsProviderScalingTests
 {
-    private const string ResourceId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/gateway";
-
     [Fact]
-    public void Create_UsesFullNamedSectionAndSelectedFactory()
+    public void Get_UsesFullNamedSectionAndSelectedFactory()
     {
         IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
         {
-            ["ConnectorNamespace:resourceId"] = ResourceId,
             ["ConnectorNamespace:credential"] = "managedidentity",
             ["ConnectorNamespace:clientId"] = "22222222-2222-2222-2222-222222222222",
         });
         var defaultFactory = new TestAzureComponentFactory(new TestTokenCredential("default"));
-        var selectedFactory = new TestAzureComponentFactory(new TestTokenCredential("selected"));
-        ConnectorScaleConnectionOptionsProvider provider =
+        var selectedCredential = new TestTokenCredential("selected");
+        var selectedFactory = new TestAzureComponentFactory(selectedCredential);
+        ConnectorConnectionOptionsProvider provider =
             CreateProvider(configuration, defaultFactory);
 
-        ConnectorScaleConnectionOptions connection =
+        ConnectorConnectionOptions connection =
             provider.Get("ConnectorNamespace", selectedFactory);
 
-        Assert.Equal(ResourceId, connection.ResourceId.ToString());
-        Assert.IsType<ManagedIdentityFallbackCredential>(connection.Credential);
+        Assert.Same(selectedCredential, connection.Credential);
         IConfigurationSection selectedSection = Assert.IsAssignableFrom<IConfigurationSection>(selectedFactory.LastConfiguration!);
         Assert.Equal("ConnectorNamespace", selectedSection.Path);
         Assert.Equal("managedidentity", selectedSection["credential"]);
@@ -39,15 +33,13 @@ public class ConnectorConnectionOptionsProviderScalingTests
     }
 
     [Fact]
-    public void Create_AllowsLocalDeveloperCredentialWhenCredentialMarkerIsOmitted()
+    public void Get_AllowsLocalDeveloperCredentialWhenCredentialMarkerIsOmitted()
     {
-        IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
-        {
-            ["ConnectorNamespace:resourceId"] = ResourceId,
-        });
+        IConfiguration configuration =
+            BuildConfiguration(new Dictionary<string, string?>());
         var defaultFactory = new TestAzureComponentFactory(new TestTokenCredential());
 
-        ConnectorScaleConnectionOptions result =
+        ConnectorConnectionOptions result =
             CreateProvider(configuration, defaultFactory)
             .Get("ConnectorNamespace");
 
@@ -57,155 +49,16 @@ public class ConnectorConnectionOptionsProviderScalingTests
     }
 
     [Fact]
-    public void Create_UsesDebugTokenWithoutCreatingConfiguredCredential()
+    public void Get_DelegatesSelectorsWithoutCredentialMarker()
     {
         IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
         {
-            ["ConnectorNamespace:resourceId"] = ResourceId,
-            ["ConnectorNamespace:credential"] = "managedidentity",
-            ["ConnectorNamespace:managedIdentityResourceId"] = "/subscriptions/x/resourceGroups/y/providers/Microsoft.ManagedIdentity/userAssignedIdentities/z",
-            ["ConnectorNamespace:token"] = "debug-token",
-        });
-        var defaultFactory = new TestAzureComponentFactory(new TestTokenCredential());
-
-        ConnectorScaleConnectionOptions connection =
-            CreateProvider(configuration, defaultFactory)
-            .Get("ConnectorNamespace");
-
-        AccessToken token = connection.Credential.GetToken(
-            new TokenRequestContext([ConnectorPollingEndpointResolver.ArmScope]),
-            CancellationToken.None);
-        Assert.Equal("debug-token", token.Token);
-        Assert.Equal(0, defaultFactory.CreateCredentialCalls);
-    }
-
-    [Fact]
-    public void Create_UsesScopedDebugTokensForRequestedAudience()
-    {
-        IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
-        {
-            ["ConnectorNamespace:resourceId"] = ResourceId,
-            ["ConnectorNamespace:managementToken"] = "arm-token",
-            ["ConnectorNamespace:apiHubToken"] = "apihub-token",
-        });
-
-        ConnectorScaleConnectionOptions connection = CreateProvider(
-                configuration,
-                new TestAzureComponentFactory(new TestTokenCredential()))
-            .Get("ConnectorNamespace");
-
-        AccessToken armToken = connection.Credential.GetToken(
-            new TokenRequestContext([ConnectorPollingEndpointResolver.ArmScope]),
-            CancellationToken.None);
-        AccessToken apiHubToken = connection.Credential.GetToken(
-            new TokenRequestContext([ConnectorQueueDepthClient.ApiHubScope]),
-            CancellationToken.None);
-
-        Assert.Equal("arm-token", armToken.Token);
-        Assert.Equal("apihub-token", apiHubToken.Token);
-    }
-
-    [Fact]
-    public void Create_UsesSingleUnderscoreDebugTokenSetting()
-    {
-        IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
-        {
-            ["ConnectorNamespace:resourceId"] = ResourceId,
-            ["ConnectorNamespace_token"] = "legacy-debug-token",
-        });
-
-        ConnectorScaleConnectionOptions connection = CreateProvider(
-                configuration,
-                new TestAzureComponentFactory(new TestTokenCredential()))
-            .Get("ConnectorNamespace");
-
-        AccessToken token = connection.Credential.GetToken(
-            new TokenRequestContext([ConnectorQueueDepthClient.ApiHubScope]),
-            CancellationToken.None);
-
-        Assert.Equal("legacy-debug-token", token.Token);
-    }
-
-    [Fact]
-    public void DebugBearerTokenCredential_UsesJwtExpirationWhenPresent()
-    {
-        DateTimeOffset expiresOn = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddMinutes(20).ToUnixTimeSeconds());
-        string jwt = CreateTestJwt(expiresOn);
-        var credential = new DebugBearerTokenCredential(jwt, null, null);
-
-        AccessToken token = credential.GetToken(
-            new TokenRequestContext([ConnectorQueueDepthClient.ApiHubScope]),
-            CancellationToken.None);
-
-        Assert.Equal(jwt, token.Token);
-        Assert.Equal(expiresOn, token.ExpiresOn);
-    }
-
-    [Fact]
-    public void Create_WrapsManagedIdentityCredentialWithDefaultCredentialFallback()
-    {
-        IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
-        {
-            ["ConnectorNamespace:resourceId"] = ResourceId,
-            ["ConnectorNamespace:credential"] = "managedidentity",
-            ["ConnectorNamespace:managedIdentityResourceId"] = "/subscriptions/x/resourceGroups/y/providers/Microsoft.ManagedIdentity/userAssignedIdentities/z",
-        });
-        var managedIdentityCredential = new ThrowingTokenCredential(new CredentialUnavailableException("Identity not found"));
-        var fallbackCredential = new TestTokenCredential("fallback");
-        Func<TokenCredential> previousFactory = ManagedIdentityFallbackCredential.CreateDefaultAzureCredential;
-        ManagedIdentityFallbackCredential.CreateDefaultAzureCredential = () => fallbackCredential;
-
-        try
-        {
-            ConnectorScaleConnectionOptions connection = CreateProvider(
-                    configuration,
-                    new TestAzureComponentFactory(managedIdentityCredential))
-                .Get("ConnectorNamespace");
-
-            AccessToken token = connection.Credential.GetToken(
-                new TokenRequestContext(["https://management.azure.com/.default"]),
-                CancellationToken.None);
-
-            Assert.Equal("fallback", token.Token);
-            Assert.Single(fallbackCredential.RequestedScopes);
-        }
-        finally
-        {
-            ManagedIdentityFallbackCredential.CreateDefaultAzureCredential = previousFactory;
-        }
-    }
-
-    [Theory]
-    [InlineData("https://management.azure.com/subscriptions/x")]
-    [InlineData("/subscriptions/not-a-guid/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/gateway")]
-    [InlineData("/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/gateway/triggerConfigs/t")]
-    [InlineData("/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/gateway?x=1")]
-    public void Create_RejectsInvalidResourceIds(string resourceId)
-    {
-        IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
-        {
-            ["ConnectorNamespace:resourceId"] = resourceId,
-        });
-
-        Assert.Throws<InvalidOperationException>(() =>
-            CreateProvider(
-                configuration,
-                new TestAzureComponentFactory(new TestTokenCredential()))
-                .Get("ConnectorNamespace"));
-    }
-
-    [Fact]
-    public void Create_DelegatesSelectorsWithoutCredentialMarker()
-    {
-        IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
-        {
-            ["ConnectorNamespace:resourceId"] = ResourceId,
             ["ConnectorNamespace:clientId"] = "client-id",
         });
         var credential = new TestTokenCredential();
         var componentFactory = new TestAzureComponentFactory(credential);
 
-        ConnectorScaleConnectionOptions connection =
+        ConnectorConnectionOptions connection =
             CreateProvider(configuration, componentFactory)
                 .Get("ConnectorNamespace");
 
@@ -214,11 +67,10 @@ public class ConnectorConnectionOptionsProviderScalingTests
     }
 
     [Fact]
-    public void Create_DelegatesBothManagedIdentitySelectors()
+    public void Get_DelegatesBothManagedIdentitySelectors()
     {
         IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
         {
-            ["ConnectorNamespace:resourceId"] = ResourceId,
             ["ConnectorNamespace:credential"] = "managedidentity",
             ["ConnectorNamespace:clientId"] = "client-id",
             ["ConnectorNamespace:managedIdentityResourceId"] = "/subscriptions/x/resourceGroups/y/providers/Microsoft.ManagedIdentity/userAssignedIdentities/z",
@@ -226,7 +78,7 @@ public class ConnectorConnectionOptionsProviderScalingTests
         var credential = new TestTokenCredential();
         var componentFactory = new TestAzureComponentFactory(credential);
 
-        ConnectorScaleConnectionOptions connection =
+        ConnectorConnectionOptions connection =
             CreateProvider(configuration, componentFactory)
                 .Get("ConnectorNamespace");
 
@@ -241,28 +93,21 @@ public class ConnectorConnectionOptionsProviderScalingTests
             componentFactory.LastConfiguration["managedIdentityResourceId"]);
     }
 
-    private static string CreateTestJwt(DateTimeOffset expiresOn)
+    private static IConfiguration BuildConfiguration(
+        IDictionary<string, string?> settings)
     {
-        string header = Base64UrlEncode("{}");
-        string payload = Base64UrlEncode($"{{\"exp\":{expiresOn.ToUnixTimeSeconds()}}}");
-        return $"{header}.{payload}.signature";
+        var values = new Dictionary<string, string?>(settings)
+        {
+            ["ConnectorNamespace:pollingEndpoint"] =
+                "https://app-12.region.logic.azure.com/api/connectorGateways/ns",
+        };
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build();
     }
 
-    private static string Base64UrlEncode(string value) =>
-        Convert.ToBase64String(Encoding.UTF8.GetBytes(value))
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
-
-    private static IConfiguration BuildConfiguration(IDictionary<string, string?> settings) =>
-        new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
-
-    private static ConnectorScaleConnectionOptionsProvider CreateProvider(
+    private static ConnectorConnectionOptionsProvider CreateProvider(
         IConfiguration configuration,
         TestAzureComponentFactory componentFactory) =>
-        new(
-            configuration,
-            new ConnectorConnectionOptionsProvider(
-                configuration,
-                componentFactory));
+        new(configuration, componentFactory);
 }

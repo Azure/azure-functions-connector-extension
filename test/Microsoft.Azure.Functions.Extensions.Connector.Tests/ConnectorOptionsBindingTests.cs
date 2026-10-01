@@ -90,9 +90,6 @@ public class ConnectorOptionsBindingTests
         Assert.NotNull(host.Services.GetRequiredService<IHttpClientFactory>());
         Assert.NotNull(
             host.Services.GetRequiredService<IConnectorConnectionOptionsProvider>());
-        Assert.NotNull(
-            host.Services.GetRequiredService<IConnectorScaleConnectionOptionsProvider>());
-        Assert.NotNull(host.Services.GetRequiredService<IConnectorPollingEndpointResolverFactory>());
         Assert.NotNull(host.Services.GetRequiredService<IConnectorQueueDepthClientFactory>());
     }
 

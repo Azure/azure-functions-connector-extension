@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using System.Globalization;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Host.Scale;
 using Microsoft.Extensions.Azure;
@@ -9,16 +10,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
-/// <summary>
-/// Extension methods for Connector integration with Azure Functions.
-/// </summary>
-public static class ConnectorScaleCredentialProperties
-{
-    public const string ArmTokenCredential = "Connector.ArmTokenCredential";
-    public const string ApiHubTokenCredential = "Connector.ApiHubTokenCredential";
-}
 public static class ConnectorWebJobsBuilderExtensions
 {
+    private static readonly string PollDeliveryModeValue =
+        ((int)ConnectorTriggerDeliveryMode.Poll).ToString(
+            CultureInfo.InvariantCulture);
+
     /// <summary>
     /// Adds the Connector extension to the provided <see cref="IWebJobsBuilder"/>.
     /// </summary>
@@ -43,26 +40,18 @@ public static class ConnectorWebJobsBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-        // Register the HTTP request processor as a singleton
         builder.Services.TryAddSingleton<ConnectorHttpRequestProcessor>();
         builder.Services.AddAzureClientsCore();
         builder.Services.AddHttpClient(
-            ConnectorPollingEndpointResolver.HttpClientName,
-            client => client.Timeout = TimeSpan.FromSeconds(10));
-        builder.Services.AddHttpClient(
             ConnectorQueueDepthClient.HttpClientName,
-            client => client.Timeout = TimeSpan.FromSeconds(10));
+            client => client.Timeout = TimeSpan.FromSeconds(30))
+            .RemoveAllLoggers();
         builder.Services.TryAddSingleton<ConnectorConnectionOptionsProvider>();
         builder.Services.TryAddSingleton<IConnectorConnectionOptionsProvider>(
             serviceProvider =>
                 serviceProvider.GetRequiredService<ConnectorConnectionOptionsProvider>());
-        builder.Services.TryAddSingleton<
-            IConnectorScaleConnectionOptionsProvider,
-            ConnectorScaleConnectionOptionsProvider>();
-        builder.Services.TryAddSingleton<IConnectorPollingEndpointResolverFactory, ConnectorPollingEndpointResolverFactory>();
         builder.Services.TryAddSingleton<IConnectorQueueDepthClientFactory, ConnectorQueueDepthClientFactory>();
 
-        // Register the extension config provider
         builder.AddExtension<ConnectorExtensionConfigProvider>()
             .BindOptions<ConnectorOptions>();
 
@@ -80,9 +69,16 @@ public static class ConnectorWebJobsBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(triggerMetadata);
 
-        string? deliveryMode = triggerMetadata.Metadata?["deliveryMode"]?.ToString();
-        if (!string.Equals(deliveryMode, "Poll", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(deliveryMode, "1", StringComparison.Ordinal))
+        string? deliveryMode = triggerMetadata.Metadata?[
+            ConnectorTriggerMetadataNames.DeliveryMode]?.ToString();
+        if (!string.Equals(
+                deliveryMode,
+                nameof(ConnectorTriggerDeliveryMode.Poll),
+                StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(
+                deliveryMode,
+                PollDeliveryModeValue,
+                StringComparison.Ordinal))
         {
             return builder;
         }
