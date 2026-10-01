@@ -192,6 +192,33 @@ When Receive returns no messages, the listener uses randomized exponential backo
 
 Poll delivery is at least once. A failed invocation is not acknowledged and can be redelivered with the same `messageId` after its service-managed lock expires. Connector Namespace currently exposes neither a delivery count nor a dead-letter operation, so redelivery has no attempt limit. Unacknowledged messages expire after the service's fixed seven-day queue TTL. Functions must use `messageId` for deduplication.
 
+### Poll target scaling
+
+Poll target scaling uses the Connector Namespace approximate queue depth and the trigger concurrency to calculate the desired instance count. Configure the Connector connection and Trigger Config separately:
+
+```csharp
+[ConnectorTrigger(
+    DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
+    Connection = "ConnectorNamespace",
+    TriggerConfigName = "%OnNewEmailTriggerConfigName%",
+    Concurrency = 4)]
+```
+
+The named connection supplies the service-generated, gateway-level Poll endpoint and the Connector runtime credential:
+
+```text
+ConnectorNamespace__pollingEndpoint=https://<host>/api/connectorGateways/<connector-namespace-id>
+ConnectorNamespace__credential=managedidentity
+ConnectorNamespace__clientId=<optional-user-assigned-client-id>
+ConnectorNamespace__managedIdentityResourceId=<optional-user-assigned-resource-id>
+OnNewEmailTriggerConfigName=<poll-trigger-config-name>
+```
+
+Customer setup or provisioning tooling derives `pollingEndpoint` from the Trigger Config's service-generated `pollingEndpoints.receiveUri` and writes it to the Function App settings. The extension does not discover the endpoint through ARM. If Connector Namespace returns a different runtime endpoint, the Function App setting must be updated.
+
+`Concurrency` is the maximum number of events that can be pending per function-app instance. The target scaler calculates the desired instance count as `ceil(approximateQueueDepth / Concurrency)`.
+
+`MaxBatchSize` controls how many events may be delivered in one function invocation. It does not participate in target scaling.
 ## Documentation
 
 - **[Operations to Functions Signature Mapping](./docs/operations-functions-match.md)** - Complete reference of all connector trigger operations and their Azure Functions signatures across .NET, Python, and TypeScript SDKs.
