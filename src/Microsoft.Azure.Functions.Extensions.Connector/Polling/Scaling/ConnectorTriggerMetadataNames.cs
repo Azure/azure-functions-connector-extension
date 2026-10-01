@@ -8,5 +8,5 @@ internal static class ConnectorTriggerMetadataNames
     internal const string Connection = "connection";
     internal const string Concurrency = "concurrency";
     internal const string DeliveryMode = "deliveryMode";
-    internal const string PollingEndpoint = "pollingEndpoint";
+    internal const string TriggerConfigName = "triggerConfigName";
 }

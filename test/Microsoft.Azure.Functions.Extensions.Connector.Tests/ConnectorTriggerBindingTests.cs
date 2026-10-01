@@ -34,7 +34,8 @@ public class ConnectorTriggerBindingTests
         _connectionOptionsProvider =
             new StubConnectorConnectionOptionsProvider(
                 new ConnectorConnectionOptions(
-                    Mock.Of<TokenCredential>()));
+                    Mock.Of<TokenCredential>(),
+                    "https://app-12.region.logic.azure.com/api/connectorGateways/ns"));
     }
 
     [Fact]
@@ -139,8 +140,7 @@ public class ConnectorTriggerBindingTests
             {
                 DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
                 Connection = "ConnectorNamespace",
-                PollingEndpoint =
-                    "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email",
+                TriggerConfigName = "on-new-email",
                 MaxBatchSize = 2,
             });
 
@@ -160,8 +160,7 @@ public class ConnectorTriggerBindingTests
             {
                 DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
                 Connection = "ConnectorNamespace",
-                PollingEndpoint =
-                    "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email",
+                TriggerConfigName = "on-new-email",
                 MaxBatchSize = 2,
             });
 

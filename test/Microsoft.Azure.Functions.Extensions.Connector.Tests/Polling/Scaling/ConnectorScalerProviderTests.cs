@@ -21,7 +21,7 @@ public class ConnectorScalerProviderTests
     {
         var credential = new TestTokenCredential();
         var connectionProvider = new TestConnectionOptionsProvider((_, _) =>
-            new ConnectorConnectionOptions(credential));
+            ConnectionOptions(credential));
         var endpoints = new List<ConnectorPollingEndpoints>();
         var depthFactory = new TestDepthClientFactory((value, _, _) =>
         {
@@ -40,14 +40,14 @@ public class ConnectorScalerProviderTests
             services,
             Metadata(
                 "FunctionA",
-                "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger-a",
+                "trigger-a",
                 4,
                 maxBatchSize: 1));
         var second = new ConnectorScalerProvider(
             services,
             Metadata(
                 "FunctionB",
-                "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger-b",
+                "trigger-b",
                 10,
                 maxBatchSize: 32));
         var firstScaler = first.GetTargetScaler();
@@ -72,13 +72,14 @@ public class ConnectorScalerProviderTests
         {
             selectedFactory = factory;
             return new ConnectorConnectionOptions(
-                new TestTokenCredential());
+                new TestTokenCredential(),
+                PollingEndpoint);
         });
         var depthFactory = new TestDepthClientFactory(
             (_, _, _) => new SequenceDepthClient(0));
         TriggerMetadata metadata = Metadata(
             "Function",
-            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger",
+            "trigger",
             1);
         metadata.Properties[nameof(AzureComponentFactory)] = injectedFactory;
 
@@ -96,7 +97,7 @@ public class ConnectorScalerProviderTests
         var apiHubCredential = new TestTokenCredential("apihub");
         TokenCredential? depthCredential = null;
         var connectionProvider = new TestConnectionOptionsProvider((_, _) =>
-            new ConnectorConnectionOptions(defaultCredential));
+            ConnectionOptions(defaultCredential));
         var depthFactory = new TestDepthClientFactory((_, credential, _) =>
         {
             depthCredential = credential;
@@ -104,7 +105,7 @@ public class ConnectorScalerProviderTests
         });
         TriggerMetadata metadata = Metadata(
             "Function",
-            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger",
+            "trigger",
             1);
         metadata.Properties[ConnectorScaleCredentialProperties.ApiHubTokenCredential] = apiHubCredential;
 
@@ -116,12 +117,13 @@ public class ConnectorScalerProviderTests
     }
 
     [Fact]
-    public void Provider_ResolvesPollingEndpointFromAppSetting()
+    public void Provider_ResolvesTriggerConfigNameFromAppSetting()
     {
         ConnectorPollingEndpoints? selectedEndpoints = null;
         var connectionProvider = new TestConnectionOptionsProvider(
             (_, _) => new ConnectorConnectionOptions(
-                new TestTokenCredential()));
+                new TestTokenCredential(),
+                PollingEndpoint));
         var depthFactory = new TestDepthClientFactory(
             (endpoints, _, _) =>
             {
@@ -132,13 +134,13 @@ public class ConnectorScalerProviderTests
             connectionProvider,
             depthFactory,
             new TestNameResolver(
-                name => name == "OnNewEmailEndpoint"
-                    ? "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email"
+                name => name == "OnNewEmailTriggerConfigName"
+                    ? "on-new-email"
                     : null));
 
         _ = new ConnectorScalerProvider(
             services,
-            Metadata("Function", "%OnNewEmailEndpoint%", 1));
+            Metadata("Function", "%OnNewEmailTriggerConfigName%", 1));
 
         Assert.NotNull(selectedEndpoints);
         Assert.Equal(
@@ -166,17 +168,17 @@ public class ConnectorScalerProviderTests
         builder.AddConnectorScaleForTrigger(
             Metadata(
                 "FunctionA",
-                "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger-a",
+                "trigger-a",
                 4,
                 maxBatchSize: 1));
         builder.AddConnectorScaleForTrigger(
             Metadata(
                 "FunctionB",
-                "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger-b",
+                "trigger-b",
                 4));
         TriggerMetadata webhook = Metadata(
             "Webhook",
-            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/trigger-webhook",
+            "trigger-webhook",
             4);
         webhook.Metadata["deliveryMode"] = "Webhook";
         builder.AddConnectorScaleForTrigger(webhook);
@@ -203,7 +205,7 @@ public class ConnectorScalerProviderTests
 
     private static TriggerMetadata Metadata(
         string functionName,
-        string pollingEndpoint,
+        string triggerConfigName,
         int concurrency,
         int maxBatchSize = 1)
     {
@@ -212,12 +214,19 @@ public class ConnectorScalerProviderTests
             ["functionName"] = functionName,
             ["deliveryMode"] = "Poll",
             ["connection"] = "ConnectorNamespace",
-            ["pollingEndpoint"] = pollingEndpoint,
+            ["triggerConfigName"] = triggerConfigName,
             ["maxBatchSize"] = maxBatchSize,
             ["concurrency"] = concurrency,
         };
         return new TriggerMetadata(metadata);
     }
+
+    private const string PollingEndpoint =
+        "https://app-12.region.logic.azure.com/api/connectorGateways/ns";
+
+    private static ConnectorConnectionOptions ConnectionOptions(
+        TokenCredential credential) =>
+        new(credential, PollingEndpoint);
 
     private sealed class TestWebJobsBuilder : IWebJobsBuilder
     {

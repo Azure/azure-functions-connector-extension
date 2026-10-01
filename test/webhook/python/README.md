@@ -2,7 +2,10 @@
 
 This sample demonstrates how to use the Connector Extension with the Python v2 programming model.
 
-When AI Gateway detects a connector event (e.g., a new Office 365 email arrives), it sends a webhook callback to your function. The function receives the JSON payload via the `connectorTrigger` binding, logs key fields, and persists the raw payload to Azure Blob Storage using a blob output binding. The blob output provides a simple way to archive every incoming event for auditing, replay, or downstream processing.
+When Connector Namespace detects a connector event (for example, a new Office
+365 email), it sends a Webhook callback to the function. The Connector binding
+converts the callback into typed `ClientReceiveMessage` values. The sample
+logs key fields and persists the serialized batch to Azure Blob Storage.
 
 ## Prerequisites
 
@@ -44,7 +47,7 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
 
 | Function     | Description                             | Example Use Case        |
 | ------------ | --------------------------------------- | ----------------------- |
-| `OnNewEmail` | Office 365 email trigger via AI Gateway | O365 mailbox monitoring |
+| `OnNewEmail` | Office 365 email Webhook from Connector Namespace | O365 mailbox monitoring |
 
 ## Testing
 
@@ -64,15 +67,30 @@ curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnNe
 ## Code Structure
 
 ```python
+import json
+from typing import List
+
+import azure.functions as func
+import azurefunctions.extensions.connectors.office365 as office365
+
 @app.function_name(name="OnNewEmail")
-@app.connector_trigger(arg_name="email")
-def on_new_email(email: office365.ClientReceiveMessage) -> None:
+@app.connector_trigger(arg_name="emails")
+@app.blob_output(
+    arg_name="outputblob",
+    path="connector-messages/{rand-guid}.json",
+    connection="BlobStoreConnection",
+)
+def on_new_email(
+    emails: List[office365.ClientReceiveMessage],
+    outputblob: func.Out[str],
+) -> None:
     """
     Receives Office 365 email trigger callbacks from Connector Namespace managed connectors
     and saves to blob storage.
     """
-    logging.info("OnNewEmail trigger received. Payload: %s", email)
+    for email in emails:
+        logging.info("Subject: %s", email.subject)
+        logging.info("From: %s", email.from_)
 
-    logging.info(f"Subject: {email.subject}")
-    logging.info(f"From: {email.from_}")
+    outputblob.set(json.dumps([vars(email) for email in emails], default=str))
 ```

@@ -19,7 +19,7 @@ Describe any alternative solutions or workarounds you've considered.
 
 ## Additional context
 
-- **Language/SDK**: [e.g., .NET 10, Python 3.11, Node.js 20]
+- **Language/SDK**: [e.g., .NET 10, Python 3.13, Node.js 22]
 - **Connector(s)**: [e.g., Office365, OneDrive, SharePoint]
 
 Add any other context, examples, or references about the feature request here.

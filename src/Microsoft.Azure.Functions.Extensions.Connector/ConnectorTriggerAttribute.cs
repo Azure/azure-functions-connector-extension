@@ -23,11 +23,10 @@ public sealed class ConnectorTriggerAttribute : Attribute
     public string? Connection { get; set; }
 
     /// <summary>
-    /// Gets or sets the app setting expression containing the complete
-    /// trigger-specific Connector Poll endpoint base.
+    /// Gets or sets the Connector Namespace Trigger Config name.
     /// </summary>
     [AutoResolve]
-    public string? PollingEndpoint { get; set; }
+    public string? TriggerConfigName { get; set; }
 
     /// <summary>
     /// Gets or sets the maximum number of events supplied to one function invocation.

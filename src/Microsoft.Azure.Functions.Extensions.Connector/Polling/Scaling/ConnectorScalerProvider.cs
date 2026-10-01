@@ -27,10 +27,10 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
         string connectionName = GetRequiredMetadata(
             triggerMetadata,
             ConnectorTriggerMetadataNames.Connection);
-        string pollingEndpoint = ResolvePollingEndpoint(
+        string triggerConfigName = ResolveTriggerConfigName(
             GetRequiredMetadata(
                 triggerMetadata,
-                ConnectorTriggerMetadataNames.PollingEndpoint),
+                ConnectorTriggerMetadataNames.TriggerConfigName),
             serviceProvider.GetService<INameResolver>());
         int attributeConcurrency = GetNonNegativeIntMetadata(
             triggerMetadata,
@@ -52,7 +52,9 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
                 ConnectorScaleCredentialProperties.ApiHubTokenCredential) ??
             connection.Credential;
         ConnectorPollingEndpoints endpoints =
-            ConnectorPollingEndpoints.Create(pollingEndpoint);
+            ConnectorPollingEndpoints.Create(
+                connection.PollingEndpoint,
+                triggerConfigName);
         IConnectorQueueDepthClient depthClient = serviceProvider
             .GetRequiredService<IConnectorQueueDepthClientFactory>()
             .Create(endpoints, apiHubCredential, functionName);
@@ -111,17 +113,17 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
         return result;
     }
 
-    private static string ResolvePollingEndpoint(
-        string pollingEndpoint,
+    private static string ResolveTriggerConfigName(
+        string triggerConfigName,
         INameResolver? nameResolver)
     {
         string? resolved =
-            nameResolver?.ResolveWholeString(pollingEndpoint) ??
-            pollingEndpoint;
+            nameResolver?.ResolveWholeString(triggerConfigName) ??
+            triggerConfigName;
         if (string.IsNullOrWhiteSpace(resolved))
         {
             throw new InvalidOperationException(
-                "Connector Poll PollingEndpoint resolved to an empty value.");
+                "Connector Poll TriggerConfigName resolved to an empty value.");
         }
 
         return resolved;

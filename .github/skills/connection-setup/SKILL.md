@@ -1,6 +1,6 @@
 ---
 name: connection-setup
-description: 'Create and configure Connector Namespace connections for the Azure Functions Connector Extension. USE WHEN: setting up a new connector connection, creating a Connector Namespace, authorizing OAuth consent, adding access policies, or configuring deployed app settings. Covers Office365, SharePoint, Teams, and any Microsoft.Web/connections connector. NOT FOR: trigger registration (use trigger-registration skill), extension development, or code generation.'
+description: 'Create and configure Connector Namespace connections for the Azure Functions Connector Extension. USE WHEN: setting up a new connector connection, creating a Connector Namespace, authorizing OAuth consent, adding access policies, or configuring deployed app settings. Covers Office365, SharePoint, Teams, and any Microsoft.Web/connections connector. NOT FOR: trigger registration (use webhook-trigger-registration or poll-trigger-registration), extension development, or code generation.'
 ---
 
 # Connector Namespace Connection Setup
@@ -20,7 +20,6 @@ Automates the end-to-end connection lifecycle for connector-triggered Azure Func
 - `connector-namespace` CLI extension installed (see below)
 - Target subscription and resource group known
 - For deployed scenarios: Function App with managed identity enabled
-- **Supported regions** for Connector Namespace: `westcentralus`. Only the Connector Namespace `location` must be in a supported region; the resource group and Function App can be in any region.
 
 ### Install the connector-namespace CLI extension
 
@@ -55,7 +54,7 @@ If none exists, create one:
 
 ```powershell
 $namespaceName = "<namespace-name>"
-$location = "westcentralus"  # Supported region
+$location = "<azure-region>"
 
 az connector-namespace create -g $resourceGroup -n $namespaceName --location $location
 ```
@@ -119,7 +118,9 @@ Write-Output "Runtime URL: $runtimeUrl"
 
 ### Step 5: Add Access Policies
 
-> **Note:** Access policies are only needed when your function calls connector **actions** at runtime. For **trigger-only** scenarios (function only receives callbacks), skip this step.
+> **Note:** Access policies are required when the Function identity calls
+> connector **actions** or Connector Namespace **Poll runtime endpoints**.
+> A Webhook-only trigger that only receives callbacks does not require one.
 
 #### For local development (Azure CLI identity)
 
@@ -166,4 +167,7 @@ az connector-namespace delete -g $resourceGroup -n $namespaceName
 
 ## Next Steps
 
-- **Triggers:** To register polling triggers (e.g., OnNewEmail, OnNewFile), use the [trigger-registration skill](../trigger-registration/SKILL.md).
+- **Webhook delivery:** Use
+  [`webhook-trigger-registration`](../webhook-trigger-registration/SKILL.md).
+- **Host-pull Poll delivery:** Use
+  [`poll-trigger-registration`](../poll-trigger-registration/SKILL.md).

@@ -43,15 +43,18 @@ For non-.NET languages (Node.js, Python, etc.), use the **preview extension bund
 
 ## Overview
 
-This extension enables Azure Functions to receive trigger callbacks from Connector Namespace managed connectors. When a connector event occurs (e.g., new email arrives), Connector Namespace sends a webhook callback to your function.
+This extension enables Azure Functions to receive events from Connector
+Namespace managed connectors. Webhook delivery sends callbacks to the
+extension endpoint; preview Poll delivery has the Functions host receive and
+acknowledge leased events from Connector Namespace.
 
-**Endpoint Pattern:**
+**Webhook endpoint pattern:**
 
 ```text
 POST /runtime/webhooks/connector?functionName={FunctionName}&code={connector_extension_key}
 ```
 
-## Authentication
+## Webhook authentication
 
 The connector webhook endpoint requires a **system key** named `connector_extension`. This key is automatically created when the extension registers its webhook handler.
 
@@ -67,12 +70,15 @@ az functionapp keys list -g <resource-group> -n <function-app> --query "systemKe
 The full callback URL for Connector Namespace:
 
 ```text
-https://<function-app-domain>/runtime/webhooks/connector?functionName=<function-name>=<connector_extension_key>
+https://<function-app-domain>/runtime/webhooks/connector?functionName=<function-name>&code=<connector_extension_key>
 ```
 
 ## Features
 
 - **Connector trigger binding** - receive callbacks from Connector Namespace managed connectors
+- **Poll delivery** - receive and acknowledge leased events with target-based scaling
+- **Batching and concurrency** - configure invocation shape and per-instance processing capacity
+- **Poll message metadata** - bind the stable delivery `MessageId` with `ConnectorEvent<T>`
 - **POCO binding** - bind directly to SDK types like `Office365OnNewEmailTriggerPayload`
 - **String/JSON binding** - bind to raw JSON string
 - **.NET isolated worker** - modern .NET isolated worker model
@@ -105,7 +111,7 @@ The Python extension package (`azurefunctions-extensions-connectors`) integrates
 
 ```bash
 pip install azure-functions>=2.2.0b4 # For Python version >= 3.13
-pip install azure-functions>=1.26.0b3 # For Python version < 3.12
+pip install azure-functions>=1.26.0b3 # For Python version < 3.13
 pip install azurefunctions-extensions-connectors
 ```
 
@@ -138,33 +144,39 @@ The underlying Connector SDKs provide typed models:
 ### Poll delivery
 
 Poll functions configure a credential connection separately from their
-trigger-specific runtime endpoint:
+Trigger Config name:
 
 ```csharp
 [ConnectorTrigger(
     DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
     Connection = "ConnectorNamespace",
-    PollingEndpoint = "%OnNewEmailEndpoint%",
+    TriggerConfigName = "%OnNewEmailTriggerConfigName%",
     IsBatched = true,
     MaxBatchSize = 4,
     Concurrency = 4)]
 ```
 
-`OnNewEmailEndpoint` must contain the complete HTTPS base obtained from the
-Trigger Config's `pollingEndpoints.receiveUri` after removing only its final
-`/receive` segment. The resolved value must use the default HTTPS port, a
-subdomain of `logic.azure.com`, and the exact path
-`/api/connectorGateways/<connector-namespace-id>/triggerconfigs/<trigger-config-name>`.
-It must not already include `/receive`, `/acknowledge`,
-`/approximateQueueDepth`, or another trailing segment. The namespace and
-trigger identifiers and any query are opaque; the extension appends only the
-three fixed runtime operations.
+`Connection` provides the gateway-level Poll endpoint and runtime token
+credential:
 
-`Connection` provides only the runtime token credential. Azure deployments
-normally configure `ConnectorNamespace__credential=managedidentity` and may
-select a user-assigned identity with `clientId` or
-`managedIdentityResourceId`. No Connector Namespace resource identifier or
-control-plane endpoint lookup is required.
+```text
+ConnectorNamespace__pollingEndpoint=https://<host>/api/connectorGateways/<connector-namespace-id>
+ConnectorNamespace__credential=managedidentity
+ConnectorNamespace__clientId=<optional-user-assigned-client-id>
+ConnectorNamespace__managedIdentityResourceId=<optional-user-assigned-resource-id>
+```
+
+For currently deployed Connector Namespace environments, `<host>` is a
+`logic.azure.com` subdomain. Upcoming environments use regional
+`connectornamespaces` hosts. The extension treats the complete authority and
+gateway identifier as opaque, trusted application configuration rather than
+enforcing cloud-specific DNS suffixes.
+
+`TriggerConfigName` identifies one Trigger Config and may be a literal or a
+Functions app-setting expression. The extension appends only
+`/triggerConfigs/<TriggerConfigName>` and the fixed `/receive`,
+`/acknowledge`, and `/approximateQueueDepth` operations. It performs no
+Connector Namespace resource-ID parsing or control-plane endpoint discovery.
 
 Poll triggers use one event per invocation by default. Enable batched
 invocations explicitly, then set `MaxBatchSize` to the maximum number of
@@ -231,9 +243,10 @@ This repository includes [Copilot Skills](https://docs.github.com/en/copilot/cus
 | Skill | Description |
 | ----- | ----------- |
 | [connection-setup](./.github/skills/connection-setup/SKILL.md) | Create and configure Connector Namespace connections, authorize OAuth consent, and add access policies |
-| [trigger-registration](./.github/skills/trigger-registration/SKILL.md) | Register polling trigger configs that call back to an Azure Function on connector events |
+| [webhook-trigger-registration](./.github/skills/webhook-trigger-registration/SKILL.md) | Register callback-based Trigger Configs with separate QueryString authentication and Function App portal metadata |
+| [poll-trigger-registration](./.github/skills/poll-trigger-registration/SKILL.md) | Register host-pull Poll Trigger Configs, return `pollingEndpoints`, and derive Function settings |
 
-## Connector Namespace Aceess
+## Connector Namespace Access
 
 - [Connector Portal](https://connectors.azure.com/)
 - [Connector Namespace CLI Reference](https://github.com/Azure/Connectors/blob/main/public-preview/connector-namespace-cli/complete-reference.md)
@@ -285,7 +298,6 @@ dotnet test
 The following features are planned for future releases:
 
 - [ ] **Webhook auto-registration** - Automatically register trigger configs with the Connector Namespace on function deployment
-- [ ] **Batch dispatch** - Support array parameter binding for per-item processing
 - [ ] **Distributed tracing** - Add DiagnosticScope for Application Insights integration
 
 ## Data Collection

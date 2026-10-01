@@ -45,22 +45,23 @@ internal sealed class ConnectorPollingListenerFactory(
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(connectionOptions);
 
-        string? pollingEndpoint =
-            _nameResolver.ResolveWholeString(options.PollingEndpoint) ??
-            options.PollingEndpoint;
-        if (string.IsNullOrWhiteSpace(pollingEndpoint))
+        string? triggerConfigName =
+            _nameResolver.ResolveWholeString(options.TriggerConfigName) ??
+            options.TriggerConfigName;
+        if (string.IsNullOrWhiteSpace(triggerConfigName))
         {
             throw new InvalidOperationException(
-                "Connector Poll PollingEndpoint resolved to an empty value.");
+                "Connector Poll TriggerConfigName resolved to an empty value.");
         }
 
         ConnectorPollingOptions resolvedOptions =
-            options with { PollingEndpoint = pollingEndpoint };
+            options with { TriggerConfigName = triggerConfigName };
         return new ConnectorPollingListener(
             registration,
             resolvedOptions,
             ConnectorPollingEndpoints.Create(
-                resolvedOptions.PollingEndpoint),
+                connectionOptions.PollingEndpoint,
+                resolvedOptions.TriggerConfigName),
             _deliveryClientFactory.Create(connectionOptions.Credential),
             _linkedOutputClient,
             _linkedOutputInvocationLimiter,

@@ -1,11 +1,15 @@
 ---
-name: trigger-registration
-description: 'Register Connector Namespace trigger configs for Azure Functions with the ConnectorTrigger extension. USE WHEN: setting up polling triggers (e.g., OnNewEmail, OnNewFile) that call back to an Azure Function, scaffolding a new Function App project with ConnectorTrigger, wiring callback URLs, or troubleshooting trigger configs. NOT FOR: connection setup (use connection-setup skill), extension internals development.'
+name: webhook-trigger-registration
+description: 'Register Connector Namespace trigger configs that use Webhook delivery to Azure Functions. USE WHEN: setting up callback delivery for connector triggers, configuring notificationDetails, QueryString callback authentication, Function App destination metadata, local dev tunnels, or troubleshooting Webhook trigger configs. NOT FOR: Functions host-pull Poll delivery (use poll-trigger-registration), connection setup (use connection-setup), or extension internals.'
 ---
 
-# Connector Trigger Registration for Azure Functions
+# Connector Webhook Trigger Registration for Azure Functions
 
 Registers polling trigger configs on a Connector Namespace so that connector events (new email, new file, etc.) call back to your Azure Function via the ConnectorTrigger extension.
+
+This workflow configures Connector Namespace polling with **Webhook delivery**
+to the Function callback endpoint. For the extension's `DeliveryMode = Poll`
+host-pull contract, use the `poll-trigger-registration` skill.
 
 ## When to Use
 
@@ -20,7 +24,6 @@ Registers polling trigger configs on a Connector Namespace so that connector eve
 - `connector-namespace` CLI extension installed (see connection-setup skill)
 - Connector Namespace with a connected connector (see `connection-setup` skill)
 - The Connector Namespace must have a **system-assigned managed identity** enabled
-- **Supported regions** for Connector Namespace: `westcentralus`
 
 ## Key Concepts
 
@@ -29,11 +32,13 @@ Registers polling trigger configs on a Connector Namespace so that connector eve
 The connector extension (`Microsoft.Azure.Functions.Worker.Extensions.Connector`) registers a webhook route on the Function App:
 
 ```text
-POST /runtime/webhooks/connector?functionName={FunctionName}&code={connector_extension_key}
+POST /runtime/webhooks/connector?functionName={FunctionName}
 ```
 
 - `functionName` must exactly match the `[Function("...")]` attribute name
 - `connector_extension` is a system key auto-generated when the extension loads
+- Store the key separately in `notificationDetails.authentication` as a
+  `QueryString` value named `code`; do not embed it in `callbackUrl`
 - Locally (`func start`), the system key is not enforced
 
 ### Trigger Config vs Connection
@@ -109,14 +114,14 @@ Add to `requirements.txt` (include packages based on your approach):
 # >=2.2.0b4 required Python 3.13+, >=1.26.0b3 for Python < 3.13
 azure-functions>=2.2.0b4
 
-# Currently only supports Office 365 OnNewEmail operation
+# Typed Functions integration for Office 365 OnNewEmail
 azurefunctions-extensions-connectors
 
-# Required for str payloads, don't include if using azurefunctions-extensions-connectors 
+# Optional typed models for other connector operations; not required for str payloads
 azure-connectors
 ```
 
-Add to `local.settings.json` for Python < 3.12:
+Add to `local.settings.json` for Python < 3.13:
 
 ```json
 {
@@ -152,8 +157,13 @@ public void OnNewEmail(
     [ConnectorTrigger]
     Office365OnNewEmailTriggerPayload payload)
 {
-    _logger.LogInformation("From: {From}, Subject: {Subject}",
-        payload.From, payload.Subject);
+    foreach (GraphClientReceiveMessage email in payload.Body.Value)
+    {
+        _logger.LogInformation(
+            "From: {From}, Subject: {Subject}",
+            email.From,
+            email.Subject);
+    }
 }
 ```
 
@@ -320,8 +330,8 @@ $resourceGroup = "<resource-group>"
 $functionAppName = "<function-app-name>"
 $functionName = "<function-name>"  # must match [Function("...")] attribute
 
-$connectorExtensionKey = az functionapp keys list -g $resourceGroup -n $functionAppName --query "systemKeys.connector_extension" -o tsv
-$callbackUrl = "https://$functionAppName.azurewebsites.net/runtime/webhooks/connector?functionName=$functionName&code=$connectorExtensionKey"
+$connectorKey = az functionapp keys list -g $resourceGroup -n $functionAppName --query "systemKeys.connector_extension" -o tsv
+$callbackUrl = "https://$functionAppName.azurewebsites.net/runtime/webhooks/connector?functionName=$functionName"
 ```
 
 #### Local development (with dev tunnel)
@@ -356,7 +366,7 @@ Build the callback URL:
 ```powershell
 $tunnelUrl = "<your-tunnel-url>"  # from VS Code Ports panel, e.g., https://<id>-7071.uks1.devtunnels.ms
 $functionName = "<function-name>"
-$callbackUrl = "$tunnelUrl/runtime/webhooks/connector?functionName=$functionName&code=$connectorKey"
+$callbackUrl = "$tunnelUrl/runtime/webhooks/connector?functionName=$functionName"
 ```
 
 > **Note:** The tunnel must have **Public** visibility (anonymous access). The Connector Namespace cannot authenticate to private tunnels. We use connector extension keys for auth instead of the tunnel's built-in auth.
@@ -377,9 +387,20 @@ $connectorName = "<connector-name>"      # e.g., "office365"
 $operationName = "<operation-name>"      # e.g., "OnNewEmailV3" or "OnNewFilesV2"
 $functionName = "<function-name>"        # must match [Function("...")] attribute
 
-# Write notification details to a temp file (callbackUrl contains ? and & which break shell parsing)
+# Keep the callback URL free of secrets. Connector Namespace adds the `code`
+# query parameter from the separate authentication object when invoking it.
+$notificationDetails = @{
+    callbackUrl = $callbackUrl
+    authentication = @{
+        type  = "QueryString"
+        name  = "code"
+        value = $connectorKey
+    }
+} | ConvertTo-Json -Depth 3 -Compress
+
+# Write notification details to a temp file to avoid shell quoting issues.
 $notifFile = Join-Path $env:TEMP "notification-details.json"
-@{ callbackUrl = $callbackUrl } | ConvertTo-Json -Compress | Set-Content -Path $notifFile -NoNewline
+$notificationDetails | Set-Content -Path $notifFile -NoNewline
 
 # Delete any existing trigger with the same name
 az connector-namespace trigger delete `
@@ -399,9 +420,16 @@ az connector-namespace trigger create `
 Remove-Item $notifFile -ErrorAction SilentlyContinue
 ```
 
+The `--metadata` object identifies the destination to the Connector Namespace
+portal so it can render the backend as a Function App. Keep the Function App
+subscription, resource group, app name, and function name aligned with the
+callback destination. Runtime delivery and authentication are controlled by
+`notificationDetails`; the metadata object does not replace the callback URL
+or its `QueryString` authentication.
+
 **Trigger parameters** — add `--parameters` for connector-specific inputs:
 
-```powershell
+```text
 # Office 365 OnNewEmailV3 — specify folder
 --parameters "[{name:folderPath,value:'Inbox'}]"
 
@@ -420,11 +448,13 @@ Remove-Item $notifFile -ErrorAction SilentlyContinue
 az connector-namespace trigger show `
     -g $resourceGroup --namespace $namespaceName `
     -n $triggerName `
-    --query "properties.{operation:operationName, state:state, callback:notificationDetails.callbackUrl}" `
+    --query "properties.{operation:operationName,state:state,callback:notificationDetails.callbackUrl,authenticationType:notificationDetails.authentication.type,authenticationName:notificationDetails.authentication.name}" `
     -o table
 ```
 
-Expected: `state = Enabled`.
+Expected: `state = Enabled`, `authenticationType = QueryString`, and
+`authenticationName = code`. The authentication value is intentionally not
+displayed.
 
 ### Step 4: Test the Trigger
 
@@ -456,10 +486,29 @@ If no logs appear:
 To point an existing trigger config to a different callback (e.g., after redeploying or switching tunnels):
 
 ```powershell
+$newCallbackUrl = "https://<your-function-host>/runtime/webhooks/connector?functionName=<FunctionName>"
+$connectorKey = az functionapp keys list `
+    -g $resourceGroup -n $functionAppName `
+    --query "systemKeys.connector_extension" -o tsv
+
+$notificationDetails = @{
+    callbackUrl = $newCallbackUrl
+    authentication = @{
+        type  = "QueryString"
+        name  = "code"
+        value = $connectorKey
+    }
+} | ConvertTo-Json -Depth 3 -Compress
+
+$notifFile = Join-Path $env:TEMP "notification-details.json"
+$notificationDetails | Set-Content -Path $notifFile -NoNewline
+
 az connector-namespace trigger update `
     -g $resourceGroup --namespace $namespaceName `
     -n $triggerName `
-    --notification-details "callback-url=$newCallbackUrl"
+    --notification-details "@$notifFile"
+
+Remove-Item $notifFile -ErrorAction SilentlyContinue
 ```
 
 ### Step 6: List All Trigger Configs
@@ -487,8 +536,8 @@ When done testing, **always** revoke public access:
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `Could not find member 'connectionName'` | Used `connectionName` at top level | Use `--connection-details` shorthand: `connectionName=… connectorName=…` |
-| `Could not find member 'callbackUrl'` | Put `callbackUrl` at properties level | Use `--notification-details` shorthand: `callback-url=…` |
-| Trigger provisions but never fires | Missing `callbackUrl` or incorrect URL | Verify `--notification-details callback-url=…` is set and publicly accessible |
+| `Could not find member 'callbackUrl'` | Put `callbackUrl` at the trigger properties level | Pass a JSON file to `--notification-details` containing both `callbackUrl` and `authentication` |
+| Trigger provisions but never fires | Missing/incorrect callback or authentication details | Verify `callbackUrl`, `authentication.type = QueryString`, and `authentication.name = code`; rotate and reapply the system key if needed |
 | `unrecognized arguments: --namespace` | Azure CLI < 2.75.0 | Run `az upgrade` or use `--connector-namespace-name` |
 
 ### Polling Interval

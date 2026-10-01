@@ -52,7 +52,7 @@ Working implementation design. The stacked Poll branches now include the
 trigger contract, configuration, protocol models, target scaler, runtime
 clients, a concurrent listener with explicit invocation batching, and the
 isolated-worker binding. The final stacked PR uses the configured,
-trigger-specific `PollingEndpoint` contract and completes cross-stack
+connection-scoped `pollingEndpoint` plus `TriggerConfigName` contract and completes cross-stack
 validation.
 
 Read the document in three layers:
@@ -117,15 +117,11 @@ another runtime later needs the same protocol.
   observability capabilities after the service publishes those contracts. The
   extension must not infer delivery attempts or acknowledge permanently failed
   messages without a service-owned destination.
-- If the service formally guarantees that every Trigger Config in a Connector
-  Namespace shares a stable authority, consider supporting a shared
-  `<Connection>__Endpoint` setting together with an explicit
-  `TriggerConfigName` on each trigger. The same named connection section would
-  continue to provide the managed-identity selectors used to obtain the API
-  Hub token; endpoint sharing does not change authentication. Until that
-  structure is a service contract, use the complete trigger-specific
-  `PollingEndpoint` derived from that Trigger Config's
-  `pollingEndpoints.receiveUri`.
+- Integrate the Connector Namespace stable DNS authority when deployed. The
+  configured `<Connection>__pollingEndpoint` remains the complete
+  gateway-level base through `/api/connectorGateways/<gateway-id>`, so the
+  extension treats both the current `logic.azure.com` authority and upcoming
+  `connectornamespaces` authority as opaque service-provided values.
 
 ## Current Extension Architecture
 
@@ -175,33 +171,31 @@ The current APIM URLs have this observed shape:
 https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<connector-namespace-id>/triggerconfigs/<trigger-config-name>/<operation>
 ```
 
-For example, `pollingEndpoints.receiveUri` ends in `/receive`. Clients must not
-construct it from a Connector Namespace name, region, trigger configuration
-name, or gateway identifier.
-
-Derive the trigger-specific base URL for Function configuration by parsing
-`receiveUri` as HTTPS and removing only the final `/receive` path segment:
+For example, `pollingEndpoints.receiveUri` ends in
+`/triggerconfigs/<name>/receive`. Split the service-returned URI into the
+gateway-level Poll endpoint and Trigger Config name:
 
 ```text
 receiveUri:
 https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<id>/triggerconfigs/<name>/receive
 
-PollingEndpoint base:
-https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<id>/triggerconfigs/<name>
+Connection pollingEndpoint:
+https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<id>
+
+TriggerConfigName:
+<name>
 ```
 
-Do not derive the base with an unrestricted string replacement. Validate that
-the final path segment is exactly `receive`, remove that segment, and preserve
-the returned base exactly for configuration.
+Do not derive these values with unrestricted string replacement. Preserve the
+service-provided host and gateway identifier exactly. The gateway-level
+endpoint is shared by Trigger Configs in that Connector Namespace; each
+binding supplies its own Trigger Config name.
 
-Clients must obtain these URLs from the trigger configuration response. Each
-trigger configuration has its own full base URL. Multiple Trigger Configs may
-use the same authority. For the current contract, the extension requires the
-default HTTPS port, a normalized host ending at the DNS label boundary
-`.logic.azure.com`, and the exact fixed path segments `api`,
-`connectorGateways`, and `triggerconfigs`. The returned namespace and trigger
-identifiers and any query remain opaque. Clients must not construct the URL
-from a Connector Namespace name, region, resource ID, or Trigger Config name.
+For the current contract, the extension requires HTTPS on the default port and
+the exact path `/api/connectorGateways/<gateway-id>`. The authority, gateway
+identifier, and any query remain opaque, trusted application configuration.
+This follows other identity-based Functions extensions, which validate service
+endpoint structure without maintaining cloud-specific DNS allowlists.
 
 ### Receive
 
@@ -275,8 +269,8 @@ Linked-output processing:
 
 1. Validate `outputsLink.uri`.
 2. Download the complete trigger outputs.
-3. Enforce configured and absolute byte limits while streaming the response,
-   with an absolute maximum of 100 MiB (104,857,600 bytes).
+3. Enforce the 100 MiB (104,857,600-byte) protocol limit while streaming the
+   response.
 4. Validate that the downloaded content is complete JSON in the expected
    trigger-output shape.
 5. Pass the normalized outputs through the same payload conversion used for
@@ -451,7 +445,7 @@ public void Run(
     [ConnectorTrigger(
         DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
         Connection = "ConnectorNamespace",
-        PollingEndpoint = "%OnNewEmailEndpoint%",
+        TriggerConfigName = "%OnNewEmailTriggerConfigName%",
         IsBatched = true,
         MaxBatchSize = 4,
         Concurrency = 8)]
@@ -474,74 +468,60 @@ As part of setting up Poll delivery, the customer provisions a trigger configura
 
 The extension does not create, update, enable, or convert Connector Namespace
 trigger configurations. Customers obtain `pollingEndpoints.receiveUri` from
-the provisioned Trigger Config, derive the trigger-specific polling base URL,
-and grant the Function identity an access policy on the connection referenced
-by that Trigger Config.
+the provisioned Trigger Config, configure its gateway-level base and Trigger
+Config name separately, and grant the Function identity an access policy on
+the connection referenced by that Trigger Config.
 
 ### Polling Endpoint Configuration
 
 `Connection` is a literal app setting name or configuration prefix, consistent
 with other Azure Functions extensions. It is not itself resolved through
-`%...%` substitution. It identifies the credential configuration shared by
+`%...%` substitution. It identifies the Poll endpoint and credential configuration shared by
 Functions that use the same Connector Namespace:
 
 ```text
+ConnectorNamespace__pollingEndpoint=https://<host>/api/connectorGateways/<gateway-id>
 ConnectorNamespace__credential=managedidentity
 ConnectorNamespace__clientId={optional-user-assigned-managed-identity-client-id}
 ConnectorNamespace__managedIdentityResourceId={optional-user-assigned-managed-identity-resource-id}
 ```
 
-`PollingEndpoint` uses Functions app-setting resolution and identifies one
-specific Trigger Config:
+`TriggerConfigName` identifies one Trigger Config and may use Functions
+app-setting resolution:
 
 ```text
-OnNewEmailEndpoint=https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<id>/triggerconfigs/Email-Polling1
+OnNewEmailTriggerConfigName=Email-Polling1
 ```
 
 The setting may contain a direct value, a platform-level Key Vault reference,
 or a platform-level Azure App Configuration reference. Configuration providers
 loaded only inside a language worker are insufficient because the host
-extension must resolve the endpoint before starting the listener.
+extension must resolve the Trigger Config name before starting the listener.
 
-The configured value is the complete HTTPS base URL on a
-`logic.azure.com` subdomain, including the exact
-`/api/connectorGateways/<connectorNamespaceId>/triggerconfigs/<triggerConfigName>`
-path. The extension appends only:
+The connection's `pollingEndpoint` is the complete HTTPS gateway-level base
+including the exact `/api/connectorGateways/<gateway-id>` path. The extension
+appends `/triggerConfigs/<TriggerConfigName>` and only:
 
 - `/receive`
 - `/acknowledge`
 - `/approximateQueueDepth`
 
-Each Trigger Config has its own full base URL. Multiple Trigger Configs may use
-the same authority. The normalized authority must be a subdomain of
-`logic.azure.com` on the default HTTPS port, and the fixed path segments are
-`api`, `connectorGateways`, and `triggerconfigs`. The Connector Namespace and
-Trigger Config identifiers and any query remain opaque. The URL must not be
-constructed from a Connector Namespace name, region, resource ID, or Trigger
-Config name.
-
-The resolved base must have exactly the path
-`/api/connectorGateways/<non-empty-connector-namespace-id>/triggerconfigs/<non-empty-trigger-config-name>`.
-It must not include a trailing slash, operation, or any other segment after
-the Trigger Config name. In particular, configured values ending in
-`/receive`, `/acknowledge`, or `/approximateQueueDepth` are invalid.
-
-To obtain the configured value, parse `pollingEndpoints.receiveUri` as an
-absolute HTTPS URI, require its final path segment to be exactly `receive`, and
-remove only that segment. Preserve the service-provided namespace identifier,
-trigger identifier, and query; do not use unrestricted string replacement.
-
-Because `PollingEndpoint` already identifies the Trigger Config, the runtime
-contract does not include `TriggerConfigName`, a Connector Namespace resource
-identifier, control-plane endpoint discovery, or an endpoint cache.
+Multiple Trigger Configs share the same connection prefix and gateway-level
+endpoint. The endpoint must use the default HTTPS port and end exactly at the
+non-empty gateway identifier. It must not contain `triggerConfigs`, a trailing
+slash, or an operation. `TriggerConfigName` must be one non-empty path segment.
+The extension performs no Connector Namespace resource-ID parsing, control-plane endpoint discovery, or endpoint caching.
 
 ### Identity and Permissions
 
-The Polling endpoint and caller identity are configured separately:
+The Poll endpoint, Trigger Config name, and caller identity are configured as:
 
 ```text
-OnNewEmailEndpoint
-    Trigger-specific Polling endpoint
+ConnectorNamespace__pollingEndpoint
+    Gateway-level Poll endpoint
+
+OnNewEmailTriggerConfigName
+    Trigger Config name
 
 ConnectorNamespace__credential and identity selectors
     Identity used to access it
@@ -792,18 +772,18 @@ Azure Functions must discover concrete binding types during function indexing. T
 
 ### 1. Polling Endpoint Configuration
 
-The host resolves the trigger-specific `PollingEndpoint` through Functions
-app-setting resolution during listener startup and scale-controller
-reconstruction. Before acquiring an API Hub token, it validates a default-port
-HTTPS base on a `logic.azure.com` subdomain with exactly the path
-`/api/connectorGateways/<non-empty-connector-namespace-id>/triggerconfigs/<non-empty-trigger-config-name>`.
-It then constructs immutable Receive, Acknowledge, and Approximate Queue Depth
-URIs by appending only their fixed operation segments.
+The host resolves `<Connection>__pollingEndpoint` from the connection section
+and resolves `TriggerConfigName` through Functions app-setting resolution
+during listener startup and scale-controller reconstruction. Before acquiring
+an API Hub token, it validates a default-port HTTPS base with exactly the path
+`/api/connectorGateways/<non-empty-gateway-id>`. It validates the Trigger
+Config name as one path segment, then constructs immutable Receive,
+Acknowledge, and Approximate Queue Depth URIs.
 
-The namespace and trigger identifiers and any query remain opaque. The
-implementation performs no control-plane lookup, resource-identifier parsing,
-alternate endpoint discovery, or endpoint caching. An invalid setting fails
-startup before any runtime request or token acquisition.
+The authority and gateway identifier remain opaque. The implementation
+performs no control-plane lookup, resource-identifier parsing, alternate
+endpoint discovery, or endpoint caching. Invalid connection or binding
+configuration fails startup before any runtime request or token acquisition.
 
 ### 2. Poll-delivery HTTP Client
 
@@ -916,13 +896,17 @@ Both delivery modes should preserve the same logical connector payload. Poll tra
 
 For payload-only bindings, the function receives only the connector `outputs` value or array of values. For metadata-rich bindings, each `outputs` value and its available `messageId` are converted into one `ConnectorEvent<T>`.
 
-The host-side canonical message representation is:
+The host-side canonical input representation is:
 
 ```csharp
-internal sealed record ConnectorTriggerMessage(
-    string MessageId,
-    string LockToken,
-    JsonElement Outputs);
+internal sealed class ConnectorTriggerEventInput
+{
+    internal BinaryData Outputs { get; }
+
+    internal string? MessageId { get; }
+
+    internal ConnectorTriggerDeliveryMode DeliveryMode { get; }
+}
 ```
 
 The isolated-worker transport follows the modern deferred-binding approach
@@ -1030,12 +1014,12 @@ Do not reuse the Connector Namespace side of #26:
   assumptions.
 - Its mock queue-depth provider.
 - Any metadata names that conflict with the target `Connection` and
-  `PollingEndpoint` contract.
+  `TriggerConfigName` contract.
 
-The production metrics provider appends `/approximateQueueDepth` to the
-configured `PollingEndpoint`. The final cross-stack validation verifies that
-the host and Scale Monitor still use the interfaces and reflective
-registration signature demonstrated by #26.
+The production metrics provider combines the connection's `pollingEndpoint`
+with `TriggerConfigName` and appends `/approximateQueueDepth`. The final
+cross-stack validation verifies that the host and Scale Monitor still use the
+interfaces and reflective registration signature demonstrated by #26.
 
 ### 9. Dependency Registration
 
@@ -1053,7 +1037,8 @@ Register `Microsoft.Extensions.Azure` services and reuse `AzureComponentFactory.
 ## Error Handling
 
 - Invalid Poll attribute/configuration: fail listener startup with an actionable error.
-- Missing or invalid `PollingEndpoint`: fail startup.
+- Missing or invalid connection `pollingEndpoint` or `TriggerConfigName`: fail
+  startup.
 - Unreachable configured endpoint: report the endpoint operation without
   logging the complete URL or attempting alternate endpoint discovery.
 - Authentication/authorization failure: log resource identity and audience, never the token.
@@ -1070,7 +1055,7 @@ Register `Microsoft.Extensions.Azure` services and reuse `AzureComponentFactory.
 Record without payload or token content:
 
 - Function name and a safe trigger identifier; do not record the complete
-  `PollingEndpoint`.
+  connection `pollingEndpoint`.
 - Receive duration and returned message count.
 - Linked-output download count, declared size, actual size, and duration.
 - Linked-output retrieval and validation failures.
@@ -1101,29 +1086,29 @@ Record without payload or token content:
 
 ### Endpoint configuration tests
 
-- `PollingEndpoint` app-setting resolution.
+- Connection-prefix `pollingEndpoint` resolution.
+- `TriggerConfigName` app-setting resolution.
 - Absolute HTTPS base validation.
-- Default HTTPS port and `.logic.azure.com` DNS-label-boundary validation.
+- Default HTTPS port and opaque authority handling.
 - Correct Receive, Acknowledge, and Approximate Queue Depth route construction.
-- Opaque namespace identifier, trigger identifier, and query preservation.
-- Exact `/api/connectorGateways/<namespace-id>/triggerconfigs/<trigger-name>`
-  path validation.
-- Rejection of bases that already include an operation or another trailing
-  segment.
+- Opaque gateway identifier, Trigger Config name, and query preservation.
+- Exact `/api/connectorGateways/<gateway-id>` path validation.
+- Rejection of bases that already include `triggerConfigs`, an operation, or
+  another trailing segment.
 - Missing or invalid endpoint handling.
 - No alternate discovery for endpoint-specific `404 Not Found` or `410 Gone`.
 
 ### HTTP client tests
 
 - Correct API Hub token scope.
-- `maxEvents` omitted/default and range validation.
+- Explicit `maxEvents`, existing-query replacement, and range validation.
 - Existing endpoint query parameters are preserved.
 - Receive and acknowledgement serialization.
 - Mixed inline and linked message deserialization.
 - Exactly one of `outputs` and `outputsLink` is required.
 - Signed outputs-link URI validation and log redaction.
-- Configured and absolute actual-bytes-read limit enforcement, including the
-  104,857,600-byte boundary and over-limit behavior.
+- Actual-bytes-read limit enforcement, including the 104,857,600-byte
+  boundary and over-limit behavior.
 - Linked-output download response parsing.
 - Linked-output retrieval does not attach an unintended bearer token.
 - Redirect behavior follows the finalized service contract.
@@ -1170,7 +1155,8 @@ Record without payload or token content:
 Use a Poll trigger configuration such as Office 365 `OnNewEmailV3`:
 
 1. Register with `deliveryMode: Poll`.
-2. Configure the trigger-specific `PollingEndpoint`.
+2. Configure the gateway-level connection `pollingEndpoint` and
+   trigger-specific `TriggerConfigName`.
 3. Send enough test emails to produce more than one invocation batch.
 4. Start the Function host.
 5. Verify the expected invocation batch sizes.
@@ -1299,7 +1285,7 @@ Create a request body such as:
         "value": "Inbox"
       }
     ],
-    "state": "Disabled",
+    "state": "Enabled",
     "type": "NotSpecified"
   }
 }
@@ -1319,9 +1305,10 @@ az rest `
 
 Do not include `pollingEndpoints`, `id`, `name`, `systemData`, or other server-generated response properties in the request body. Connector Namespace generates the polling endpoints.
 
-Creating the trigger configuration as `Disabled` allows the Function and its
-connection access policy to be configured before polling begins. Set the
-trigger configuration to `Enabled` before starting the Function listener.
+Create the Poll trigger configuration as `Enabled` by default. If the Function
+is not ready, it may be created as `Disabled` only as an explicit setup choice;
+enable it after retrieving the generated polling endpoints, configuring the
+Function settings, and adding the connection-level access policy.
 
 ## Reference
 

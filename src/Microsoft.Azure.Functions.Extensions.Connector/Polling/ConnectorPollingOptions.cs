@@ -8,7 +8,7 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 /// </summary>
 internal sealed record ConnectorPollingOptions(
     string Connection,
-    string PollingEndpoint,
+    string TriggerConfigName,
     int MaxBatchSize,
     int Concurrency,
     bool IsBatched = false)
@@ -34,10 +34,10 @@ internal sealed record ConnectorPollingOptions(
                 "Connector trigger Connection is required for Poll delivery.");
         }
 
-        if (string.IsNullOrWhiteSpace(attribute.PollingEndpoint))
+        if (string.IsNullOrWhiteSpace(attribute.TriggerConfigName))
         {
             throw new InvalidOperationException(
-                "Connector trigger PollingEndpoint is required for Poll delivery.");
+                "Connector trigger TriggerConfigName is required for Poll delivery.");
         }
 
         int maxBatchSize = ResolveMaxBatchSize(attribute.MaxBatchSize, defaults.DefaultMaxBatchSize);
@@ -51,7 +51,7 @@ internal sealed record ConnectorPollingOptions(
 
         return new ConnectorPollingOptions(
             attribute.Connection,
-            attribute.PollingEndpoint,
+            attribute.TriggerConfigName,
             maxBatchSize,
             concurrency,
             isBatched)

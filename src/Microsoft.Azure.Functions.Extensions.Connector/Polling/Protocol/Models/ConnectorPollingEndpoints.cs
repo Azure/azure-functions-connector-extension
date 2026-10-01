@@ -5,7 +5,6 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 
 internal sealed class ConnectorPollingEndpoints
 {
-    private const string RuntimeHostSuffix = ".logic.azure.com";
     private const string ApiSegment = "api";
     private const string ConnectorGatewaysSegment = "connectorGateways";
     private const string TriggerConfigsSegment = "triggerConfigs";
@@ -14,7 +13,9 @@ internal sealed class ConnectorPollingEndpoints
     private const string ApproximateQueueDepthOperation =
         "approximateQueueDepth";
     private const string InvalidEndpointMessage =
-        "Connector trigger PollingEndpoint must be a valid Trigger Config polling base URL.";
+        "Connector connection pollingEndpoint must be a valid Connector Namespace polling base URL.";
+    private const string InvalidTriggerConfigNameMessage =
+        "Connector trigger TriggerConfigName must be a valid path segment.";
 
     internal ConnectorPollingEndpoints(
         Uri receiveUri,
@@ -34,7 +35,9 @@ internal sealed class ConnectorPollingEndpoints
 
     internal Uri ApproximateQueueDepthUri { get; }
 
-    internal static ConnectorPollingEndpoints Create(string pollingEndpoint)
+    internal static ConnectorPollingEndpoints Create(
+        string pollingEndpoint,
+        string triggerConfigName)
     {
         if (string.IsNullOrWhiteSpace(pollingEndpoint) ||
             !pollingEndpoint.Equals(
@@ -68,14 +71,17 @@ internal sealed class ConnectorPollingEndpoints
         }
 
         ValidateRuntimeAuthority(baseUri);
-        ValidateTriggerConfigPath(baseUri);
+        ValidateConnectorGatewayPath(baseUri);
+        string triggerConfigSegment =
+            ValidateAndEscapeTriggerConfigName(triggerConfigName);
 
         return new ConnectorPollingEndpoints(
-            AppendOperation(baseUri, rawQuery, ReceiveOperation),
-            AppendOperation(baseUri, rawQuery, AcknowledgeOperation),
+            AppendOperation(baseUri, rawQuery, triggerConfigSegment, ReceiveOperation),
+            AppendOperation(baseUri, rawQuery, triggerConfigSegment, AcknowledgeOperation),
             AppendOperation(
                 baseUri,
                 rawQuery,
+                triggerConfigSegment,
                 ApproximateQueueDepthOperation));
     }
 
@@ -88,13 +94,14 @@ internal sealed class ConnectorPollingEndpoints
     private static Uri AppendOperation(
         Uri baseUri,
         string rawQuery,
+        string triggerConfigSegment,
         string operation)
     {
         string basePath = baseUri
             .GetLeftPart(UriPartial.Path)
             .TrimEnd('/');
         return new Uri(
-            $"{basePath}/{operation}{rawQuery}",
+            $"{basePath}/{TriggerConfigsSegment}/{triggerConfigSegment}/{operation}{rawQuery}",
             UriKind.Absolute);
     }
 
@@ -127,12 +134,12 @@ internal sealed class ConnectorPollingEndpoints
             : absoluteUri[queryStart..];
     }
 
-    private static void ValidateTriggerConfigPath(Uri baseUri)
+    private static void ValidateConnectorGatewayPath(Uri baseUri)
     {
         string[] segments = baseUri.AbsolutePath.Split(
             '/',
             StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length != 5 ||
+        if (segments.Length != 3 ||
             baseUri.AbsolutePath.EndsWith('/') ||
             !segments[0].Equals(
                 ApiSegment,
@@ -140,11 +147,7 @@ internal sealed class ConnectorPollingEndpoints
             !segments[1].Equals(
                 ConnectorGatewaysSegment,
                 StringComparison.OrdinalIgnoreCase) ||
-            !IsValidOpaqueSegment(segments[2]) ||
-            !segments[3].Equals(
-                TriggerConfigsSegment,
-                StringComparison.OrdinalIgnoreCase) ||
-            !IsValidOpaqueSegment(segments[4]))
+            !IsValidOpaqueSegment(segments[2]))
         {
             throw InvalidPollingEndpoint();
         }
@@ -152,21 +155,45 @@ internal sealed class ConnectorPollingEndpoints
 
     private static void ValidateRuntimeAuthority(Uri baseUri)
     {
-        if (!baseUri.IsDefaultPort ||
-            !baseUri.IdnHost.EndsWith(
-                RuntimeHostSuffix,
-                StringComparison.OrdinalIgnoreCase))
+        if (!baseUri.IsDefaultPort)
         {
             throw InvalidPollingEndpoint();
         }
     }
 
+    private static string ValidateAndEscapeTriggerConfigName(
+        string triggerConfigName)
+    {
+        if (string.IsNullOrWhiteSpace(triggerConfigName) ||
+            !triggerConfigName.Equals(
+                triggerConfigName.Trim(),
+                StringComparison.Ordinal) ||
+            triggerConfigName.Contains('%') ||
+            triggerConfigName.Any(char.IsControl) ||
+            !IsValidOpaqueSegment(triggerConfigName))
+        {
+            throw new InvalidOperationException(
+                InvalidTriggerConfigNameMessage);
+        }
+
+        return Uri.EscapeDataString(triggerConfigName);
+    }
+
     private static bool IsValidOpaqueSegment(string segment)
     {
-        string value = Uri.UnescapeDataString(segment);
-        return !string.IsNullOrWhiteSpace(value) &&
-            !value.Contains('/') &&
-            !value.Contains('\\');
+        try
+        {
+            string value = Uri.UnescapeDataString(segment);
+            return !string.IsNullOrWhiteSpace(value) &&
+                !value.Equals(".", StringComparison.Ordinal) &&
+                !value.Equals("..", StringComparison.Ordinal) &&
+                !value.Contains('/') &&
+                !value.Contains('\\');
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
     }
 
     private static InvalidOperationException InvalidPollingEndpoint(

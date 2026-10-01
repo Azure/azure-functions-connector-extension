@@ -36,6 +36,8 @@ public class ConnectorConnectionOptionsProviderTests
             {
                 ["AzureWebJobsConnectorNamespace:credential"] = "managedidentity",
                 ["AzureWebJobsConnectorNamespace:clientId"] = "client-id",
+                ["AzureWebJobsConnectorNamespace:pollingEndpoint"] =
+                    "https://app-12.region.logic.azure.com/api/connectorGateways/ns",
             });
         TokenCredential credential = Mock.Of<TokenCredential>();
         var componentFactory = new Mock<AzureComponentFactory>();
@@ -57,25 +59,9 @@ public class ConnectorConnectionOptionsProviderTests
             ((IConfigurationSection)receivedConfiguration).Path);
         Assert.Equal("managedidentity", receivedConfiguration["credential"]);
         Assert.Equal("client-id", receivedConfiguration["clientId"]);
-    }
-
-    [Fact]
-    public void Get_ResolvesUnprefixedConnectionCredential()
-    {
-        IConfiguration configuration = BuildConfiguration(
-            new Dictionary<string, string?>());
-        var componentFactory = new Mock<AzureComponentFactory>();
-        componentFactory
-            .Setup(factory => factory.CreateTokenCredential(It.IsAny<IConfiguration>()))
-            .Returns(Mock.Of<TokenCredential>());
-        var provider = new ConnectorConnectionOptionsProvider(
-            configuration,
-            componentFactory.Object);
-
-        ConnectorConnectionOptions result =
-            provider.Get("ConnectorNamespace");
-
-        Assert.NotNull(result.Credential);
+        Assert.Equal(
+            "https://app-12.region.logic.azure.com/api/connectorGateways/ns",
+            result.PollingEndpoint);
     }
 
     [Fact]
@@ -87,6 +73,8 @@ public class ConnectorConnectionOptionsProviderTests
                 ["ConnectorNamespace:tenantId"] = "tenant-id",
                 ["ConnectorNamespace:clientId"] = "client-id",
                 ["ConnectorNamespace:clientSecret"] = "client-secret",
+                ["ConnectorNamespace:pollingEndpoint"] =
+                    "https://app-12.region.logic.azure.com/api/connectorGateways/ns",
             });
         TokenCredential credential = Mock.Of<TokenCredential>();
         var componentFactory = new Mock<AzureComponentFactory>();
@@ -125,6 +113,35 @@ public class ConnectorConnectionOptionsProviderTests
             provider.Get(connectionName!));
 
         Assert.Contains("Connection", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void Get_Throws_WhenPollingEndpointIsMissing(
+        string? pollingEndpoint)
+    {
+        IConfiguration configuration = BuildConfiguration(
+            new Dictionary<string, string?>
+            {
+                ["ConnectorNamespace:pollingEndpoint"] = pollingEndpoint,
+            });
+        var componentFactory = new Mock<AzureComponentFactory>();
+        var provider = new ConnectorConnectionOptionsProvider(
+            configuration,
+            componentFactory.Object);
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(() =>
+                provider.Get("ConnectorNamespace"));
+
+        Assert.Contains("pollingEndpoint", exception.Message);
+        Assert.Contains("ConnectorNamespace", exception.Message);
+        componentFactory.Verify(
+            factory => factory.CreateTokenCredential(
+                It.IsAny<IConfiguration>()),
+            Times.Never);
     }
 
     private static IConfiguration BuildConfiguration(

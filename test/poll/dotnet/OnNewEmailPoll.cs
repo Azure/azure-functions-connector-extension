@@ -15,7 +15,7 @@ public sealed class OnNewEmailPoll(ILogger<OnNewEmailPoll> logger)
         [ConnectorTrigger(
             DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
             Connection = "ConnectorNamespace",
-            PollingEndpoint = "%OnNewEmailEndpoint%",
+            TriggerConfigName = "%OnNewEmailTriggerConfigName%",
             IsBatched = true,
             MaxBatchSize = 4,
             Concurrency = 4)]

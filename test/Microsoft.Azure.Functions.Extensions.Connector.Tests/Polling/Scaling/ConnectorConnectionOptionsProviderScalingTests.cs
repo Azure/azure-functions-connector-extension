@@ -8,7 +8,7 @@ namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 public class ConnectorConnectionOptionsProviderScalingTests
 {
     [Fact]
-    public void Create_UsesFullNamedSectionAndSelectedFactory()
+    public void Get_UsesFullNamedSectionAndSelectedFactory()
     {
         IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
         {
@@ -33,7 +33,7 @@ public class ConnectorConnectionOptionsProviderScalingTests
     }
 
     [Fact]
-    public void Create_AllowsLocalDeveloperCredentialWhenCredentialMarkerIsOmitted()
+    public void Get_AllowsLocalDeveloperCredentialWhenCredentialMarkerIsOmitted()
     {
         IConfiguration configuration =
             BuildConfiguration(new Dictionary<string, string?>());
@@ -49,7 +49,7 @@ public class ConnectorConnectionOptionsProviderScalingTests
     }
 
     [Fact]
-    public void Create_DelegatesSelectorsWithoutCredentialMarker()
+    public void Get_DelegatesSelectorsWithoutCredentialMarker()
     {
         IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
         {
@@ -67,7 +67,7 @@ public class ConnectorConnectionOptionsProviderScalingTests
     }
 
     [Fact]
-    public void Create_DelegatesBothManagedIdentitySelectors()
+    public void Get_DelegatesBothManagedIdentitySelectors()
     {
         IConfiguration configuration = BuildConfiguration(new Dictionary<string, string?>
         {
@@ -93,8 +93,18 @@ public class ConnectorConnectionOptionsProviderScalingTests
             componentFactory.LastConfiguration["managedIdentityResourceId"]);
     }
 
-    private static IConfiguration BuildConfiguration(IDictionary<string, string?> settings) =>
-        new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+    private static IConfiguration BuildConfiguration(
+        IDictionary<string, string?> settings)
+    {
+        var values = new Dictionary<string, string?>(settings)
+        {
+            ["ConnectorNamespace:pollingEndpoint"] =
+                "https://app-12.region.logic.azure.com/api/connectorGateways/ns",
+        };
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build();
+    }
 
     private static ConnectorConnectionOptionsProvider CreateProvider(
         IConfiguration configuration,

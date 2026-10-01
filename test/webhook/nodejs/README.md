@@ -2,7 +2,10 @@
 
 This sample demonstrates how to use the Connector Extension with the Node.js v4 programming model (TypeScript) using `@azure/functions-extensions-connectors`.
 
-When AI Gateway detects a connector event (e.g., a new Office 365 email arrives), it sends a webhook callback to your function. The extension package automatically normalizes the payload into a strongly-typed context. The function logs key fields and persists the raw payload to Azure Blob Storage using a blob output binding.
+When Connector Namespace detects a connector event (for example, a new Office
+365 email), it sends a Webhook callback to the function. The extension package
+normalizes the payload into a strongly typed context. The sample logs key
+fields and persists the raw payload to Azure Blob Storage.
 
 ## Prerequisites
 
@@ -25,7 +28,7 @@ When AI Gateway detects a connector event (e.g., a new Office 365 email arrives)
    npm run build
    ```
 
-3. **Start Azurite** (in another terminal) if not already not running:
+3. **Start Azurite** in another terminal if it is not already running:
 
    ```bash
    azurite --silent
@@ -71,7 +74,7 @@ import { connectors, EmailTriggerContext } from '@azure/functions-extensions-con
 
 const blobOutput = output.storageBlob({
     path: 'connector-messages/{rand-guid}.json',
-    connection: 'BlobStoreConnection',
+    connection: 'AzureWebJobsStorage',
 });
 
 connectors.office365.onNewEmail('OnNewEmail', {
@@ -94,7 +97,7 @@ import { app, InvocationContext, output } from '@azure/functions';
 
 const blobOutput = output.storageBlob({
     path: 'connector-messages/{rand-guid}.json',
-    connection: 'BlobStoreConnection',
+    connection: 'AzureWebJobsStorage',
 });
 
 app.connectorTrigger('OnNewEmailDirect', {

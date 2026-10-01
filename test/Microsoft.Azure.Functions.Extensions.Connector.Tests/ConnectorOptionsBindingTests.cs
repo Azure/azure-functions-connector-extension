@@ -175,7 +175,7 @@ public class ConnectorOptionsBindingTests
     }
 
     [Fact]
-    public async Task AddConnector_DoesNotLogPollingEndpoint()
+    public async Task AddConnector_DoesNotLogPollOperationUris()
     {
         const string secretEndpoint =
             "https://runtime.test/private/triggerconfigs/name/receive?signature=secret-value";

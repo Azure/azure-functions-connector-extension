@@ -14,19 +14,9 @@ public class ConnectorTriggerAttributeTests
         // Assert
         Assert.Equal(ConnectorTriggerDeliveryMode.Webhook, attribute.DeliveryMode);
         Assert.Null(attribute.Connection);
-        Assert.Null(attribute.PollingEndpoint);
+        Assert.Null(attribute.TriggerConfigName);
         Assert.Equal(0, attribute.MaxBatchSize);
         Assert.Equal(0, attribute.Concurrency);
-    }
-
-    [Fact]
-    public void Attribute_HasCorrectBindingType()
-    {
-        // Arrange
-        var attribute = new ConnectorTriggerAttribute();
-
-        // Assert - verify it can be created (binding type is set via WebJobsAttribute)
-        Assert.IsType<ConnectorTriggerAttribute>(attribute);
     }
 
     [Fact]
@@ -37,7 +27,7 @@ public class ConnectorTriggerAttributeTests
         {
             DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
             Connection = "ConnectorNamespace",
-            PollingEndpoint = "%OnNewEmailEndpoint%",
+            TriggerConfigName = "%OnNewEmailTriggerConfigName%",
             MaxBatchSize = 4,
             Concurrency = 8,
         };
@@ -46,8 +36,8 @@ public class ConnectorTriggerAttributeTests
         Assert.Equal(ConnectorTriggerDeliveryMode.Poll, attribute.DeliveryMode);
         Assert.Equal("ConnectorNamespace", attribute.Connection);
         Assert.Equal(
-            "%OnNewEmailEndpoint%",
-            attribute.PollingEndpoint);
+            "%OnNewEmailTriggerConfigName%",
+            attribute.TriggerConfigName);
         Assert.Equal(4, attribute.MaxBatchSize);
         Assert.Equal(8, attribute.Concurrency);
     }

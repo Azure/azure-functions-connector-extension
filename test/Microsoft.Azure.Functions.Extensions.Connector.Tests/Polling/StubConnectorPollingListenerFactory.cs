@@ -16,7 +16,8 @@ internal sealed class StubConnectorPollingListenerFactory :
             registration,
             options,
             ConnectorPollingEndpoints.Create(
-                "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/test"),
+                connectionOptions.PollingEndpoint,
+                options.TriggerConfigName),
             new StubConnectorPollDeliveryClient(),
             new StubConnectorLinkedOutputClient(),
             new ConnectorLinkedOutputInvocationLimiter(),

@@ -25,10 +25,9 @@ public sealed class ConnectorTriggerAttribute : TriggerBindingAttribute, ISuppor
     public string? Connection { get; set; }
 
     /// <summary>
-    /// Gets or sets the app setting expression containing the complete
-    /// trigger-specific Connector Poll endpoint base.
+    /// Gets or sets the Connector Namespace Trigger Config name.
     /// </summary>
-    public string? PollingEndpoint { get; set; }
+    public string? TriggerConfigName { get; set; }
 
     /// <summary>
     /// Gets or sets whether multiple events are supplied to each function

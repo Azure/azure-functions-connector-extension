@@ -32,11 +32,20 @@ internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionO
 
         IConfigurationSection connectionSection =
             GetConnectionSection(connectionName);
+        string? pollingEndpoint = connectionSection["pollingEndpoint"];
+        if (string.IsNullOrWhiteSpace(pollingEndpoint))
+        {
+            throw new InvalidOperationException(
+                $"Connector connection '{connectionName}' must define a 'pollingEndpoint' property for Poll delivery.");
+        }
+
         TokenCredential credential =
             (componentFactory ?? _componentFactory)
             .CreateTokenCredential(connectionSection);
 
-        return new ConnectorConnectionOptions(credential);
+        return new ConnectorConnectionOptions(
+            credential,
+            pollingEndpoint);
     }
 
     internal IConfigurationSection GetConnectionSection(string connectionName) =>

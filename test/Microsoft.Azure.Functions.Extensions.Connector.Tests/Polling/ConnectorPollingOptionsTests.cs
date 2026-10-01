@@ -11,7 +11,7 @@ public class ConnectorPollingOptionsTests
         var attribute = new ConnectorTriggerAttribute
         {
             Connection = "ConnectorNamespace",
-            PollingEndpoint = "%OnNewEmailEndpoint%",
+            TriggerConfigName = "%OnNewEmailTriggerConfigName%",
             MaxBatchSize = 4,
             Concurrency = 8,
         };
@@ -23,8 +23,8 @@ public class ConnectorPollingOptionsTests
 
         Assert.Equal("ConnectorNamespace", result.Connection);
         Assert.Equal(
-            "%OnNewEmailEndpoint%",
-            result.PollingEndpoint);
+            "%OnNewEmailTriggerConfigName%",
+            result.TriggerConfigName);
         Assert.Equal(4, result.MaxBatchSize);
         Assert.Equal(8, result.Concurrency);
         Assert.Equal(TimeSpan.FromSeconds(30), result.MaxPollingInterval);
@@ -170,21 +170,21 @@ public class ConnectorPollingOptionsTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData(" ")]
-    public void Create_Throws_WhenPollingEndpointIsMissing(
-        string? pollingEndpoint)
+    public void Create_Throws_WhenTriggerConfigNameIsMissing(
+        string? triggerConfigName)
     {
         ConnectorTriggerAttribute attribute = CreateValidAttribute();
-        attribute.PollingEndpoint = pollingEndpoint;
+        attribute.TriggerConfigName = triggerConfigName;
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             ConnectorPollingOptions.Create(attribute, new ConnectorOptions()));
 
-        Assert.Contains("PollingEndpoint", exception.Message);
+        Assert.Contains("TriggerConfigName", exception.Message);
     }
 
     private static ConnectorTriggerAttribute CreateValidAttribute() => new()
     {
         Connection = "ConnectorNamespace",
-        PollingEndpoint = "%OnNewEmailEndpoint%",
+        TriggerConfigName = "%OnNewEmailTriggerConfigName%",
     };
 }

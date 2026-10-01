@@ -12,7 +12,7 @@ Each sample uses Poll delivery with the same connection and endpoint settings:
 ```text
 DeliveryMode = Poll
 Connection = ConnectorNamespace
-PollingEndpoint = %OnNewEmailEndpoint%
+TriggerConfigName = %OnNewEmailTriggerConfigName%
 ```
 
 .NET isolated and Node.js enable batched invocation with `MaxBatchSize = 4`
@@ -30,16 +30,15 @@ Copy each sample's checked-in `local.settings.example.json` to
 `local.settings.json`, which remains gitignored, then configure:
 
 ```text
-OnNewEmailEndpoint=https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<connector-namespace-id>/triggerconfigs/<poll-trigger-config-name>
+ConnectorNamespace__pollingEndpoint=https://<host>/api/connectorGateways/<connector-namespace-id>
+OnNewEmailTriggerConfigName=<poll-trigger-config-name>
 ```
 
 Never add or commit a real endpoint or credential value.
 
-Obtain the value from the trigger configuration's
-`pollingEndpoints.receiveUri`: require an absolute HTTPS URI whose final path
-segment is exactly `receive`, then remove only that segment. The resulting
-base must end in `/triggerconfigs/<poll-trigger-config-name>` and must not
-include `/receive`, `/acknowledge`, or `/approximateQueueDepth`.
+Obtain the two values from the trigger configuration's
+`pollingEndpoints.receiveUri`. Remove the final `/triggerConfigs/<name>/receive` segments to obtain the gateway-level `ConnectorNamespace__pollingEndpoint`, and configure that `<name>` as
+`OnNewEmailTriggerConfigName`. Preserve the service-provided host and gateway identifier exactly. The host may use the current `logic.azure.com` form or a `connectornamespaces` stable-DNS form; the extension treats it as opaque trusted configuration.
 
 For local development, `Connection = ConnectorNamespace` uses the signed-in
 developer credential when no credential selector is configured. For Azure,

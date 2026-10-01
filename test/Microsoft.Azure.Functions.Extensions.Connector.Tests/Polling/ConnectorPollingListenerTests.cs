@@ -18,11 +18,11 @@ public class ConnectorPollingListenerTests
         new Uri("https://runtime.example/approximateQueueDepth"));
 
     [Fact]
-    public void Factory_ResolvesPollingEndpointFromAppSetting()
+    public void Factory_ResolvesTriggerConfigNameFromAppSetting()
     {
         var nameResolver = new TestNameResolver(
-            name => name == "ConnectorPollingEndpoint"
-                ? "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email"
+            name => name == "OnNewEmailTriggerConfigName"
+                ? "on-new-email"
                 : null);
         var factory = new ConnectorPollingListenerFactory(
             new TestPollDeliveryClientFactory(
@@ -38,19 +38,20 @@ public class ConnectorPollingListenerTests
                 Mock.Of<ITriggeredFunctionExecutor>()),
             new ConnectorPollingOptions(
                 "ConnectorNamespace",
-                "%ConnectorPollingEndpoint%",
+                "%OnNewEmailTriggerConfigName%",
                 1,
                 1),
             new ConnectorConnectionOptions(
-                Mock.Of<TokenCredential>()));
+                Mock.Of<TokenCredential>(),
+                "https://app-12.region.logic.azure.com/api/connectorGateways/ns"));
 
         Assert.Equal(
-            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email",
-            listener.Options.PollingEndpoint);
+            "on-new-email",
+            listener.Options.TriggerConfigName);
     }
 
     [Fact]
-    public void Factory_ThrowsWhenPollingEndpointResolvesToEmpty()
+    public void Factory_ThrowsWhenTriggerConfigNameResolvesToEmpty()
     {
         var nameResolver = new TestNameResolver(_ => string.Empty);
         var factory = new ConnectorPollingListenerFactory(
@@ -68,11 +69,12 @@ public class ConnectorPollingListenerTests
                     Mock.Of<ITriggeredFunctionExecutor>()),
                 new ConnectorPollingOptions(
                     "ConnectorNamespace",
-                    "%ConnectorPollingEndpoint%",
+                    "%OnNewEmailTriggerConfigName%",
                     1,
                     1),
                 new ConnectorConnectionOptions(
-                    Mock.Of<TokenCredential>())));
+                    Mock.Of<TokenCredential>(),
+                    "https://app-12.region.logic.azure.com/api/connectorGateways/ns")));
 
         Assert.Contains("resolved to an empty value", exception.Message);
     }
