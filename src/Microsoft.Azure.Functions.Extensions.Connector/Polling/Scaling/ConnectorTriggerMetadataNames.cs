@@ -6,7 +6,7 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 internal static class ConnectorTriggerMetadataNames
 {
     internal const string Connection = "connection";
-    internal const string Concurrency = "concurrency";
+    internal const string TargetPendingEventThreshold = "targetPendingEventThreshold";
     internal const string DeliveryMode = "deliveryMode";
     internal const string TriggerConfigName = "triggerConfigName";
 }

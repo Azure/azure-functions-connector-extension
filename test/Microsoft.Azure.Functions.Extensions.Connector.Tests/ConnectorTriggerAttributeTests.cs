@@ -16,7 +16,7 @@ public class ConnectorTriggerAttributeTests
         Assert.Null(attribute.Connection);
         Assert.Null(attribute.TriggerConfigName);
         Assert.Equal(0, attribute.MaxBatchSize);
-        Assert.Equal(0, attribute.Concurrency);
+        Assert.Equal(0, attribute.TargetPendingEventThreshold);
     }
 
     [Fact]
@@ -29,7 +29,7 @@ public class ConnectorTriggerAttributeTests
             Connection = "ConnectorNamespace",
             TriggerConfigName = "%OnNewEmailTriggerConfigName%",
             MaxBatchSize = 4,
-            Concurrency = 8,
+            TargetPendingEventThreshold = 8,
         };
 
         // Assert
@@ -39,6 +39,6 @@ public class ConnectorTriggerAttributeTests
             "%OnNewEmailTriggerConfigName%",
             attribute.TriggerConfigName);
         Assert.Equal(4, attribute.MaxBatchSize);
-        Assert.Equal(8, attribute.Concurrency);
+        Assert.Equal(8, attribute.TargetPendingEventThreshold);
     }
 }

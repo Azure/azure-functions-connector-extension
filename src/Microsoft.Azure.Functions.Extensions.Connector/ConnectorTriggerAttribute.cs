@@ -37,9 +37,9 @@ public sealed class ConnectorTriggerAttribute : Attribute
     public int MaxBatchSize { get; set; }
 
     /// <summary>
-    /// Gets or sets the maximum number of concurrent function invocations per worker instance.
+    /// Gets or sets the desired number of pending Connector events per worker instance for target-based scaling.
     /// The value must be non-negative. A value of zero uses
-    /// <see cref="ConnectorOptions.DefaultConcurrency"/>.
+    /// <see cref="ConnectorOptions.DefaultTargetPendingEventThreshold"/>.
     /// </summary>
-    public int Concurrency { get; set; }
+    public int TargetPendingEventThreshold { get; set; }
 }

@@ -9,18 +9,25 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 internal sealed class ConnectorTargetScaler : ITargetScaler
 {
     private readonly ConnectorMetricsProvider _metricsProvider;
-    private readonly int _effectiveConcurrency;
+    private readonly int _configuredTargetPendingEventThreshold;
     private readonly ILogger _logger;
 
-    public ConnectorTargetScaler(string functionName, ConnectorMetricsProvider metricsProvider, int attributeConcurrency, ConnectorOptions options, ILogger logger)
+    public ConnectorTargetScaler(string functionName, ConnectorMetricsProvider metricsProvider, int attributeTargetPendingEventThreshold, ConnectorOptions options, ILogger logger)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         _metricsProvider = metricsProvider ?? throw new ArgumentNullException(nameof(metricsProvider));
         options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _effectiveConcurrency = ConnectorPollingOptions.ResolveConcurrency(
-            attributeConcurrency,
-            options.DefaultConcurrency);
+        if (attributeTargetPendingEventThreshold < 0)
+        {
+            throw new InvalidOperationException("Connector trigger TargetPendingEventThreshold must be zero or greater.");
+        }
+
+        _configuredTargetPendingEventThreshold = attributeTargetPendingEventThreshold > 0 ? attributeTargetPendingEventThreshold : options.DefaultTargetPendingEventThreshold;
+        if (_configuredTargetPendingEventThreshold <= 0)
+        {
+            throw new InvalidOperationException("Connector DefaultTargetPendingEventThreshold must be greater than zero.");
+        }
 
         TargetScalerDescriptor = new TargetScalerDescriptor(functionName);
     }
@@ -30,12 +37,14 @@ internal sealed class ConnectorTargetScaler : ITargetScaler
     public async Task<TargetScalerResult> GetScaleResultAsync(TargetScalerContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
+        int effectiveTargetPendingEventThreshold = _configuredTargetPendingEventThreshold;
+
         ConnectorTriggerMetrics metrics = await _metricsProvider.GetMetricsAsync().ConfigureAwait(false);
         long targetWorkerCount =
-            (metrics.ApproximateQueueDepth / _effectiveConcurrency) +
-            (metrics.ApproximateQueueDepth % _effectiveConcurrency == 0 ? 0 : 1);
+            (metrics.ApproximateQueueDepth / effectiveTargetPendingEventThreshold) +
+            (metrics.ApproximateQueueDepth % effectiveTargetPendingEventThreshold == 0 ? 0 : 1);
         int target = (int)Math.Min(targetWorkerCount, int.MaxValue);
-        _logger.LogDebug("Connector target scale for function {FunctionName}: approximateDepth={Depth}, effectiveConcurrency={Concurrency}, targetWorkers={TargetWorkers}.", TargetScalerDescriptor.FunctionId, metrics.ApproximateQueueDepth, _effectiveConcurrency, target);
+        _logger.LogDebug("Connector target scale for function {FunctionName}: approximateDepth={Depth}, effectiveTargetPendingEventThreshold={TargetPendingEventThreshold}, targetWorkers={TargetWorkers}.", TargetScalerDescriptor.FunctionId, metrics.ApproximateQueueDepth, effectiveTargetPendingEventThreshold, target);
         return new TargetScalerResult { TargetWorkerCount = target };
     }
 }

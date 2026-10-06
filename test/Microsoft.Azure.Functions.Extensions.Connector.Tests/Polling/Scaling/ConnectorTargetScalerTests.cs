@@ -14,30 +14,56 @@ public class ConnectorTargetScalerTests
     [InlineData(16, 16, 1)]
     [InlineData(17, 16, 2)]
     [InlineData(50, 16, 4)]
-    public async Task GetScaleResultAsync_UsesCeilingDepthOverEffectiveConcurrency(int depth, int concurrency, int expected)
+    public async Task GetScaleResultAsync_UsesCeilingDepthOverTargetPendingEventThreshold(int depth, int targetPendingEventThreshold, int expected)
     {
-        ConnectorTargetScaler scaler = CreateScaler(new SequenceDepthClient(depth), concurrency, new ConnectorOptions { DefaultConcurrency = 99 });
+        ConnectorTargetScaler scaler = CreateScaler(new SequenceDepthClient(depth), targetPendingEventThreshold, new ConnectorOptions { DefaultTargetPendingEventThreshold = 99 });
 
-        TargetScalerResult result = await scaler.GetScaleResultAsync(new TargetScalerContext { InstanceConcurrency = 3 });
+        TargetScalerResult result = await scaler.GetScaleResultAsync(new TargetScalerContext());
 
         Assert.Equal(expected, result.TargetWorkerCount);
     }
 
     [Fact]
-    public async Task GetScaleResultAsync_UsesHostDefaultWhenAttributeConcurrencyIsZero()
+    public async Task GetScaleResultAsync_UsesDefaultTargetPendingEventThresholdWhenAttributeValueIsZero()
     {
-        ConnectorTargetScaler scaler = CreateScaler(new SequenceDepthClient(17), 0, new ConnectorOptions { DefaultConcurrency = 8 });
+        ConnectorTargetScaler scaler = CreateScaler(
+            new SequenceDepthClient(17),
+            0,
+            new ConnectorOptions { DefaultTargetPendingEventThreshold = 8 });
 
-        TargetScalerResult result = await scaler.GetScaleResultAsync(new TargetScalerContext { InstanceConcurrency = 2 });
+        TargetScalerResult result = await scaler.GetScaleResultAsync(
+            new TargetScalerContext());
 
         Assert.Equal(3, result.TargetWorkerCount);
     }
+    [Fact]
+    public void Constructor_Throws_WhenTargetPendingEventThresholdIsNegative()
+    {
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            CreateScaler(
+                new SequenceDepthClient(0),
+                -1,
+                new ConnectorOptions()));
 
+        Assert.Contains("TargetPendingEventThreshold", exception.Message);
+    }
+
+    [Fact]
+    public void Constructor_Throws_WhenDefaultTargetPendingEventThresholdIsNotPositive()
+    {
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            CreateScaler(
+                new SequenceDepthClient(0),
+                0,
+                new ConnectorOptions { DefaultTargetPendingEventThreshold = 0 }));
+
+        Assert.Contains("DefaultTargetPendingEventThreshold", exception.Message);
+    }
     [Fact]
     public async Task GetScaleResultAsync_MaxBatchSizeDoesNotAffectTarget()
     {
-        ConnectorTargetScaler smallBatch = CreateScaler(new SequenceDepthClient(65), 8, new ConnectorOptions { DefaultConcurrency = 8, DefaultMaxBatchSize = 1 });
-        ConnectorTargetScaler largeBatch = CreateScaler(new SequenceDepthClient(65), 8, new ConnectorOptions { DefaultConcurrency = 8, DefaultMaxBatchSize = 32 });
+        ConnectorTargetScaler smallBatch = CreateScaler(new SequenceDepthClient(65), 8, new ConnectorOptions { DefaultTargetPendingEventThreshold = 8, DefaultMaxBatchSize = 1 });
+        ConnectorTargetScaler largeBatch = CreateScaler(new SequenceDepthClient(65), 8, new ConnectorOptions { DefaultTargetPendingEventThreshold = 8, DefaultMaxBatchSize = 32 });
 
         TargetScalerResult first = await smallBatch.GetScaleResultAsync(new TargetScalerContext());
         TargetScalerResult second = await largeBatch.GetScaleResultAsync(new TargetScalerContext());
@@ -61,7 +87,7 @@ public class ConnectorTargetScalerTests
     }
 
     [Fact]
-    public async Task MetricsProvider_PreservesLastKnownGoodDepthOnTransientFailure()
+    public async Task MetricsProvider_ReturnsZeroAfterSuccessfulSampleWhenQueryFails()
     {
         var depthClient = new SequenceDepthClient(12, new HttpRequestException("transient"));
         var provider = new ConnectorMetricsProvider(
@@ -73,20 +99,22 @@ public class ConnectorTargetScalerTests
         ConnectorTriggerMetrics second = await provider.GetMetricsAsync();
 
         Assert.Equal(12, first.ApproximateQueueDepth);
-        Assert.Equal(12, second.ApproximateQueueDepth);
-        Assert.Same(first, second);
-        Assert.Equal(first.SampledAtUtc, second.SampledAtUtc);
+        Assert.Equal(0, second.ApproximateQueueDepth);
+        Assert.NotSame(first, second);
+        Assert.True(second.SampledAtUtc >= first.SampledAtUtc);
     }
 
     [Fact]
-    public async Task MetricsProvider_InitialFailureDoesNotReportSuccessfulZero()
+    public async Task MetricsProvider_InitialFailureReturnsZero()
     {
         var provider = new ConnectorMetricsProvider(
             new SequenceDepthClient(new HttpRequestException("initial")),
             "Function",
             NullLogger<ConnectorMetricsProvider>.Instance);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => provider.GetMetricsAsync());
+        ConnectorTriggerMetrics metrics = await provider.GetMetricsAsync();
+
+        Assert.Equal(0, metrics.ApproximateQueueDepth);
     }
 
     [Fact]
@@ -112,12 +140,12 @@ public class ConnectorTargetScalerTests
         Assert.Equal("Function", scaler.TargetScalerDescriptor.FunctionId);
     }
 
-    private static ConnectorTargetScaler CreateScaler(IConnectorQueueDepthClient depthClient, int attributeConcurrency, ConnectorOptions options)
+    private static ConnectorTargetScaler CreateScaler(IConnectorQueueDepthClient depthClient, int attributeTargetPendingEventThreshold, ConnectorOptions options)
     {
         var metrics = new ConnectorMetricsProvider(
             depthClient,
             "Function",
             NullLogger<ConnectorMetricsProvider>.Instance);
-        return new ConnectorTargetScaler("Function", metrics, attributeConcurrency, options, NullLogger<ConnectorTargetScaler>.Instance);
+        return new ConnectorTargetScaler("Function", metrics, attributeTargetPendingEventThreshold, options, NullLogger<ConnectorTargetScaler>.Instance);
     }
 }
