@@ -24,6 +24,38 @@ public class ConnectorTargetScalerTests
     }
 
     [Fact]
+    public async Task GetScaleResultAsync_InstanceConcurrencyTakesPrecedence()
+    {
+        ConnectorTargetScaler scaler = CreateScaler(
+            new SequenceDepthClient(17),
+            8,
+            new ConnectorOptions { DefaultTargetPendingEventThreshold = 16 });
+
+        TargetScalerResult result = await scaler.GetScaleResultAsync(
+            new TargetScalerContext { InstanceConcurrency = 4 });
+
+        Assert.Equal(5, result.TargetWorkerCount);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task GetScaleResultAsync_ThrowsWhenInstanceConcurrencyIsNotPositive(
+        int instanceConcurrency)
+    {
+        ConnectorTargetScaler scaler = CreateScaler(
+            new SequenceDepthClient(17),
+            8,
+            new ConnectorOptions());
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            scaler.GetScaleResultAsync(
+                new TargetScalerContext
+                {
+                    InstanceConcurrency = instanceConcurrency,
+                }));
+    }
+    [Fact]
     public async Task GetScaleResultAsync_UsesDefaultTargetPendingEventThresholdWhenAttributeValueIsZero()
     {
         ConnectorTargetScaler scaler = CreateScaler(
@@ -36,6 +68,7 @@ public class ConnectorTargetScalerTests
 
         Assert.Equal(3, result.TargetWorkerCount);
     }
+
     [Fact]
     public void Constructor_Throws_WhenTargetPendingEventThresholdIsNegative()
     {
@@ -59,6 +92,7 @@ public class ConnectorTargetScalerTests
 
         Assert.Contains("DefaultTargetPendingEventThreshold", exception.Message);
     }
+
     [Fact]
     public async Task GetScaleResultAsync_MaxBatchSizeDoesNotAffectTarget()
     {
