@@ -237,7 +237,6 @@ public class ConnectorTriggerBindingTests
             Connection = "ConnectorNamespace",
             TriggerConfigName = "OnNewEmail",
             MaxBatchSize = 4,
-            Concurrency = 8,
         };
         var binding = new ConnectorTriggerBinding(
             parameter,
@@ -260,7 +259,6 @@ public class ConnectorTriggerBindingTests
         Assert.Equal(attribute.Connection, pollingListener.Options.Connection);
         Assert.Equal(attribute.TriggerConfigName, pollingListener.Options.TriggerConfigName);
         Assert.Equal(attribute.MaxBatchSize, pollingListener.Options.MaxBatchSize);
-        Assert.Equal(attribute.Concurrency, pollingListener.Options.Concurrency);
         Assert.Equal(
             "https://runtime.test/api/connectorGateways/ns",
             pollingListener.ConnectionOptions.PollingEndpoint);
@@ -280,7 +278,6 @@ public class ConnectorTriggerBindingTests
         var options = new ConnectorOptions
         {
             DefaultMaxBatchSize = 2,
-            DefaultConcurrency = 6,
         };
         var binding = new ConnectorTriggerBinding(
             parameter,
@@ -299,7 +296,6 @@ public class ConnectorTriggerBindingTests
 
         var pollingListener = Assert.IsType<ConnectorPollingListener>(listener);
         Assert.Equal(2, pollingListener.Options.MaxBatchSize);
-        Assert.Equal(6, pollingListener.Options.Concurrency);
     }
 
     [Fact]

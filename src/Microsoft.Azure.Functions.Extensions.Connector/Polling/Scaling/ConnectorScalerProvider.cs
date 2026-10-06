@@ -32,9 +32,9 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
                 triggerMetadata,
                 ConnectorTriggerMetadataNames.TriggerConfigName),
             serviceProvider.GetService<INameResolver>());
-        int attributeConcurrency = GetNonNegativeIntMetadata(
+        int attributeTargetPendingEventThreshold = GetNonNegativeIntMetadata(
             triggerMetadata,
-            ConnectorTriggerMetadataNames.Concurrency);
+            ConnectorTriggerMetadataNames.TargetPendingEventThreshold);
 
         AzureComponentFactory? injectedComponentFactory = null;
         if (triggerMetadata.Properties?.TryGetValue(nameof(AzureComponentFactory), out object? value) == true)
@@ -68,7 +68,7 @@ internal sealed class ConnectorScalerProvider : ITargetScalerProvider
         _targetScaler = new ConnectorTargetScaler(
             functionName,
             metricsProvider,
-            attributeConcurrency,
+            attributeTargetPendingEventThreshold,
             options,
             loggerFactory.CreateLogger<ConnectorTargetScaler>());
     }

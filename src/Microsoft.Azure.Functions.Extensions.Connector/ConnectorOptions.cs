@@ -23,16 +23,16 @@ public sealed class ConnectorOptions : IOptionsFormatter
     public int DefaultMaxBatchSize { get; set; } = 1;
 
     /// <summary>
-    /// Gets or sets the default maximum number of concurrent function invocations per worker instance.
+    /// Gets or sets the default desired number of pending Connector events per worker instance for target-based scaling.
     /// The value must be greater than zero.
     /// </summary>
-    public int DefaultConcurrency { get; set; } = 16;
+    public int DefaultTargetPendingEventThreshold { get; set; } = 16;
 
     string IOptionsFormatter.Format() => JsonSerializer.Serialize(
         new
         {
             DefaultMaxBatchSize,
-            DefaultConcurrency,
+            DefaultTargetPendingEventThreshold,
         },
         SerializerOptions);
 }

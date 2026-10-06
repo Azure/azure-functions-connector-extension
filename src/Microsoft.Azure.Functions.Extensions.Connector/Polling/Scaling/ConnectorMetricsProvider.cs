@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using Microsoft.Azure.WebJobs.Host.Scale;
 using Microsoft.Extensions.Logging;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
@@ -10,7 +11,6 @@ internal sealed class ConnectorMetricsProvider
     private readonly IConnectorQueueDepthClient _depthClient;
     private readonly string _functionName;
     private readonly ILogger _logger;
-    private ConnectorTriggerMetrics? _lastKnownGoodMetrics;
 
     public ConnectorMetricsProvider(
         IConnectorQueueDepthClient depthClient,
@@ -28,9 +28,7 @@ internal sealed class ConnectorMetricsProvider
         try
         {
             long depth = await _depthClient.GetApproximateQueueDepthAsync(cancellationToken).ConfigureAwait(false);
-            var metrics = new ConnectorTriggerMetrics(depth, DateTime.UtcNow);
-            Interlocked.Exchange(ref _lastKnownGoodMetrics, metrics);
-            return metrics;
+            return new ConnectorTriggerMetrics(depth, DateTime.UtcNow);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
@@ -39,16 +37,11 @@ internal sealed class ConnectorMetricsProvider
         }
         catch (Exception exception)
         {
-            ConnectorTriggerMetrics? lastKnownGoodMetrics =
-                Volatile.Read(ref _lastKnownGoodMetrics);
-            if (lastKnownGoodMetrics is not null)
-            {
-                _logger.LogWarning(exception, "Failed to query Connector queue depth for function {FunctionName}; preserving last known good depth {Depth}.", _functionName, lastKnownGoodMetrics.ApproximateQueueDepth);
-                return lastKnownGoodMetrics;
-            }
-
-            _logger.LogError(exception, "Initial Connector queue depth query failed for function {FunctionName}; no successful zero-depth result is available.", _functionName);
-            throw new InvalidOperationException($"Initial Connector queue depth query failed for function '{_functionName}'.", exception);
+            _logger.LogFunctionScaleWarning(
+                "Failed to query Connector queue depth; returning zero depth.",
+                _functionName,
+                exception);
+            return new ConnectorTriggerMetrics(0, DateTime.UtcNow);
         }
     }
 }

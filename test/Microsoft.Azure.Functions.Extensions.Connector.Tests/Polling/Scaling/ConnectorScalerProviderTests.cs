@@ -194,7 +194,7 @@ public class ConnectorScalerProviderTests
         services.AddSingleton(NullLoggerFactory.Instance);
         services.AddSingleton(connectionProvider);
         services.AddSingleton(depthFactory);
-        services.AddSingleton(Options.Create(new ConnectorOptions { DefaultConcurrency = 16 }));
+        services.AddSingleton(Options.Create(new ConnectorOptions { DefaultTargetPendingEventThreshold = 16 }));
         if (nameResolver is not null)
         {
             services.AddSingleton(nameResolver);
@@ -206,7 +206,7 @@ public class ConnectorScalerProviderTests
     private static TriggerMetadata Metadata(
         string functionName,
         string triggerConfigName,
-        int concurrency,
+        int targetPendingEventThreshold,
         int maxBatchSize = 1)
     {
         var metadata = new JObject
@@ -216,7 +216,7 @@ public class ConnectorScalerProviderTests
             ["connection"] = "ConnectorNamespace",
             ["triggerConfigName"] = triggerConfigName,
             ["maxBatchSize"] = maxBatchSize,
-            ["concurrency"] = concurrency,
+            ["targetPendingEventThreshold"] = targetPendingEventThreshold,
         };
         return new TriggerMetadata(metadata);
     }

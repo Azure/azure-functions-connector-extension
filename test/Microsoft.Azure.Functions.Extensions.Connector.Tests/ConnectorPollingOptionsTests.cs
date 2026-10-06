@@ -13,7 +13,6 @@ public class ConnectorPollingOptionsTests
             Connection = "ConnectorNamespace",
             TriggerConfigName = "OnNewEmail",
             MaxBatchSize = 4,
-            Concurrency = 8,
         };
 
         var result = ConnectorPollingOptions.Create(attribute, new ConnectorOptions());
@@ -21,7 +20,6 @@ public class ConnectorPollingOptionsTests
         Assert.Equal("ConnectorNamespace", result.Connection);
         Assert.Equal("OnNewEmail", result.TriggerConfigName);
         Assert.Equal(4, result.MaxBatchSize);
-        Assert.Equal(8, result.Concurrency);
     }
 
     [Fact]
@@ -30,13 +28,11 @@ public class ConnectorPollingOptionsTests
         var defaults = new ConnectorOptions
         {
             DefaultMaxBatchSize = 3,
-            DefaultConcurrency = 7,
         };
 
         var result = ConnectorPollingOptions.Create(CreateValidAttribute(), defaults);
 
         Assert.Equal(3, result.MaxBatchSize);
-        Assert.Equal(7, result.Concurrency);
     }
 
     [Theory]
@@ -64,29 +60,6 @@ public class ConnectorPollingOptionsTests
             ConnectorPollingOptions.Create(CreateValidAttribute(), defaults));
 
         Assert.Contains("DefaultMaxBatchSize", exception.Message);
-    }
-
-    [Fact]
-    public void Create_Throws_WhenAttributeConcurrencyIsNegative()
-    {
-        ConnectorTriggerAttribute attribute = CreateValidAttribute();
-        attribute.Concurrency = -1;
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            ConnectorPollingOptions.Create(attribute, new ConnectorOptions()));
-
-        Assert.Contains("Concurrency", exception.Message);
-    }
-
-    [Fact]
-    public void Create_Throws_WhenDefaultConcurrencyIsNotPositive()
-    {
-        var defaults = new ConnectorOptions { DefaultConcurrency = 0 };
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            ConnectorPollingOptions.Create(CreateValidAttribute(), defaults));
-
-        Assert.Contains("DefaultConcurrency", exception.Message);
     }
 
     [Fact]
