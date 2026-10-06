@@ -308,14 +308,17 @@ Requirements:
 - Reuse the immutable configured endpoints and queue-depth client.
 - Obtain metrics only through the current server-provided `approximateQueueDepthUri`.
 - Scale from approximate queue depth without treating it as an exact count or a prerequisite for Receive.
-- Calculate target workers from the configured target pending-event threshold:
+- Follow Event Hubs and Service Bus target-scaler precedence:
 
   ```text
-  ceil(pendingEvents / effectiveTargetPendingEventThreshold)
+  effectiveTarget =
+      TargetScalerContext.InstanceConcurrency
+      ?? trigger TargetPendingEventThreshold
+      ?? DefaultTargetPendingEventThreshold
   ```
 
-- Resolve `effectiveTargetPendingEventThreshold` from the trigger's nonzero `TargetPendingEventThreshold`, otherwise `DefaultTargetPendingEventThreshold`.
-- Keep `TargetScalerContext.InstanceConcurrency`, `MaxConcurrentCalls`, and `MaxBatchSize` out of the scaling calculation.
+- Calculate `ceil(pendingEvents / effectiveTarget)` and require the effective target to be greater than zero.
+- Keep `MaxConcurrentCalls` and `MaxBatchSize` out of the scaling calculation.
 - Document that aggregate queue depth cannot distinguish inline from linked events. Revisit the calculation if the service exposes payload-class or byte backlog metrics.
 - Return zero depth when a queue-depth query fails so the target can scale down to zero.
 - Validate scale from zero.

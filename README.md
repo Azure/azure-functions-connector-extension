@@ -199,7 +199,7 @@ During shutdown, the listener stops receiving and follows the Functions host's d
 
 ### Poll target scaling
 
-Poll target scaling uses the Connector Namespace approximate queue depth and `TargetPendingEventThreshold` to calculate the desired instance count. Configure the Connector connection and Trigger Config separately:
+Poll target scaling uses Connector Namespace approximate queue depth and runtime instance concurrency when supplied by Functions. Otherwise it falls back to `TargetPendingEventThreshold`. Configure the Connector connection and Trigger Config separately:
 
 ```csharp
 [ConnectorTrigger(
@@ -222,7 +222,7 @@ OnNewEmailTriggerConfigName=<poll-trigger-config-name>
 
 Customer setup or provisioning tooling derives `pollingEndpoint` from the Trigger Config's service-generated `pollingEndpoints.receiveUri` and writes it to the Function App settings. The extension does not discover the endpoint through ARM. If Connector Namespace returns a different runtime endpoint, the Function App setting must be updated.
 
-`TargetPendingEventThreshold` is the desired number of pending events per worker instance used only for target-based scaling. The target scaler calculates `ceil(approximateQueueDepth / TargetPendingEventThreshold)`. `MaxConcurrentCalls` separately controls active invocation-processing tasks on each worker.
+`TargetPendingEventThreshold` is the configured pending-event target per worker instance. Target-scaler precedence is `TargetScalerContext.InstanceConcurrency`, then `TargetPendingEventThreshold`, then `DefaultTargetPendingEventThreshold`. The selected value is used in `ceil(approximateQueueDepth / effectiveTarget)`. `MaxConcurrentCalls` separately controls active invocation-processing tasks on each worker.
 
 `MaxBatchSize` controls how many events may be delivered in one function invocation. It does not participate in target scaling.
 ## Documentation

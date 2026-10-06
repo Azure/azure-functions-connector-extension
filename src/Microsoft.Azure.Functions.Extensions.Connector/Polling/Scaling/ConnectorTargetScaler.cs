@@ -37,14 +37,22 @@ internal sealed class ConnectorTargetScaler : ITargetScaler
     public async Task<TargetScalerResult> GetScaleResultAsync(TargetScalerContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        int effectiveTargetPendingEventThreshold = _configuredTargetPendingEventThreshold;
+        int effectiveTarget =
+            context.InstanceConcurrency ??
+            _configuredTargetPendingEventThreshold;
+        if (effectiveTarget < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(context),
+                $"Unexpected effective target='{effectiveTarget}'. The value must be greater than zero.");
+        }
 
         ConnectorTriggerMetrics metrics = await _metricsProvider.GetMetricsAsync().ConfigureAwait(false);
         long targetWorkerCount =
-            (metrics.ApproximateQueueDepth / effectiveTargetPendingEventThreshold) +
-            (metrics.ApproximateQueueDepth % effectiveTargetPendingEventThreshold == 0 ? 0 : 1);
+            (metrics.ApproximateQueueDepth / effectiveTarget) +
+            (metrics.ApproximateQueueDepth % effectiveTarget == 0 ? 0 : 1);
         int target = (int)Math.Min(targetWorkerCount, int.MaxValue);
-        _logger.LogDebug("Connector target scale for function {FunctionName}: approximateDepth={Depth}, effectiveTargetPendingEventThreshold={TargetPendingEventThreshold}, targetWorkers={TargetWorkers}.", TargetScalerDescriptor.FunctionId, metrics.ApproximateQueueDepth, effectiveTargetPendingEventThreshold, target);
+        _logger.LogDebug("Connector target scale for function {FunctionName}: approximateDepth={Depth}, effectiveTarget={EffectiveTarget}, targetWorkers={TargetWorkers}.", TargetScalerDescriptor.FunctionId, metrics.ApproximateQueueDepth, effectiveTarget, target);
         return new TargetScalerResult { TargetWorkerCount = target };
     }
 }

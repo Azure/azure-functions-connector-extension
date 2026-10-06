@@ -736,14 +736,22 @@ Implement a scale monitor or target scaler using approximate queue depth:
 
 Scaling should use a separate service from the listener and poll client.
 
-Target scaling uses the configured target pending-event threshold:
+Target scaling follows the runtime-concurrency precedence used by Event Hubs and Service Bus:
 
 ```text
+effectiveTarget =
+    TargetScalerContext.InstanceConcurrency
+    ?? configured TargetPendingEventThreshold
+
+configured TargetPendingEventThreshold =
+    trigger TargetPendingEventThreshold when nonzero
+    otherwise DefaultTargetPendingEventThreshold
+
 targetWorkerCount =
-    ceil(approximateQueueDepth / effectiveTargetPendingEventThreshold)
+    ceil(approximateQueueDepth / effectiveTarget)
 ```
 
-`effectiveTargetPendingEventThreshold` is the trigger's nonzero `TargetPendingEventThreshold`, or `DefaultTargetPendingEventThreshold` when the trigger value is zero. It is independent of `MaxBatchSize`, `MaxConcurrentCalls`, and `TargetScalerContext.InstanceConcurrency`.
+The effective target must be greater than zero. `MaxBatchSize` and `MaxConcurrentCalls` do not participate in the scaling calculation.
 
 Historical PR #26 is useful only as a reference for the Functions scale-controller integration. Reusable extension-side patterns include:
 
@@ -878,7 +886,7 @@ Record without payload or token content:
 
 - Zero/non-zero depth decisions.
 - Approximate values and transient failures.
-- Target pending-event threshold calculations and independence from `MaxBatchSize` and `MaxConcurrentCalls`.
+- Runtime `InstanceConcurrency` precedence, configured-threshold fallback, and independence from `MaxBatchSize` and `MaxConcurrentCalls`.
 - Endpoint/auth failure behavior.
 
 ### End-to-end test
