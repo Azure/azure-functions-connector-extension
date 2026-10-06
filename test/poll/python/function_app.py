@@ -16,7 +16,8 @@ app = func.FunctionApp()
     triggerConfigName="%OnNewEmailTriggerConfigName%",
     cardinality=func.Cardinality.ONE,
     maxBatchSize=1,
-    concurrency=1,
+    maxConcurrentCalls=1,
+    targetPendingEventThreshold=16,
 )
 def on_new_email_poll(payload) -> None:
     """Log a Connector Namespace Poll event."""

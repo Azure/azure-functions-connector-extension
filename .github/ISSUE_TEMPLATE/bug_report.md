@@ -42,7 +42,7 @@ What actually happened instead.
 - **Function binding**: [paste the redacted attribute, decorator, or generic binding metadata]
 - **Trigger Config state**: [Enabled or Disabled]
 - **Invocation cardinality**: [one or many]
-- **MaxBatchSize / Concurrency** (Poll only): [effective values]
+- **MaxBatchSize / MaxConcurrentCalls / TargetPendingEventThreshold** (Poll only): [effective values]
 - **Credential mode** (Poll only): [developer credential, system-assigned managed identity, or user-assigned managed identity]
 - **Is `<Connection>__pollingEndpoint` configured?** (Poll only): [yes or no; do not paste its value]
 - **Is `TriggerConfigName` configured and resolving successfully?** (Poll only): [yes or no; do not paste sensitive identifiers]

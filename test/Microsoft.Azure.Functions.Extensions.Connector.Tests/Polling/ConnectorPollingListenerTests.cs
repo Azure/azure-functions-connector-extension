@@ -563,7 +563,7 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             maxBatchSize: 2,
-            concurrency: 1,
+            maxConcurrentCalls: 1,
             isBatched: true,
             delayAsync: (_, cancellationToken) =>
             {
@@ -604,7 +604,7 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             maxBatchSize: ConnectorPollingProtocolLimits.MaximumBatchSize,
-            concurrency: int.MaxValue,
+            maxConcurrentCalls: int.MaxValue,
             isBatched: true,
             delayAsync: (_, cancellationToken) =>
             {
@@ -772,7 +772,7 @@ public class ConnectorPollingListenerTests
     }
 
     [Fact]
-    public async Task Listener_GroupsMessagesIntoConcurrentBatchedInvocations()
+    public async Task Listener_UsesMaxConcurrentCallsForBatchedInvocations()
     {
         ConnectorPollMessage[] messages =
         [
@@ -781,6 +781,7 @@ public class ConnectorPollingListenerTests
             CreateInlineMessage("message-3", "lock-3", """{"value":3}"""),
         ];
         int receiveMaxEvents = 0;
+        int receiveCount = 0;
         var acknowledgementsCompleted = NewCompletionSource();
         var acknowledgedMessageIds = new List<string>();
         var acknowledgementSizes = new List<int>();
@@ -789,6 +790,7 @@ public class ConnectorPollingListenerTests
         {
             ReceiveAsyncHandler = (_, maxEvents, _) =>
             {
+                Interlocked.Increment(ref receiveCount);
                 receiveMaxEvents = maxEvents;
                 return Task.FromResult(
                     new ConnectorReceiveResult(messages, false));
@@ -853,12 +855,13 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             maxBatchSize: 2,
-            concurrency: 2,
+            maxConcurrentCalls: 2,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
         await bothInvocationsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(2, maximumActiveInvocations);
+        Assert.Equal(1, Volatile.Read(ref receiveCount));
 
         releaseInvocations.TrySetResult();
         await acknowledgementsCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -928,7 +931,7 @@ public class ConnectorPollingListenerTests
             Endpoints,
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
-            concurrency: 2);
+            maxConcurrentCalls: 2);
 
         await listener.StartAsync(CancellationToken.None);
         await bothInvocationsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -979,6 +982,7 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             maxBatchSize: 2,
+            maxConcurrentCalls: 2,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
@@ -1124,7 +1128,7 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 1,
-            concurrency: 2,
+            maxConcurrentCalls: 2,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
@@ -1262,6 +1266,7 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 2,
+            maxConcurrentCalls: 2,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
@@ -1343,6 +1348,7 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 4,
+            maxConcurrentCalls: 4,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
@@ -1518,6 +1524,7 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 2,
+            maxConcurrentCalls: 2,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
@@ -1535,7 +1542,7 @@ public class ConnectorPollingListenerTests
         IConnectorPollDeliveryClient deliveryClient,
         IConnectorLinkedOutputClient linkedOutputClient,
         int maxBatchSize = 1,
-        int concurrency = 1,
+        int maxConcurrentCalls = 1,
         bool isBatched = false,
         TimeSpan? maxPollingInterval = null,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
@@ -1547,7 +1554,7 @@ public class ConnectorPollingListenerTests
             "ConnectorNamespace",
             "OnNewEmail",
             maxBatchSize,
-            concurrency,
+            maxConcurrentCalls,
             isBatched)
         {
             MaxPollingInterval =

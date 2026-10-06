@@ -72,7 +72,7 @@ https://<function-app-domain>/runtime/webhooks/connector?functionName=<function-
 
 - **Connector trigger binding** - receive callbacks from Connector Namespace managed connectors
 - **Poll delivery** - receive and acknowledge leased events with target-based scaling
-- **Batching and concurrency** - configure invocation shape and per-instance processing capacity
+- **Batching, concurrent calls, and scaling targets** - configure invocation shape, per-instance parallelism, and target-based scaling independently
 - **Poll message metadata** - bind the stable delivery `MessageId` with `ConnectorEvent<T>`
 - **POCO binding** - bind directly to SDK types like `Office365OnNewEmailTriggerPayload`
 - **String/JSON binding** - bind to raw JSON string
@@ -146,7 +146,8 @@ Poll functions configure a credential connection separately from their Trigger C
     TriggerConfigName = "%OnNewEmailTriggerConfigName%",
     IsBatched = true,
     MaxBatchSize = 4,
-    Concurrency = 4)]
+    MaxConcurrentCalls = 4,
+    TargetPendingEventThreshold = 16)]
 ```
 
 `Connection` provides the gateway-level Poll endpoint and runtime token credential:
@@ -175,6 +176,8 @@ The extension defensively implements `outputsLink` delivery, but Connector Names
 
 An omitted or zero `MaxBatchSize` uses `extensions.connector.defaultMaxBatchSize` from `host.json`; the built-in default is `1`. The resolved value supplied to the listener is always between `1` and `32`.
 
+An omitted or zero `MaxConcurrentCalls` uses `extensions.connector.defaultMaxConcurrentCalls`; the built-in default is `16`. Receive capacity is capped at 32 events and otherwise equals the available invocation slots multiplied by `MaxBatchSize`.
+
 When Receive returns no messages, the listener uses randomized exponential backoff starting at one second and resetting whenever messages are received. The delay is capped at 30 seconds by default. Configure the cap in `host.json`:
 
 ```json
@@ -196,14 +199,15 @@ During shutdown, the listener stops receiving and follows the Functions host's d
 
 ### Poll target scaling
 
-Poll target scaling uses the Connector Namespace approximate queue depth and the trigger targetPendingEventThreshold to calculate the desired instance count. Configure the Connector connection and Trigger Config separately:
+Poll target scaling uses the Connector Namespace approximate queue depth and `TargetPendingEventThreshold` to calculate the desired instance count. Configure the Connector connection and Trigger Config separately:
 
 ```csharp
 [ConnectorTrigger(
     DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
     Connection = "ConnectorNamespace",
     TriggerConfigName = "%OnNewEmailTriggerConfigName%",
-    TargetPendingEventThreshold = 4)]
+    MaxConcurrentCalls = 4,
+    TargetPendingEventThreshold = 16)]
 ```
 
 The named connection supplies the service-generated, gateway-level Poll endpoint and the Connector runtime credential:
@@ -218,7 +222,7 @@ OnNewEmailTriggerConfigName=<poll-trigger-config-name>
 
 Customer setup or provisioning tooling derives `pollingEndpoint` from the Trigger Config's service-generated `pollingEndpoints.receiveUri` and writes it to the Function App settings. The extension does not discover the endpoint through ARM. If Connector Namespace returns a different runtime endpoint, the Function App setting must be updated.
 
-`TargetPendingEventThreshold` is the maximum number of events that can be pending per function-app instance. The target scaler calculates the desired instance count as `ceil(approximateQueueDepth / TargetPendingEventThreshold)`.
+`TargetPendingEventThreshold` is the desired number of pending events per worker instance used only for target-based scaling. The target scaler calculates `ceil(approximateQueueDepth / TargetPendingEventThreshold)`. `MaxConcurrentCalls` separately controls active invocation-processing tasks on each worker.
 
 `MaxBatchSize` controls how many events may be delivered in one function invocation. It does not participate in target scaling.
 ## Documentation

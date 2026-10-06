@@ -52,25 +52,29 @@ Replace the earlier public `MaxEvents` seam with independent batching and per-in
     TriggerConfigName = "%OnNewEmailTriggerConfigName%",
     IsBatched = true,
     MaxBatchSize = 4,
-    Concurrency = 8)]
+    MaxConcurrentCalls = 8,
+    TargetPendingEventThreshold = 16)]
 ```
 
 Changes:
 
-- Add `MaxBatchSize` and `Concurrency` to both host and isolated-worker attributes.
+- Add `MaxBatchSize`, `MaxConcurrentCalls`, and `TargetPendingEventThreshold` to both host and isolated-worker attributes.
 - Remove public `MaxEvents`.
 - Add host-level `ConnectorOptions`:
 
   ```csharp
   public int DefaultMaxBatchSize { get; set; } = 1;
-  public int DefaultConcurrency { get; set; } = 16;
+  public int DefaultMaxConcurrentCalls { get; set; } = 16;
+  public int DefaultTargetPendingEventThreshold { get; set; } = 16;
   ```
 
-- Treat `0` on either attribute property as use-host-default.
+- Treat `0` on each attribute property as use-host-default.
 - Accept `MaxBatchSize` as `0` for the host default or from `1` through `32`, and require the effective value to be from `1` through `32`.
-- Accept non-negative `Concurrency` and require the effective value to be greater than zero.
-- Define `Concurrency` as the maximum concurrent function invocations per worker instance.
-- Keep `MaxBatchSize` independent of scaling and use it with remaining invocation capacity to calculate Connector Namespace `maxEvents`.
+- Accept non-negative `MaxConcurrentCalls` and `TargetPendingEventThreshold` values and require each effective value to be greater than zero.
+- Define `MaxConcurrentCalls` as the maximum number of active invocation-processing tasks per worker instance.
+- Define `TargetPendingEventThreshold` as the desired pending events per worker instance used only for target-based scaling.
+- Determine Receive capacity from invocation slots: `min(32, availableInvocationSlots * effectiveMaxBatchSize)`.
+- Keep `MaxBatchSize` independent of scaling; use it for invocation batching and to convert available invocation slots into Receive event capacity.
 - Preserve `Webhook` as the default.
 - Keep `Connection` literal; do not apply `%...%` name resolution to it.
 - Resolve `TriggerConfigName` through Functions `%...%` app-setting resolution.
@@ -228,7 +232,7 @@ Requirements:
 - Array `T[]` and `ConnectorEvent<T>[]` bindings accept an effective `MaxBatchSize` of `1` or greater; a final invocation batch may contain fewer items.
 - Apply shape validation after resolving `DefaultMaxBatchSize`, so a scalar parameter with `MaxBatchSize = 0` fails when the host default is greater than `1`.
 - Fail incompatible bindings during indexing or listener startup rather than ignoring `MaxBatchSize`, dropping events, or changing the parameter shape.
-- Keep `Concurrency` independent of parameter shape.
+- Keep `MaxConcurrentCalls` and `TargetPendingEventThreshold` independent of parameter shape.
 - Support closed generic payload types; reject unresolved open generic functions.
 - Preserve each Poll `MessageId` with its corresponding payload.
 - Use `null` for Webhook `MessageId` unless the service defines an equivalent stable Webhook identifier.
@@ -249,8 +253,8 @@ Invocation batching is implemented in the lifecycle-safe, capacity-aware message
 The listener now:
 
 - Honors explicit one/many cardinality independently from `MaxBatchSize`.
-- Uses the configured endpoints and receives no more than the remaining invocation capacity multiplied by `MaxBatchSize`, capped at 32.
-- Partitions Receive results into capacity-accounted processing chunks.
+- Uses the configured endpoints and receives no more than `availableInvocationSlots * MaxBatchSize`, capped at 32.
+- Partitions Receive results into chunks of at most `MaxBatchSize`, with one active processing task per occupied invocation slot.
 - Preserves normal batching for inline outputs and invokes each linked output individually behind a singleton host-wide limiter.
 - Acknowledges all prepared messages only after a successful invocation.
 - Passes metadata-rich scalar and collection values through the worker binding.
@@ -259,19 +263,18 @@ Capacity calculation:
 
 ```csharp
 int availableInvocationSlots =
-    effectiveConcurrency - activeInvocationCount;
-int availableMessageCapacity =
-    availableInvocationSlots * effectiveMaxBatchSize;
-int maxEvents = Math.Min(32, availableMessageCapacity);
+    effectiveMaxConcurrentCalls - activeInvocations.Count;
+int maxEvents = Math.Min(
+    32,
+    availableInvocationSlots * effectiveMaxBatchSize);
 ```
 
 Requirements:
 
 - Receive only when `maxEvents > 0`.
-- Do not prefetch beyond remaining invocation capacity.
-- Count an event as pending from Receive until acknowledgement completes or a failed attempt finishes without acknowledgement, including hydration and function execution.
+- Do not create more active processing tasks than effective `MaxConcurrentCalls`.
 - Partition each Receive result into invocation batches containing at most `MaxBatchSize` events.
-- Allow no more than `Concurrency` active function invocations per worker instance.
+- Allow no more than `MaxConcurrentCalls` active invocation-processing tasks per worker instance.
 - Group inline messages normally, but place every linked-output message in a single-event invocation.
 - Use one singleton host-wide linked-output invocation slot and hold it from before download through function execution and acknowledgement.
 - Keep the slot process-local so each scaled-out Functions host can process one linked-output invocation; do not add distributed serialization.
@@ -305,15 +308,16 @@ Requirements:
 - Reuse the immutable configured endpoints and queue-depth client.
 - Obtain metrics only through the current server-provided `approximateQueueDepthUri`.
 - Scale from approximate queue depth without treating it as an exact count or a prerequisite for Receive.
-- Calculate target workers from effective invocation concurrency. `MaxBatchSize` is listener invocation grouping and must not affect the target:
+- Calculate target workers from the configured target pending-event threshold:
 
   ```text
-  ceil(pendingEvents / effectiveConcurrency)
+  ceil(pendingEvents / effectiveTargetPendingEventThreshold)
   ```
 
-- Keep `MaxBatchSize` and Connector Namespace `maxEvents` independent of the scaling calculation.
-- Document that aggregate queue depth cannot distinguish inline from linked events. Effective-concurrency scaling can underestimate linked-heavy worker demand, while universally targeting one would over-scale inline traffic. Revisit the calculation if the service exposes payload-class or byte backlog metrics.
-- Return conservative decisions when queue depth is unavailable.
+- Resolve `effectiveTargetPendingEventThreshold` from the trigger's nonzero `TargetPendingEventThreshold`, otherwise `DefaultTargetPendingEventThreshold`.
+- Keep `TargetScalerContext.InstanceConcurrency`, `MaxConcurrentCalls`, and `MaxBatchSize` out of the scaling calculation.
+- Document that aggregate queue depth cannot distinguish inline from linked events. Revisit the calculation if the service exposes payload-class or byte backlog metrics.
+- Return zero depth when a queue-depth query fails so the target can scale down to zero.
 - Validate scale from zero.
 - Add integration tests, samples, and final user documentation.
 
@@ -335,7 +339,7 @@ Final smoke test:
 2. Start a Function App using the local extension build.
 3. Generate new connector events.
 4. Verify typed payload-only and metadata-rich invocation.
-5. Verify batching, concurrency, and success-only acknowledgement.
+5. Verify batching, concurrent-call limits, and success-only acknowledgement.
 6. Verify linked output when the service test path is available. Until then, rely on synthetic unit tests because Connector Namespace does not emit linked-output messages in the available environment.
 7. Confirm acknowledged events do not reappear and failed events are redelivered.
 8. Confirm queue depth returns to zero.
@@ -349,7 +353,7 @@ The 100 MiB value remains a defensive protocol ceiling, not a validated customer
 
 - Run service-backed .NET, Node.js, and Python tests with representative sizes through 100 MiB and establish the supported payload limit from measured peak memory and execution behavior.
 - Measure deferred worker transport amplification and remove avoidable full-payload copies where possible.
-- Measure the singleton limiter with multiple Poll functions and determine whether the `functions × concurrency` waiter bound requires a bounded global queue, non-waiting admission, or a byte-budget limiter.
+- Measure the singleton limiter with multiple Poll functions and determine whether the `functions × MaxConcurrentCalls` waiter bound requires a bounded global queue, non-waiting admission, or a byte-budget limiter.
 - Verify mixed workloads do not allow linked waiters to starve inline processing.
 - Obtain service-owned lock-expiration metadata before adding any expiration-based admission decision; never hardcode or expose a user-configured lock duration.
 - Validate linked-heavy scaling and request linked-count or byte-backlog signals if aggregate approximate depth under-scales the workload.

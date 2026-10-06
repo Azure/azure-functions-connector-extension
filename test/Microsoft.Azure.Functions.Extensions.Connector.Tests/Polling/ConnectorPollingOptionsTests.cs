@@ -13,6 +13,7 @@ public class ConnectorPollingOptionsTests
             Connection = "ConnectorNamespace",
             TriggerConfigName = "%OnNewEmailTriggerConfigName%",
             MaxBatchSize = 4,
+            MaxConcurrentCalls = 8,
         };
 
         var result = ConnectorPollingOptions.Create(
@@ -25,6 +26,7 @@ public class ConnectorPollingOptionsTests
             "%OnNewEmailTriggerConfigName%",
             result.TriggerConfigName);
         Assert.Equal(4, result.MaxBatchSize);
+        Assert.Equal(8, result.MaxConcurrentCalls);
         Assert.Equal(TimeSpan.FromSeconds(30), result.MaxPollingInterval);
         Assert.True(result.IsBatched);
     }
@@ -35,6 +37,7 @@ public class ConnectorPollingOptionsTests
         var defaults = new ConnectorOptions
         {
             DefaultMaxBatchSize = 3,
+            DefaultMaxConcurrentCalls = 7,
             MaxPollingInterval = TimeSpan.FromSeconds(45),
         };
 
@@ -44,6 +47,7 @@ public class ConnectorPollingOptionsTests
             isBatched: true);
 
         Assert.Equal(3, result.MaxBatchSize);
+        Assert.Equal(7, result.MaxConcurrentCalls);
         Assert.Equal(TimeSpan.FromSeconds(45), result.MaxPollingInterval);
         Assert.True(result.IsBatched);
     }
@@ -91,6 +95,28 @@ public class ConnectorPollingOptionsTests
         Assert.Contains("DefaultMaxBatchSize", exception.Message);
     }
 
+    [Fact]
+    public void Create_Throws_WhenAttributeMaxConcurrentCallsIsNegative()
+    {
+        ConnectorTriggerAttribute attribute = CreateValidAttribute();
+        attribute.MaxConcurrentCalls = -1;
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ConnectorPollingOptions.Create(attribute, new ConnectorOptions()));
+
+        Assert.Contains("MaxConcurrentCalls", exception.Message);
+    }
+
+    [Fact]
+    public void Create_Throws_WhenDefaultMaxConcurrentCallsIsNotPositive()
+    {
+        var defaults = new ConnectorOptions { DefaultMaxConcurrentCalls = 0 };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ConnectorPollingOptions.Create(CreateValidAttribute(), defaults));
+
+        Assert.Contains("DefaultMaxConcurrentCalls", exception.Message);
+    }
 
     [Theory]
     [InlineData(-1)]

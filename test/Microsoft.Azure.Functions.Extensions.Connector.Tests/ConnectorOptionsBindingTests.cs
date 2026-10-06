@@ -22,6 +22,7 @@ public class ConnectorOptionsBindingTests
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
         Assert.Equal(1, options.DefaultMaxBatchSize);
+        Assert.Equal(16, options.DefaultMaxConcurrentCalls);
         Assert.Equal(16, options.DefaultTargetPendingEventThreshold);
         Assert.Equal(TimeSpan.FromSeconds(30), options.MaxPollingInterval);
     }
@@ -32,7 +33,8 @@ public class ConnectorOptionsBindingTests
         var settings = new Dictionary<string, string?>
         {
             ["AzureWebJobs:extensions:connector:defaultMaxBatchSize"] = "4",
-            ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "8",
+            ["AzureWebJobs:extensions:connector:defaultMaxConcurrentCalls"] = "8",
+            ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "12",
             ["AzureWebJobs:extensions:connector:maxPollingInterval"] = "00:00:45",
         };
 
@@ -42,7 +44,8 @@ public class ConnectorOptionsBindingTests
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
         Assert.Equal(4, options.DefaultMaxBatchSize);
-        Assert.Equal(8, options.DefaultTargetPendingEventThreshold);
+        Assert.Equal(8, options.DefaultMaxConcurrentCalls);
+        Assert.Equal(12, options.DefaultTargetPendingEventThreshold);
         Assert.Equal(TimeSpan.FromSeconds(45), options.MaxPollingInterval);
     }
 
@@ -52,7 +55,8 @@ public class ConnectorOptionsBindingTests
         var settings = new Dictionary<string, string?>
         {
             ["AzureWebJobs:extensions:connector:defaultMaxBatchSize"] = "4",
-            ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "8",
+            ["AzureWebJobs:extensions:connector:defaultMaxConcurrentCalls"] = "8",
+            ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "12",
             ["AzureWebJobs:extensions:connector:maxPollingInterval"] = "00:00:45",
         };
 
@@ -61,7 +65,8 @@ public class ConnectorOptionsBindingTests
             options =>
             {
                 options.DefaultMaxBatchSize = 2;
-                options.DefaultTargetPendingEventThreshold = 6;
+                options.DefaultMaxConcurrentCalls = 6;
+                options.DefaultTargetPendingEventThreshold = 10;
                 options.MaxPollingInterval = TimeSpan.FromSeconds(20);
             });
 
@@ -69,7 +74,8 @@ public class ConnectorOptionsBindingTests
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
         Assert.Equal(2, options.DefaultMaxBatchSize);
-        Assert.Equal(6, options.DefaultTargetPendingEventThreshold);
+        Assert.Equal(6, options.DefaultMaxConcurrentCalls);
+        Assert.Equal(10, options.DefaultTargetPendingEventThreshold);
         Assert.Equal(TimeSpan.FromSeconds(20), options.MaxPollingInterval);
     }
 
@@ -79,14 +85,16 @@ public class ConnectorOptionsBindingTests
         var options = new ConnectorOptions
         {
             DefaultMaxBatchSize = 4,
-            DefaultTargetPendingEventThreshold = 8,
+            DefaultMaxConcurrentCalls = 8,
+            DefaultTargetPendingEventThreshold = 12,
             MaxPollingInterval = TimeSpan.FromSeconds(30),
         };
 
         string formatted = ((IOptionsFormatter)options).Format();
 
         Assert.Contains("\"DefaultMaxBatchSize\": 4", formatted);
-        Assert.Contains("\"DefaultTargetPendingEventThreshold\": 8", formatted);
+        Assert.Contains("\"DefaultMaxConcurrentCalls\": 8", formatted);
+        Assert.Contains("\"DefaultTargetPendingEventThreshold\": 12", formatted);
         Assert.Contains("\"MaxPollingInterval\": \"00:00:30\"", formatted);
     }
 

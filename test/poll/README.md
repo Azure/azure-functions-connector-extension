@@ -14,7 +14,7 @@ Connection = ConnectorNamespace
 TriggerConfigName = %OnNewEmailTriggerConfigName%
 ```
 
-.NET isolated and Node.js enable batched invocation with `MaxBatchSize = 4` and `Concurrency = 4`. .NET isolated uses `IsBatched = true`; Node.js uses `cardinality: 'many'`. Python uses `cardinality=func.Cardinality.ONE`, `maxBatchSize=1`, and `concurrency=1` because the Python worker's generic binding decoder does not accept batched `collection_string` input.
+.NET isolated and Node.js enable batched invocation with `MaxBatchSize = 4` and `MaxConcurrentCalls = 4`; scaling uses `TargetPendingEventThreshold = 16`. .NET isolated uses `IsBatched = true`; Node.js uses `cardinality: 'many'`. Python uses `cardinality=func.Cardinality.ONE`, `maxBatchSize=1`, `maxConcurrentCalls=1`, and `targetPendingEventThreshold=16` because the Python worker's generic binding decoder does not accept batched `collection_string` input.
 
 Linked-output events are delivered one per invocation and serialized host-wide to bound memory. Connector Namespace does not yet emit linked-output messages in the available test environment, so the samples currently validate inline batching only.
 

@@ -29,6 +29,12 @@ public sealed class ConnectorOptions : IOptionsFormatter
     public int DefaultTargetPendingEventThreshold { get; set; } = 16;
 
     /// <summary>
+    /// Gets or sets the default maximum number of concurrent function invocations per worker instance.
+    /// The value must be greater than zero.
+    /// </summary>
+    public int DefaultMaxConcurrentCalls { get; set; } = 16;
+
+    /// <summary>
     /// Gets or sets the maximum delay between Receive requests while a Poll
     /// trigger's queue remains empty.
     /// </summary>
@@ -40,6 +46,7 @@ public sealed class ConnectorOptions : IOptionsFormatter
         {
             DefaultMaxBatchSize,
             DefaultTargetPendingEventThreshold,
+            DefaultMaxConcurrentCalls,
             MaxPollingInterval,
         },
         SerializerOptions);

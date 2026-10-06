@@ -279,7 +279,7 @@ internal sealed class ConnectorPollingListener : IListener
             {
                 activeInvocations.RemoveWhere(static task => task.IsCompleted);
                 int availableInvocationSlots =
-                    Options.Concurrency - activeInvocations.Count;
+                    Options.MaxConcurrentCalls - activeInvocations.Count;
                 if (availableInvocationSlots <= 0)
                 {
                     await Task.WhenAny(activeInvocations)

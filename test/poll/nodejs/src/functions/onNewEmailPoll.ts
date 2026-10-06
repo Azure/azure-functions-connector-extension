@@ -9,7 +9,8 @@ app.connectorTrigger('OnNewEmailPoll', {
     triggerConfigName: '%OnNewEmailTriggerConfigName%',
     cardinality: 'many',
     maxBatchSize: 4,
-    concurrency: 4,
+    maxConcurrentCalls: 4,
+    targetPendingEventThreshold: 16,
     handler: async (inputs: unknown[], context: InvocationContext) => {
         context.log(`Received ${inputs.length} Poll connector payload(s).`);
     },

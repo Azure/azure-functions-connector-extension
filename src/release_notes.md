@@ -2,7 +2,7 @@
 
 ### Microsoft.Azure.Functions.Extensions.Connector
 
-- Add preview support for Connector Namespace Poll triggers with single-event and batched delivery, configurable concurrency, Poll message IDs, and scaling based on pending events.
+- Add preview support for Connector Namespace Poll triggers with single-event and batched delivery, configurable batching, concurrent calls, and target scaling, Poll message IDs, and scaling based on pending events.
 - Configure Poll with a connection-scoped `pollingEndpoint` and a binding-scoped `TriggerConfigName`, while preserving Webhook defaults.
 
 ### Microsoft.Azure.Functions.Worker.Extensions.Connector

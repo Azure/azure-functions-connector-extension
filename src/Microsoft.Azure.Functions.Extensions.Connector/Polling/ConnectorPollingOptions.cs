@@ -10,6 +10,7 @@ internal sealed record ConnectorPollingOptions(
     string Connection,
     string TriggerConfigName,
     int MaxBatchSize,
+    int MaxConcurrentCalls,
     bool IsBatched = false)
 {
     internal const int MaximumBatchSize = ConnectorPollingProtocolLimits.MaximumBatchSize;
@@ -46,11 +47,13 @@ internal sealed record ConnectorPollingOptions(
                 "Connector trigger MaxBatchSize must be 1 when cardinality is one. Set cardinality to many for batched invocation.");
         }
 
+        int maxConcurrentCalls = ResolveMaxConcurrentCalls(attribute.MaxConcurrentCalls, defaults.DefaultMaxConcurrentCalls);
 
         return new ConnectorPollingOptions(
             attribute.Connection,
             attribute.TriggerConfigName,
             maxBatchSize,
+            maxConcurrentCalls,
             isBatched)
         {
             MaxPollingInterval =
@@ -71,6 +74,24 @@ internal sealed record ConnectorPollingOptions(
         {
             throw new InvalidOperationException(
                 $"Connector DefaultMaxBatchSize must be between 1 and {MaximumBatchSize}.");
+        }
+
+        return value;
+    }
+
+    internal static int ResolveMaxConcurrentCalls(int configuredValue, int defaultValue)
+    {
+        if (configuredValue < 0)
+        {
+            throw new InvalidOperationException(
+                "Connector trigger MaxConcurrentCalls must be zero or greater.");
+        }
+
+        int value = configuredValue == 0 ? defaultValue : configuredValue;
+        if (value < 1)
+        {
+            throw new InvalidOperationException(
+                "Connector DefaultMaxConcurrentCalls must be greater than zero.");
         }
 
         return value;

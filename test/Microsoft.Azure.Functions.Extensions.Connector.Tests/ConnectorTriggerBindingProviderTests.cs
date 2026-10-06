@@ -273,7 +273,7 @@ public class ConnectorTriggerBindingProviderTests
         var options = new ConnectorOptions
         {
             DefaultMaxBatchSize = 2,
-            DefaultConcurrency = 6,
+            DefaultMaxConcurrentCalls = 6,
         };
         var connectionOptions = new ConnectorConnectionOptions(
             Mock.Of<TokenCredential>(),
@@ -301,7 +301,7 @@ public class ConnectorTriggerBindingProviderTests
             "on-new-email",
             pollingListener.Options.TriggerConfigName);
         Assert.Equal(2, pollingListener.Options.MaxBatchSize);
-        Assert.Equal(6, pollingListener.Options.Concurrency);
+        Assert.Equal(6, pollingListener.Options.MaxConcurrentCalls);
         Assert.True(pollingListener.Options.IsBatched);
     }
 
