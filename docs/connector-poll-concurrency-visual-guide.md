@@ -85,7 +85,7 @@ sequenceDiagram
     F-->>L: Success
     L->>Q: Acknowledge the four message locks
     Q-->>L: Acknowledgement response
-    Note over L: Chunk finishes; next chunk can start
+    Note over L: Chunk finishes and the next chunk can start
     L->>Q: Next Receive maxEvents = 4
     Q-->>L: E5, E6, E7, E8
     L->>F: Invoke the next batch
