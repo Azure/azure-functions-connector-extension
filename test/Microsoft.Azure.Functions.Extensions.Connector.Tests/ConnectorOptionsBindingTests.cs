@@ -21,7 +21,7 @@ public class ConnectorOptionsBindingTests
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
         Assert.Equal(1, options.DefaultMaxBatchSize);
-        Assert.Equal(16, options.DefaultConcurrency);
+        Assert.Equal(16, options.DefaultTargetPendingEventThreshold);
     }
 
     [Fact]
@@ -30,7 +30,7 @@ public class ConnectorOptionsBindingTests
         var settings = new Dictionary<string, string?>
         {
             ["AzureWebJobs:extensions:connector:defaultMaxBatchSize"] = "4",
-            ["AzureWebJobs:extensions:connector:defaultConcurrency"] = "8",
+            ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "8",
         };
 
         using IHost host = BuildHost(settings);
@@ -39,7 +39,7 @@ public class ConnectorOptionsBindingTests
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
         Assert.Equal(4, options.DefaultMaxBatchSize);
-        Assert.Equal(8, options.DefaultConcurrency);
+        Assert.Equal(8, options.DefaultTargetPendingEventThreshold);
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public class ConnectorOptionsBindingTests
         var settings = new Dictionary<string, string?>
         {
             ["AzureWebJobs:extensions:connector:defaultMaxBatchSize"] = "4",
-            ["AzureWebJobs:extensions:connector:defaultConcurrency"] = "8",
+            ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "8",
         };
 
         using IHost host = BuildHost(
@@ -56,14 +56,14 @@ public class ConnectorOptionsBindingTests
             options =>
             {
                 options.DefaultMaxBatchSize = 2;
-                options.DefaultConcurrency = 6;
+                options.DefaultTargetPendingEventThreshold = 6;
             });
 
         ConnectorOptions options =
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
         Assert.Equal(2, options.DefaultMaxBatchSize);
-        Assert.Equal(6, options.DefaultConcurrency);
+        Assert.Equal(6, options.DefaultTargetPendingEventThreshold);
     }
 
     [Fact]
@@ -72,23 +72,25 @@ public class ConnectorOptionsBindingTests
         var options = new ConnectorOptions
         {
             DefaultMaxBatchSize = 4,
-            DefaultConcurrency = 8,
+            DefaultTargetPendingEventThreshold = 8,
         };
 
         string formatted = ((IOptionsFormatter)options).Format();
 
         Assert.Contains("\"DefaultMaxBatchSize\": 4", formatted);
-        Assert.Contains("\"DefaultConcurrency\": 8", formatted);
+        Assert.Contains("\"DefaultTargetPendingEventThreshold\": 8", formatted);
     }
 
     [Fact]
-    public void AddConnector_RegistersConnectionServices()
+    public void AddConnector_RegistersAzureHttpAndPollingFactories()
     {
         using IHost host = BuildHost(new Dictionary<string, string?>());
 
         Assert.NotNull(host.Services.GetRequiredService<AzureComponentFactory>());
+        Assert.NotNull(host.Services.GetRequiredService<IHttpClientFactory>());
         Assert.NotNull(
             host.Services.GetRequiredService<IConnectorConnectionOptionsProvider>());
+        Assert.NotNull(host.Services.GetRequiredService<IConnectorQueueDepthClientFactory>());
     }
 
     private static IHost BuildHost(

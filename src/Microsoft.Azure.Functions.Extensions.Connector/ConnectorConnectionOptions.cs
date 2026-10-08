@@ -9,5 +9,5 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 /// Immutable connection configuration for Connector Namespace Poll delivery.
 /// </summary>
 internal sealed record ConnectorConnectionOptions(
-    ResourceIdentifier ResourceId,
-    TokenCredential Credential);
+    TokenCredential Credential,
+    string PollingEndpoint);

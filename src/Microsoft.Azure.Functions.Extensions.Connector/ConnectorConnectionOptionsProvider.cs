@@ -9,16 +9,6 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 
 internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionOptionsProvider
 {
-    private const string ResourceIdPropertyName = "resourceId";
-    private const string SubscriptionsSegment = "subscriptions";
-    private const string ResourceGroupsSegment = "resourceGroups";
-    private const string ProvidersSegment = "providers";
-    private const string ConnectorNamespaceProvider = "Microsoft.Web";
-    private const string ConnectorNamespaceResourceName = "connectorGateways";
-    private const string ConnectorNamespaceResourceType =
-        ConnectorNamespaceProvider + "/" + ConnectorNamespaceResourceName;
-    private const int ExpectedSegmentCount = 8;
-
     private readonly IConfiguration _configuration;
     private readonly AzureComponentFactory _componentFactory;
 
@@ -30,7 +20,9 @@ internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionO
         _componentFactory = componentFactory ?? throw new ArgumentNullException(nameof(componentFactory));
     }
 
-    public ConnectorConnectionOptions Get(string connectionName)
+    public ConnectorConnectionOptions Get(
+        string connectionName,
+        AzureComponentFactory? componentFactory = null)
     {
         if (string.IsNullOrWhiteSpace(connectionName))
         {
@@ -39,76 +31,23 @@ internal sealed class ConnectorConnectionOptionsProvider : IConnectorConnectionO
         }
 
         IConfigurationSection connectionSection =
-            _configuration.GetWebJobsConnectionSection(connectionName);
-        string? resourceIdValue = connectionSection[ResourceIdPropertyName];
-
-        if (string.IsNullOrWhiteSpace(resourceIdValue))
+            GetConnectionSection(connectionName);
+        string? pollingEndpoint = connectionSection["pollingEndpoint"];
+        if (string.IsNullOrWhiteSpace(pollingEndpoint))
         {
             throw new InvalidOperationException(
-                $"Connector connection '{connectionName}' must configure {ResourceIdPropertyName}.");
+                $"Connector connection '{connectionName}' must define a 'pollingEndpoint' property for Poll delivery.");
         }
 
-        ResourceIdentifier resourceId = ParseResourceId(connectionName, resourceIdValue);
-        TokenCredential credential = _componentFactory.CreateTokenCredential(connectionSection);
+        TokenCredential credential =
+            (componentFactory ?? _componentFactory)
+            .CreateTokenCredential(connectionSection);
 
-        return new ConnectorConnectionOptions(resourceId, credential);
+        return new ConnectorConnectionOptions(
+            credential,
+            pollingEndpoint);
     }
 
-    private static ResourceIdentifier ParseResourceId(
-        string connectionName,
-        string resourceIdValue)
-    {
-        if (!resourceIdValue.Equals(resourceIdValue.Trim(), StringComparison.Ordinal) ||
-            !resourceIdValue.StartsWith("/", StringComparison.Ordinal) ||
-            resourceIdValue.EndsWith("/", StringComparison.Ordinal) ||
-            resourceIdValue.Count(character => character == '/') != ExpectedSegmentCount ||
-            resourceIdValue.Contains('?', StringComparison.Ordinal) ||
-            resourceIdValue.Contains('#', StringComparison.Ordinal))
-        {
-            throw InvalidResourceId(connectionName);
-        }
-
-        ResourceIdentifier resourceId;
-        try
-        {
-            resourceId = new ResourceIdentifier(resourceIdValue);
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or FormatException)
-        {
-            throw InvalidResourceId(connectionName, exception);
-        }
-
-        string[] segments = resourceIdValue.Split(
-            '/',
-            StringSplitOptions.RemoveEmptyEntries);
-
-        bool hasExpectedShape =
-            segments.Length == ExpectedSegmentCount &&
-            segments[0].Equals(SubscriptionsSegment, StringComparison.OrdinalIgnoreCase) &&
-            Guid.TryParse(segments[1], out _) &&
-            segments[2].Equals(ResourceGroupsSegment, StringComparison.OrdinalIgnoreCase) &&
-            !string.IsNullOrWhiteSpace(segments[3]) &&
-            segments[4].Equals(ProvidersSegment, StringComparison.OrdinalIgnoreCase) &&
-            segments[5].Equals(ConnectorNamespaceProvider, StringComparison.OrdinalIgnoreCase) &&
-            segments[6].Equals(ConnectorNamespaceResourceName, StringComparison.OrdinalIgnoreCase) &&
-            !string.IsNullOrWhiteSpace(segments[7]) &&
-            resourceId.ResourceType.ToString().Equals(
-                ConnectorNamespaceResourceType,
-                StringComparison.OrdinalIgnoreCase);
-
-        if (!hasExpectedShape)
-        {
-            throw InvalidResourceId(connectionName);
-        }
-
-        return resourceId;
-    }
-
-    private static InvalidOperationException InvalidResourceId(
-        string connectionName,
-        Exception? innerException = null) =>
-        new(
-            $"Connector connection '{connectionName}' {ResourceIdPropertyName} must identify a resource-group-scoped {ConnectorNamespaceResourceType} resource with a valid subscription ID and no child path.",
-            innerException);
+    internal IConfigurationSection GetConnectionSection(string connectionName) =>
+        _configuration.GetWebJobsConnectionSection(connectionName);
 }

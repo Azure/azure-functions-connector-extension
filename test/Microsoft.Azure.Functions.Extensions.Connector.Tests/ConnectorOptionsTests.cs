@@ -11,6 +11,6 @@ public class ConnectorOptionsTests
         var options = new ConnectorOptions();
 
         Assert.Equal(1, options.DefaultMaxBatchSize);
-        Assert.Equal(16, options.DefaultConcurrency);
+        Assert.Equal(16, options.DefaultTargetPendingEventThreshold);
     }
 }

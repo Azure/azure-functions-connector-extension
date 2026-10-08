@@ -34,8 +34,8 @@ public sealed class ConnectorTriggerAttribute : TriggerBindingAttribute
     public int MaxBatchSize { get; set; }
 
     /// <summary>
-    /// Gets or sets the maximum number of pending events per worker instance.
+    /// Gets or sets the desired number of pending Connector events per worker instance for target-based scaling.
     /// The value must be non-negative. A value of zero uses the host-level default.
     /// </summary>
-    public int Concurrency { get; set; }
+    public int TargetPendingEventThreshold { get; set; }
 }

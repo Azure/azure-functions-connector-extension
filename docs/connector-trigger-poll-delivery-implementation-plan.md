@@ -8,7 +8,7 @@
 - [PR 1: Trigger Contract](#pr-1-trigger-contract)
 - [PR 2: Configuration](#pr-2-configuration)
 - [PR 3: Protocol Models](#pr-3-protocol-models)
-- [PR 4: ARM Endpoint Resolver](#pr-4-arm-endpoint-resolver)
+- [PR 4: Configured Runtime Endpoints](#pr-4-configured-runtime-endpoints)
 - [PR 5: Runtime and Linked-Output Clients](#pr-5-runtime-and-linked-output-clients)
 - [PR 6: Worker Binding](#pr-6-worker-binding)
 - [PR 7: Poll Listener](#pr-7-poll-listener)
@@ -25,22 +25,13 @@ implementation boundaries, dependencies, and completion criteria.
 
 ## Verified Baseline
 
-The proof of concept verified this end-to-end path:
+The proof of concept verified the runtime path now used by the extension:
 
-1. Authenticate to ARM with `https://management.azure.com/.default`.
-2. Read a Poll trigger configuration using API version
-   `2026-05-01-preview`.
-3. Extract the server-generated Poll runtime endpoints.
-4. Authenticate to the runtime with `https://apihub.azure.com/.default`.
-5. Receive messages, convert complete trigger `outputs`, execute a typed
-   function, and acknowledge successful processing.
+1. Configure the gateway-level Poll runtime endpoint from the Trigger Config's service-generated Receive URI.
+2. Authenticate to the runtime with `https://apihub.azure.com/.default`.
+3. Query approximate queue depth, receive messages, execute a typed function, and acknowledge successful processing.
 
-The supported Connector Namespace ARM resource type is:
-
-```text
-Microsoft.Web/connectorGateways
-```
-
+The extension no longer discovers runtime endpoints through ARM.
 Phase 0 is complete: sanitized evidence is preserved outside the repository,
 temporary POC code and settings were removed, the test trigger was disabled,
 and the committed baseline builds with all existing tests passing.
@@ -56,7 +47,7 @@ and the committed baseline builds with all existing tests passing.
 
 ## PR 1: Trigger Contract
 
-Replace the earlier public `MaxEvents` seam with independent batching and per-instance event-capacity controls:
+Replace the earlier public scaling seam with an explicit pending-event target:
 
 ```csharp
 [ConnectorTrigger(
@@ -64,47 +55,30 @@ Replace the earlier public `MaxEvents` seam with independent batching and per-in
     Connection = "ConnectorNamespace",
     TriggerConfigName = "%CONNECTOR_TRIGGER_CONFIG%",
     MaxBatchSize = 4,
-    Concurrency = 8)]
+    TargetPendingEventThreshold = 16)]
 ```
 
 Changes:
 
-- Add `MaxBatchSize` and `Concurrency` to both host and isolated-worker
-  attributes.
-- Remove public `MaxEvents`.
-- Add host-level `ConnectorOptions`:
-
-  ```csharp
-  public int DefaultMaxBatchSize { get; set; } = 1;
-  public int DefaultConcurrency { get; set; } = 16;
-  ```
-
-- Treat `0` on either attribute property as use-host-default.
-- Accept `MaxBatchSize` values from `0` through `32` and require the effective
-  value to be from `1` through `32`.
-- Accept non-negative `Concurrency` and require the effective value to be
-  greater than zero.
-- Define `Concurrency` as the maximum pending events per worker instance, not the maximum function invocations.
-- Keep `MaxBatchSize` independent of scaling and map it to Connector Namespace `maxEvents`.
+- Add `TargetPendingEventThreshold` to both host and isolated-worker attributes.
+- Add `DefaultTargetPendingEventThreshold = 16` to `ConnectorOptions`.
+- Treat `0` as use-host-default.
+- Accept a non-negative trigger value and require the resolved default to be greater than zero.
+- Keep `MaxBatchSize` independent from target scaling.
 - Preserve `Webhook` as the default.
-- Keep `Connection` literal; do not apply `%...%` name resolution to it.
-- Continue allowing `%...%` resolution for `TriggerConfigName`.
-- Update attribute, option, and listener-selection tests.
+- Keep `Connection` literal; continue allowing `%...%` resolution for `TriggerConfigName`.
 
 Completion criteria:
 
 - Host and worker contracts remain synchronized.
 - Existing Webhook tests remain unchanged and pass.
-- No public `MaxEvents` property remains.
-
+- The former overloaded scaling property is removed.
 ## PR 2: Configuration
 
-Add validated immutable configuration and dependency registration.
-
-Configuration shape:
+Add validated immutable runtime-endpoint configuration and dependency registration.
 
 ```text
-ConnectorNamespace__resourceId=/subscriptions/.../resourceGroups/.../providers/Microsoft.Web/connectorGateways/...
+ConnectorNamespace__pollingEndpoint=https://<host>/api/connectorGateways/<connector-namespace-id>
 ConnectorNamespace__credential=managedidentity
 ConnectorNamespace__clientId=<optional-user-assigned-identity-client-id>
 ConnectorNamespace__managedIdentityResourceId=<optional-resource-id>
@@ -112,29 +86,18 @@ ConnectorNamespace__managedIdentityResourceId=<optional-resource-id>
 
 Changes:
 
-- Resolve the literal `Connection` prefix through `IConfiguration`.
-- Require `Connection`, `resourceId`, and `TriggerConfigName` only in Poll mode.
-- Document that Connector Namespace setup provisions the Poll trigger configuration and that `TriggerConfigName` identifies it; the extension does not create or convert trigger configurations.
-- Document that Poll trigger configuration is not currently available through the Connector Namespace portal or the delivery-mode options of the current `az connector-namespace trigger create` command, and must use a raw ARM PUT request such as `az rest --method put`.
-- Parse resource IDs with `Azure.Core.ResourceIdentifier`.
-- Require exactly a resource-group-scoped
-  `Microsoft.Web/connectorGateways/{gateway}` resource.
-- Reject invalid subscription GUIDs, child-resource paths, full URLs, query
-  strings, and fragments.
-- Add `Azure.Identity` 1.17.1 and `Microsoft.Extensions.Azure` 1.13.1.
-- Register the shared Microsoft Extensions Azure services.
-- Pass the full named connection section to `AzureComponentFactory.CreateTokenCredential`, matching other first-party Functions extensions.
-- Document and test the standard paths:
-  - Local development omits `credential` and uses the shared developer-identity behavior.
-  - Azure deployment uses `credential=managedidentity`.
-  - `clientId` or `managedIdentityResourceId` may select a user-assigned identity.
-- Register Poll services through `AddConnector`.
+- Resolve the literal `Connection` prefix through Functions configuration.
+- Require `Connection`, `pollingEndpoint`, and `TriggerConfigName` only in Poll mode.
+- Treat the configured authority and gateway identifier as opaque trusted configuration.
+- Derive fixed Trigger Config runtime-operation URIs from the configured gateway endpoint and resolved Trigger Config name.
+- Do not perform ARM endpoint discovery or accept debug bearer-token settings.
+- Pass the full named connection section to `AzureComponentFactory.CreateTokenCredential`.
+- Register Poll and scaling services through `AddConnector`.
 
 Completion criteria:
 
-- Invalid Poll configuration fails startup with actionable errors.
+- Invalid Poll configuration fails with actionable errors.
 - Webhook mode requires no Poll configuration.
-
 ## PR 3: Protocol Models
 
 Add explicit internal models for:
@@ -166,29 +129,17 @@ Requirements:
 - Keep generated `Azure.Connectors.Sdk` types out of the host protocol layer.
 - Keep wire parsing, protocol validation, status interpretation, and URI redaction independent of WebJobs types so they can move to a future Connectors Polling SDK.
 
-## PR 4: ARM Endpoint Resolver
+## PR 4: Configured Runtime Endpoints
 
-Implement `IConnectorPollingEndpointResolver`.
+Implement `ConnectorPollingEndpoints.Create` from the configured gateway-level `pollingEndpoint` and resolved Trigger Config name.
 
 Requirements:
 
-- Read:
-
-  ```text
-  {connectorNamespaceResourceId}/triggerConfigs/{escapedName}?api-version=2026-05-01-preview
-  ```
-
-- Authenticate with the ARM scope.
-- Document that ARM GET requires the control-plane action `Microsoft.Web/connectorGateways/triggerconfigs/read`.
-- Treat built-in Reader at the Connector Namespace resource scope as the least-privilege built-in-role proposal, pending an end-to-end test with no broader inherited permissions.
-- Verify that delivery mode is Poll and the trigger is enabled.
-- Extract `receiveUri`, `acknowledgeUri`, `hasMessagesUri`, and
-  `approximateQueueDepthUri`.
+- Preserve the configured authority and gateway path.
+- Append only `/triggerConfigs/<escaped-name>` and the fixed runtime operation suffixes.
 - Require absolute HTTPS endpoints.
-- Cache by connection and trigger-config name.
-- Refresh only for endpoint-specific stale failures.
-- Before publishing final customer guidance, run a service-backed authorization test with no broader inherited permissions to confirm or correct the proposed ARM role.
-
+- Do not parse a Connector Namespace ARM resource ID or call ARM.
+- Fail missing or invalid endpoint configuration with actionable errors.
 ## PR 5: Runtime and Linked-Output Clients
 
 Implement:
@@ -263,7 +214,7 @@ Requirements:
   `1`.
 - Fail incompatible bindings during indexing or listener startup rather than
   ignoring `MaxBatchSize`, dropping events, or changing the parameter shape.
-- Keep `Concurrency` independent of parameter shape.
+- Keep `TargetPendingEventThreshold` independent of parameter shape and listener behavior.
 - Support closed generic payload types; reject unresolved open generic
   functions.
 - Preserve each Poll `MessageId` with its corresponding payload.
@@ -274,77 +225,39 @@ Requirements:
 
 ## PR 7: Poll Listener
 
-Replace the placeholder with a lifecycle-safe, capacity-aware message pump.
-
-Capacity calculation:
-
-```csharp
-int availableEventCapacity = effectiveConcurrency - pendingEventCount;
-int maxEvents = Math.Min(
-    32,
-    Math.Min(effectiveMaxBatchSize, availableEventCapacity));
-```
+Implement the Poll listener independently from target scaling.
 
 Requirements:
 
-- Receive only when `maxEvents > 0`.
-- Do not prefetch beyond remaining event capacity.
-- Count an event as pending from Receive until acknowledgement completes or a failed attempt finishes without acknowledgement, including hydration and function execution.
-- Supply each Receive batch to one invocation.
-- Allow no more than `Concurrency` pending events per worker instance.
-- Bound linked-output hydration and account for its time in the fixed
-  two-minute lock budget.
-- Pass normalized payloads and per-event metadata through the worker binding.
-- Acknowledge every event in a successful invocation batch.
-- Acknowledge no events from a failed or cancelled invocation batch.
-- Send acknowledgement requests with at most 32 locks.
-- Drain immediately only when the service reports more messages and capacity
-  is available.
-- Add cancellation-aware empty-queue backoff with jitter.
-- Make start, stop, cancel, and dispose behavior idempotent.
-- Stop receiving during shutdown, allow bounded in-flight completion, and
-  leave unfinished events unacknowledged.
-
-The first implementation is concurrent by design; it must not revert to
-sequential message processing.
-
+- Do not use `TargetPendingEventThreshold` for Receive sizing, batching, or listener concurrency.
+- Keep invocation batching controlled by `MaxBatchSize`.
+- Introduce any listener execution-concurrency setting under a separate name and in the listener PR that owns it.
+- Preserve success-only acknowledgement, lifecycle, backoff, lock-budget, and shutdown behavior.
 ## PR 8: Scaling and Completion
 
-Add the scale monitor or target scaler supported by the repository's WebJobs
-host version.
+Add the target scaler supported by the repository's WebJobs host version.
 
 Requirements:
 
-- Use #26 only as a historical reference for the Functions scale-controller
-  integration:
-  - `ITargetScaler` and `ITargetScalerProvider`.
-  - The reflectively discovered
-    `AddConnectorScaleForTrigger(IWebJobsBuilder, TriggerMetadata)` hook.
-  - Reading effective trigger and host options from `TriggerMetadata`.
-  - Scale Monitor registration and scale-status validation.
-- Do not reuse #26's positional `connectorNamespace`/`triggerName` attribute
-  contract, Namespace API models or paths, authentication assumptions, mock
-  metrics provider, or conflicting metadata names.
-- Verify the referenced host interfaces and reflective registration signature
-  against the current Functions host and Scale Monitor before implementation.
-- Reuse the endpoint resolver and queue-status client.
-- Obtain metrics only through the current server-provided
-  `approximateQueueDepthUri`.
-- Scale from approximate queue depth without treating it as an exact count or
-  a prerequisite for Receive.
-- Calculate target workers from effective per-worker event capacity:
+- Use `ITargetScaler` and `ITargetScalerProvider` through the reflectively discovered `AddConnectorScaleForTrigger(IWebJobsBuilder, TriggerMetadata)` hook.
+- Read the connection, resolved Trigger Config name, and target threshold from `TriggerMetadata`.
+- Query only the configured `/approximateQueueDepth` runtime endpoint using the API Hub credential.
+- Follow Event Hubs and Service Bus target-scaler precedence:
 
   ```text
-  ceil(pendingEvents / effectiveConcurrency)
+  effectiveTarget =
+      TargetScalerContext.InstanceConcurrency
+      ?? trigger TargetPendingEventThreshold
+      ?? DefaultTargetPendingEventThreshold
   ```
 
-- Keep `MaxBatchSize` and Connector Namespace `maxEvents` independent of the scaling calculation.
-- Return conservative decisions when queue status is unavailable.
-- Validate scale from zero.
-- Add integration tests, samples, and final user documentation.
+- Require the effective target to be greater than zero.
+- Calculate `ceil(pendingEvents / effectiveTarget)`.
+- Keep `MaxBatchSize` out of the scaling calculation.
+- Propagate caller cancellation; log other query failures and return a fresh zero-depth sample.
+- Validate scale from zero and mixed runtime/configured concurrency paths.
 
 Poll delivery is not production-complete until this PR is delivered.
-
 ## Cross-Stack Validation
 
 Every PR must preserve:
@@ -362,7 +275,7 @@ Final smoke test:
 2. Start a Function App using the local extension build.
 3. Generate new connector events.
 4. Verify typed payload-only and metadata-rich invocation.
-5. Verify batching, concurrency, and success-only acknowledgement.
+5. Verify batching and success-only acknowledgement; listener concurrency is validated in its owning PR.
 6. Verify linked output when the service test path is available.
 7. Confirm acknowledged events do not reappear and failed events are
    redelivered.

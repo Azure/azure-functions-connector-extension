@@ -127,17 +127,26 @@ internal static class ConnectorPollingProtocol
             hasMessagesContent,
             ConnectorPollingJsonContext.Default.ConnectorHasMessagesWireDto,
             "has-messages");
-        ConnectorApproximateQueueDepthWireDto queueDepthResponse = Deserialize(
-            approximateQueueDepthContent,
-            ConnectorPollingJsonContext.Default.ConnectorApproximateQueueDepthWireDto,
-            "approximate-queue-depth");
-
         bool hasMessages =
             hasMessagesResponse.HasMessages ??
             throw ProtocolError(
                 "Has-messages response must contain a boolean hasMessages property.");
         long approximateQueueDepth =
-            queueDepthResponse.ApproximateQueueDepth ??
+            DeserializeApproximateQueueDepth(approximateQueueDepthContent);
+
+        return new ConnectorQueueStatus(hasMessages, approximateQueueDepth);
+    }
+
+    internal static long DeserializeApproximateQueueDepth(BinaryData content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        ConnectorApproximateQueueDepthWireDto response = Deserialize(
+            content,
+            ConnectorPollingJsonContext.Default.ConnectorApproximateQueueDepthWireDto,
+            "approximate-queue-depth");
+        long approximateQueueDepth =
+            response.ApproximateQueueDepth ??
             throw ProtocolError(
                 "Queue-depth response must contain an integer approximateQueueDepth property.");
 
@@ -147,7 +156,7 @@ internal static class ConnectorPollingProtocol
                 "Queue-depth response approximateQueueDepth must not be negative.");
         }
 
-        return new ConnectorQueueStatus(hasMessages, approximateQueueDepth);
+        return approximateQueueDepth;
     }
 
     private static ConnectorPollMessage ParseMessage(

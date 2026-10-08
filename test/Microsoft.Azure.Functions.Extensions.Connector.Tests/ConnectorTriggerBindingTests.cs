@@ -28,9 +28,8 @@ public class ConnectorTriggerBindingTests
             Options.Create(_options),
             new StubConnectorConnectionOptionsProvider());
         var connectionOptions = new ConnectorConnectionOptions(
-            new ResourceIdentifier(
-                "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns"),
-            Mock.Of<TokenCredential>());
+            Mock.Of<TokenCredential>(),
+            "https://runtime.test/api/connectorGateways/ns");
         _connectionOptionsProvider =
             new StubConnectorConnectionOptionsProvider(connectionOptions);
         _attribute = new ConnectorTriggerAttribute();
@@ -238,7 +237,6 @@ public class ConnectorTriggerBindingTests
             Connection = "ConnectorNamespace",
             TriggerConfigName = "OnNewEmail",
             MaxBatchSize = 4,
-            Concurrency = 8,
         };
         var binding = new ConnectorTriggerBinding(
             parameter,
@@ -261,10 +259,9 @@ public class ConnectorTriggerBindingTests
         Assert.Equal(attribute.Connection, pollingListener.Options.Connection);
         Assert.Equal(attribute.TriggerConfigName, pollingListener.Options.TriggerConfigName);
         Assert.Equal(attribute.MaxBatchSize, pollingListener.Options.MaxBatchSize);
-        Assert.Equal(attribute.Concurrency, pollingListener.Options.Concurrency);
         Assert.Equal(
-            "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Web/connectorGateways/ns",
-            pollingListener.ConnectionOptions.ResourceId.ToString());
+            "https://runtime.test/api/connectorGateways/ns",
+            pollingListener.ConnectionOptions.PollingEndpoint);
     }
 
     [Fact]
@@ -281,7 +278,6 @@ public class ConnectorTriggerBindingTests
         var options = new ConnectorOptions
         {
             DefaultMaxBatchSize = 2,
-            DefaultConcurrency = 6,
         };
         var binding = new ConnectorTriggerBinding(
             parameter,
@@ -300,7 +296,6 @@ public class ConnectorTriggerBindingTests
 
         var pollingListener = Assert.IsType<ConnectorPollingListener>(listener);
         Assert.Equal(2, pollingListener.Options.MaxBatchSize);
-        Assert.Equal(6, pollingListener.Options.Concurrency);
     }
 
     [Fact]
