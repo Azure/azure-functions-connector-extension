@@ -106,6 +106,32 @@ public class ConnectorTargetScalerTests
         Assert.Equal(first.TargetWorkerCount, second.TargetWorkerCount);
     }
 
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(0, 16)]
+    [InlineData(0, int.MaxValue)]
+    [InlineData(4, 1)]
+    [InlineData(4, 16)]
+    public async Task GetScaleResultAsync_MaxConcurrentCallsDoesNotAffectTarget(
+        int instanceConcurrency, int defaultMaxConcurrentCalls)
+    {
+        ConnectorTargetScaler scaler = CreateScaler(
+            new SequenceDepthClient(65),
+            8,
+            new ConnectorOptions
+            {
+                DefaultMaxConcurrentCalls = defaultMaxConcurrentCalls,
+            });
+
+        TargetScalerResult result = await scaler.GetScaleResultAsync(
+            new TargetScalerContext
+            {
+                InstanceConcurrency = instanceConcurrency == 0 ? null : instanceConcurrency,
+            });
+
+        Assert.Equal(instanceConcurrency == 0 ? 9 : 17, result.TargetWorkerCount);
+    }
+
     [Fact]
     public async Task GetScaleResultAsync_CapsInt64DepthAtMaximumWorkerCount()
     {

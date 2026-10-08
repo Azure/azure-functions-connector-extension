@@ -24,7 +24,8 @@ public class ConnectorExtensionConfigProviderTests
             _httpRequestProcessor,
             loggerFactory,
             Options.Create(new ConnectorOptions()),
-            new StubConnectorConnectionOptionsProvider());
+            new StubConnectorConnectionOptionsProvider(),
+            new StubConnectorPollingListenerFactory());
     }
 
     [Fact]
@@ -36,7 +37,8 @@ public class ConnectorExtensionConfigProviderTests
                 null!,
                 loggerFactory,
                 Options.Create(new ConnectorOptions()),
-                new StubConnectorConnectionOptionsProvider()));
+                new StubConnectorConnectionOptionsProvider(),
+                new StubConnectorPollingListenerFactory()));
     }
 
     [Fact]
@@ -47,7 +49,8 @@ public class ConnectorExtensionConfigProviderTests
                 _httpRequestProcessor,
                 null!,
                 Options.Create(new ConnectorOptions()),
-                new StubConnectorConnectionOptionsProvider()));
+                new StubConnectorConnectionOptionsProvider(),
+                new StubConnectorPollingListenerFactory()));
     }
 
     [Fact]
@@ -58,7 +61,8 @@ public class ConnectorExtensionConfigProviderTests
                 _httpRequestProcessor,
                 NullLoggerFactory.Instance,
                 null!,
-                new StubConnectorConnectionOptionsProvider()));
+                new StubConnectorConnectionOptionsProvider(),
+                new StubConnectorPollingListenerFactory()));
     }
 
     [Fact]
@@ -69,6 +73,19 @@ public class ConnectorExtensionConfigProviderTests
                 _httpRequestProcessor,
                 NullLoggerFactory.Instance,
                 Options.Create(new ConnectorOptions()),
+                null!,
+                new StubConnectorPollingListenerFactory()));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentNullException_WhenPollingListenerFactoryIsNull()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new ConnectorExtensionConfigProvider(
+                _httpRequestProcessor,
+                NullLoggerFactory.Instance,
+                Options.Create(new ConnectorOptions()),
+                new StubConnectorConnectionOptionsProvider(),
                 null!));
     }
 
@@ -288,11 +305,12 @@ public class ConnectorExtensionConfigProviderTests
         // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         var content = await response.Content.ReadAsStringAsync();
-        Assert.Contains("Function failed", content);
+        Assert.Equal("Function execution failed", content);
+        Assert.DoesNotContain("Function failed", content);
     }
 
     [Fact]
-    public async Task ConvertAsync_PassesJsonStringToExecutor()
+    public async Task ConvertAsync_PassesWebhookTriggerValueToExecutor()
     {
         // Arrange
         TriggeredFunctionData? capturedData = null;
@@ -316,11 +334,13 @@ public class ConnectorExtensionConfigProviderTests
         // Act
         await _configProvider.ConvertAsync(request, CancellationToken.None);
 
-        // Assert - TriggerValue should be raw JSON string
+        // Assert
         Assert.NotNull(capturedData);
-        Assert.IsType<string>(capturedData.TriggerValue);
-        var jsonString = (string)capturedData.TriggerValue;
+        ConnectorTriggerInput triggerInput =
+            Assert.IsType<ConnectorTriggerInput>(capturedData.TriggerValue);
+        string jsonString = triggerInput.ToSinglePayloadJson();
         Assert.Contains("test@example.com", jsonString);
         Assert.Contains("Hello", jsonString);
+        Assert.DoesNotContain("messageId", jsonString);
     }
 }

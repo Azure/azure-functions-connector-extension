@@ -13,7 +13,6 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 [JsonSerializable(typeof(ConnectorOutputsLinkWireDto))]
 [JsonSerializable(typeof(ConnectorAcknowledgeRequestWireDto))]
 [JsonSerializable(typeof(ConnectorAcknowledgeResponseWireDto))]
-[JsonSerializable(typeof(ConnectorHasMessagesWireDto))]
 [JsonSerializable(typeof(ConnectorApproximateQueueDepthWireDto))]
 internal partial class ConnectorPollingJsonContext : JsonSerializerContext
 {

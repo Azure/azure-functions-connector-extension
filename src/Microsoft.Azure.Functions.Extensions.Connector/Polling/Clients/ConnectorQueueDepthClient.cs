@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-using System.Buffers;
 using System.Net.Http.Headers;
 using Azure.Core;
 using Microsoft.Extensions.Logging;
@@ -48,11 +47,10 @@ internal sealed class ConnectorQueueDepthClientFactory : IConnectorQueueDepthCli
 
 internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
 {
-    private const int ResponseBufferSize = 81920;
-    private const int InitialResponseCapacity = 4096;
-
-    internal const string HttpClientName = "ConnectorPollingRuntime";
-    internal const string ApiHubScope = "https://apihub.azure.com/.default";
+    internal const string HttpClientName =
+        ConnectorPollDeliveryClient.HttpClientName;
+    internal const string ApiHubScope =
+        ConnectorPollDeliveryClient.ApiHubScope;
 
     private readonly ConnectorPollingEndpoints _endpoints;
     private readonly TokenCredential _credential;
@@ -94,7 +92,7 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
                 cancellationToken).ConfigureAwait(false);
             using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
             request.Headers.Authorization = new AuthenticationHeaderValue(
-                "Bearer",
+                ConnectorPollingHttpConstants.BearerAuthenticationScheme,
                 token.Token);
 
             HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
@@ -114,7 +112,7 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
             }
 
             BinaryData responseContent =
-                await ReadResponseContentAsync(
+                await ConnectorPollingContentReader.ReadAsync(
                     response.Content,
                     ConnectorPollingProtocolLimits
                         .MaximumQueueDepthResponseSizeInBytes,
@@ -156,64 +154,6 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
             throw new ConnectorQueueDepthException(
                 "Connector approximate queue depth request failed.",
                 innerException: exception);
-        }
-    }
-
-    private static async Task<BinaryData> ReadResponseContentAsync(
-        HttpContent content,
-        int maximumSizeInBytes,
-        Func<string, Exception> createException,
-        CancellationToken cancellationToken)
-    {
-        if (content.Headers.ContentLength is long contentLength &&
-            contentLength > maximumSizeInBytes)
-        {
-            throw createException(
-                $"response exceeded the {maximumSizeInBytes}-byte limit");
-        }
-
-        await using Stream input = await content
-            .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var output = new MemoryStream(
-            Math.Min(
-                maximumSizeInBytes,
-                content.Headers.ContentLength is long declaredLength
-                    ? checked((int)declaredLength)
-                    : InitialResponseCapacity));
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(ResponseBufferSize);
-        try
-        {
-            int totalBytesRead = 0;
-            while (true)
-            {
-                int bytesRead = await input.ReadAsync(
-                    buffer.AsMemory(0, buffer.Length),
-                    cancellationToken).ConfigureAwait(false);
-                if (bytesRead == 0)
-                {
-                    break;
-                }
-
-                if (bytesRead > maximumSizeInBytes - totalBytesRead)
-                {
-                    throw createException(
-                        $"response exceeded the {maximumSizeInBytes}-byte limit");
-                }
-
-                await output.WriteAsync(
-                    buffer.AsMemory(0, bytesRead),
-                    cancellationToken).ConfigureAwait(false);
-                totalBytesRead += bytesRead;
-            }
-
-            return new BinaryData(
-                output.GetBuffer().AsMemory(
-                    0,
-                    checked((int)output.Length)));
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 }

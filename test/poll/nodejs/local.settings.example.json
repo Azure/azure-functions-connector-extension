@@ -1,0 +1,9 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "ConnectorNamespace__pollingEndpoint": "https://<scale-unit>.<region>.logic.azure.com/api/connectorGateways/<connector-namespace-id>",
+    "OnNewEmailTriggerConfigName": "<poll-trigger-config-name>"
+  }
+}

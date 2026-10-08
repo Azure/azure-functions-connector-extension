@@ -28,11 +28,27 @@ public sealed class ConnectorOptions : IOptionsFormatter
     /// </summary>
     public int DefaultTargetPendingEventThreshold { get; set; } = 16;
 
+    /// <summary>
+    /// Gets or sets the default maximum number of concurrent single-event processing tasks
+    /// per listener on one worker instance. Each task includes preparation, invocation, and acknowledgement.
+    /// The value must be greater than zero. It does not apply to batched delivery.
+    /// </summary>
+    public int DefaultMaxConcurrentCalls { get; set; } = 16;
+
+    /// <summary>
+    /// Gets or sets the maximum delay between Receive requests while a Poll
+    /// trigger's queue remains empty.
+    /// </summary>
+    public TimeSpan MaxPollingInterval { get; set; } =
+        TimeSpan.FromSeconds(30);
+
     string IOptionsFormatter.Format() => JsonSerializer.Serialize(
         new
         {
             DefaultMaxBatchSize,
             DefaultTargetPendingEventThreshold,
+            DefaultMaxConcurrentCalls,
+            MaxPollingInterval,
         },
         SerializerOptions);
 }

@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "npm install (functions)",
+      "type": "shell",
+      "command": "npm install",
+      "problemMatcher": []
+    },
+    {
+      "label": "npm watch (functions)",
+      "type": "shell",
+      "command": "npm run build -- --watch",
+      "dependsOn": "npm install (functions)",
+      "problemMatcher": "$tsc-watch",
+      "isBackground": true
+    },
+    {
+      "type": "func",
+      "label": "func: host start",
+      "command": "host start",
+      "dependsOn": "npm watch (functions)",
+      "problemMatcher": "$func-node-watch",
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    }
+  ]
+}

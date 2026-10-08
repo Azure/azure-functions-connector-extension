@@ -6,6 +6,7 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
@@ -21,7 +22,9 @@ public class ConnectorOptionsBindingTests
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
         Assert.Equal(1, options.DefaultMaxBatchSize);
+        Assert.Equal(16, options.DefaultMaxConcurrentCalls);
         Assert.Equal(16, options.DefaultTargetPendingEventThreshold);
+        Assert.Equal(TimeSpan.FromSeconds(30), options.MaxPollingInterval);
     }
 
     [Fact]
@@ -30,7 +33,9 @@ public class ConnectorOptionsBindingTests
         var settings = new Dictionary<string, string?>
         {
             ["AzureWebJobs:extensions:connector:defaultMaxBatchSize"] = "4",
-            ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "8",
+            ["AzureWebJobs:extensions:connector:defaultMaxConcurrentCalls"] = "8",
+            ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "12",
+            ["AzureWebJobs:extensions:connector:maxPollingInterval"] = "00:00:45",
         };
 
         using IHost host = BuildHost(settings);
@@ -39,7 +44,9 @@ public class ConnectorOptionsBindingTests
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
         Assert.Equal(4, options.DefaultMaxBatchSize);
-        Assert.Equal(8, options.DefaultTargetPendingEventThreshold);
+        Assert.Equal(8, options.DefaultMaxConcurrentCalls);
+        Assert.Equal(12, options.DefaultTargetPendingEventThreshold);
+        Assert.Equal(TimeSpan.FromSeconds(45), options.MaxPollingInterval);
     }
 
     [Fact]
@@ -48,7 +55,9 @@ public class ConnectorOptionsBindingTests
         var settings = new Dictionary<string, string?>
         {
             ["AzureWebJobs:extensions:connector:defaultMaxBatchSize"] = "4",
-            ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "8",
+            ["AzureWebJobs:extensions:connector:defaultMaxConcurrentCalls"] = "8",
+            ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "12",
+            ["AzureWebJobs:extensions:connector:maxPollingInterval"] = "00:00:45",
         };
 
         using IHost host = BuildHost(
@@ -56,14 +65,18 @@ public class ConnectorOptionsBindingTests
             options =>
             {
                 options.DefaultMaxBatchSize = 2;
-                options.DefaultTargetPendingEventThreshold = 6;
+                options.DefaultMaxConcurrentCalls = 6;
+                options.DefaultTargetPendingEventThreshold = 10;
+                options.MaxPollingInterval = TimeSpan.FromSeconds(20);
             });
 
         ConnectorOptions options =
             host.Services.GetRequiredService<IOptions<ConnectorOptions>>().Value;
 
         Assert.Equal(2, options.DefaultMaxBatchSize);
-        Assert.Equal(6, options.DefaultTargetPendingEventThreshold);
+        Assert.Equal(6, options.DefaultMaxConcurrentCalls);
+        Assert.Equal(10, options.DefaultTargetPendingEventThreshold);
+        Assert.Equal(TimeSpan.FromSeconds(20), options.MaxPollingInterval);
     }
 
     [Fact]
@@ -72,13 +85,17 @@ public class ConnectorOptionsBindingTests
         var options = new ConnectorOptions
         {
             DefaultMaxBatchSize = 4,
-            DefaultTargetPendingEventThreshold = 8,
+            DefaultMaxConcurrentCalls = 8,
+            DefaultTargetPendingEventThreshold = 12,
+            MaxPollingInterval = TimeSpan.FromSeconds(30),
         };
 
         string formatted = ((IOptionsFormatter)options).Format();
 
         Assert.Contains("\"DefaultMaxBatchSize\": 4", formatted);
-        Assert.Contains("\"DefaultTargetPendingEventThreshold\": 8", formatted);
+        Assert.Contains("\"DefaultMaxConcurrentCalls\": 8", formatted);
+        Assert.Contains("\"DefaultTargetPendingEventThreshold\": 12", formatted);
+        Assert.Contains("\"MaxPollingInterval\": \"00:00:30\"", formatted);
     }
 
     [Fact]
@@ -91,13 +108,139 @@ public class ConnectorOptionsBindingTests
         Assert.NotNull(
             host.Services.GetRequiredService<IConnectorConnectionOptionsProvider>());
         Assert.NotNull(host.Services.GetRequiredService<IConnectorQueueDepthClientFactory>());
+        Assert.NotNull(host.Services.GetRequiredService<IConnectorPollDeliveryClientFactory>());
+        Assert.NotNull(host.Services.GetRequiredService<IConnectorLinkedOutputClient>());
+        Assert.Same(
+            host.Services.GetRequiredService<ConnectorLinkedOutputInvocationLimiter>(),
+            host.Services.GetRequiredService<ConnectorLinkedOutputInvocationLimiter>());
+        Assert.NotNull(host.Services.GetRequiredService<IConnectorPollingListenerFactory>());
+    }
+
+    [Fact]
+    public void AddConnector_ConfiguresSecureLinkedOutputHandler()
+    {
+        using IHost host = BuildHost(new Dictionary<string, string?>());
+        IHttpMessageHandlerFactory factory =
+            host.Services.GetRequiredService<IHttpMessageHandlerFactory>();
+
+        HttpMessageHandler handler =
+            factory.CreateHandler(ConnectorLinkedOutputClient.HttpClientName);
+        while (handler is DelegatingHandler delegatingHandler)
+        {
+            handler = Assert.IsAssignableFrom<HttpMessageHandler>(
+                delegatingHandler.InnerHandler);
+        }
+
+        HttpClientHandler primaryHandler =
+            Assert.IsType<HttpClientHandler>(handler);
+        Assert.False(primaryHandler.AllowAutoRedirect);
+        Assert.Equal(
+            System.Net.DecompressionMethods.None,
+            primaryHandler.AutomaticDecompression);
+    }
+
+    [Fact]
+    public async Task AddConnector_DoesNotLogSignedLinkedOutputUri()
+    {
+        const string signedUri =
+            "https://content.test/private/output?signature=secret-value";
+        var loggerProvider = new CapturingLoggerProvider();
+        var handler = new SequenceHttpMessageHandler(_ =>
+            new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"body":{"value":1}}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json"),
+            });
+        using IHost host = BuildHost(
+            new Dictionary<string, string?>(),
+            configureServices: services =>
+                services.AddHttpClient(
+                    ConnectorLinkedOutputClient.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => handler),
+            configureLogging: logging =>
+            {
+                logging.ClearProviders();
+                logging.SetMinimumLevel(LogLevel.Trace);
+                logging.AddProvider(loggerProvider);
+            });
+        IConnectorLinkedOutputClient client =
+            host.Services.GetRequiredService<IConnectorLinkedOutputClient>();
+
+        await client.DownloadAsync(
+            new ConnectorOutputsLink(new Uri(signedUri)),
+            1024,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            loggerProvider.Messages,
+            message =>
+                message.Contains("secret-value", StringComparison.Ordinal) ||
+                message.Contains(
+                    "/private/output",
+                    StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AddConnector_DoesNotLogPollOperationUris()
+    {
+        const string secretEndpoint =
+            "https://runtime.test/private/triggerconfigs/name/receive?signature=secret-value";
+        var loggerProvider = new CapturingLoggerProvider();
+        var handler = new SequenceHttpMessageHandler(_ =>
+            new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"messages":[]}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json"),
+            });
+        using IHost host = BuildHost(
+            new Dictionary<string, string?>(),
+            configureServices: services =>
+                services.AddHttpClient(
+                    ConnectorPollDeliveryClient.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => handler),
+            configureLogging: logging =>
+            {
+                logging.ClearProviders();
+                logging.SetMinimumLevel(LogLevel.Trace);
+                logging.AddProvider(loggerProvider);
+            });
+        IConnectorPollDeliveryClient client = host.Services
+            .GetRequiredService<IConnectorPollDeliveryClientFactory>()
+            .Create(new TestTokenCredential());
+        var endpoints = new ConnectorPollingEndpoints(
+            new Uri(secretEndpoint),
+            new Uri(
+                "https://runtime.test/private/triggerconfigs/name/acknowledge?signature=secret-value"),
+            new Uri(
+                "https://runtime.test/private/triggerconfigs/name/approximateQueueDepth?signature=secret-value"));
+
+        await client.ReceiveAsync(
+            endpoints,
+            maxEvents: 1,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(
+            loggerProvider.Messages,
+            message =>
+                message.Contains(
+                    "secret-value",
+                    StringComparison.Ordinal) ||
+                message.Contains(
+                    "/private/",
+                    StringComparison.Ordinal));
     }
 
     private static IHost BuildHost(
         IDictionary<string, string?> settings,
-        Action<ConnectorOptions>? configure = null)
+        Action<ConnectorOptions>? configure = null,
+        Action<IServiceCollection>? configureServices = null,
+        Action<ILoggingBuilder>? configureLogging = null)
     {
-        return new HostBuilder()
+        IHostBuilder hostBuilder = new HostBuilder()
             .ConfigureAppConfiguration(configuration =>
                 configuration.AddInMemoryCollection(settings))
             .ConfigureWebJobs(builder =>
@@ -110,7 +253,57 @@ public class ConnectorOptionsBindingTests
                 {
                     builder.AddConnector(configure);
                 }
-            })
-            .Build();
+            });
+        if (configureServices is not null)
+        {
+            hostBuilder.ConfigureServices(configureServices);
+        }
+
+        if (configureLogging is not null)
+        {
+            hostBuilder.ConfigureLogging(configureLogging);
+        }
+
+        return hostBuilder.Build();
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string>
+            _messages = new();
+
+        internal IReadOnlyCollection<string> Messages => _messages.ToArray();
+
+        public ILogger CreateLogger(string categoryName) =>
+            new CapturingLogger(_messages);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(
+            System.Collections.Concurrent.ConcurrentQueue<string> messages) :
+            ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull =>
+                null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                messages.Enqueue(formatter(state, exception));
+                if (exception is not null)
+                {
+                    messages.Enqueue(exception.ToString());
+                }
+            }
+        }
     }
 }

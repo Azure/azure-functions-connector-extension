@@ -16,17 +16,8 @@ public class ConnectorTriggerAttributeTests
         Assert.Null(attribute.Connection);
         Assert.Null(attribute.TriggerConfigName);
         Assert.Equal(0, attribute.MaxBatchSize);
+        Assert.Equal(0, attribute.MaxConcurrentCalls);
         Assert.Equal(0, attribute.TargetPendingEventThreshold);
-    }
-
-    [Fact]
-    public void Attribute_HasCorrectBindingType()
-    {
-        // Arrange
-        var attribute = new ConnectorTriggerAttribute();
-
-        // Assert - verify it can be created (binding type is set via WebJobsAttribute)
-        Assert.IsType<ConnectorTriggerAttribute>(attribute);
     }
 
     [Fact]
@@ -37,16 +28,20 @@ public class ConnectorTriggerAttributeTests
         {
             DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
             Connection = "ConnectorNamespace",
-            TriggerConfigName = "OnNewEmail",
+            TriggerConfigName = "%OnNewEmailTriggerConfigName%",
             MaxBatchSize = 4,
-            TargetPendingEventThreshold = 8,
+            MaxConcurrentCalls = 8,
+            TargetPendingEventThreshold = 12,
         };
 
         // Assert
         Assert.Equal(ConnectorTriggerDeliveryMode.Poll, attribute.DeliveryMode);
         Assert.Equal("ConnectorNamespace", attribute.Connection);
-        Assert.Equal("OnNewEmail", attribute.TriggerConfigName);
+        Assert.Equal(
+            "%OnNewEmailTriggerConfigName%",
+            attribute.TriggerConfigName);
         Assert.Equal(4, attribute.MaxBatchSize);
-        Assert.Equal(8, attribute.TargetPendingEventThreshold);
+        Assert.Equal(8, attribute.MaxConcurrentCalls);
+        Assert.Equal(12, attribute.TargetPendingEventThreshold);
     }
 }
