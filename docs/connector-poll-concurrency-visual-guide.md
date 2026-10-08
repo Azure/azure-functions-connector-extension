@@ -1,6 +1,6 @@
 # Connector Poll: A Visual Guide to Batching, Concurrency, and Scaling
 
-This guide describes the intended design for discussion: batched delivery processes one chunk at a time per listener, single-event delivery supports configurable concurrency, and scaling is independent of both. Implementation and the other repository documentation will be aligned after agreement; this guide is not a statement of current runtime behavior.
+This guide describes the implemented behavior: batched delivery processes one chunk at a time per listener, single-event delivery supports configurable concurrency, and scaling is independent of both.
 
 ## Table of Contents
 
@@ -30,7 +30,7 @@ Think of batch size as events per invocation, concurrent calls as how many singl
 
 For a batched function, choose `MaxBatchSize` if the default of 1 is too small; there is no batch-concurrency setting. For a single-event function, batch size stays at 1 and `MaxConcurrentCalls` can be left at its default unless workload measurements justify tuning it. For either mode, `TargetPendingEventThreshold` can also use its default; override it only when tuning scale-out behavior. Host-level polling backoff normally needs no per-function configuration.
 
-`MaxConcurrentCalls` uses the familiar Service Bus name and applies only to single-event delivery. In the examples below, a "processing task" means the extension's work around a call: preparation, function invocation, and acknowledgement. That accounting detail explains when another call can start; it is not another customer setting.
+`MaxConcurrentCalls` applies only to single-event delivery, aligning with the [Service Bus extension's single-message-only setting](https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-service-bus#hostjson-settings). Connector's limit is per listener on one instance, with no CPU-core multiplier; it does not introduce Service Bus sessions. In the examples below, a "processing task" means the extension's work around a call: preparation, function invocation, and acknowledgement. That accounting detail explains when another call can start; it is not another customer setting.
 
 `TargetPendingEventThreshold` is not a hard pending-event limit. `MaxPollingInterval` is not an invocation timeout or a shutdown grace period. Local processing limits apply separately to each trigger listener on each instance, not as one shared budget for every function in the app.
 
@@ -219,7 +219,7 @@ Negative trigger values are invalid. Effective batch size must be 1 through 32, 
 
 `MaxPollingInterval` is host-level configuration only and must be at least one second. It caps empty-queue backoff rather than specifying a fixed interval.
 
-Batched bindings omit `MaxConcurrentCalls`; `defaultMaxConcurrentCalls` does not affect them. Before implementation, the validation behavior for an explicitly supplied, inapplicable batched `MaxConcurrentCalls` value needs agreement with Pranava. It must not silently look like a working batch-concurrency control.
+Batched bindings should omit `MaxConcurrentCalls` or leave it at zero; this produces no warning, and `defaultMaxConcurrentCalls` does not affect them. A positive trigger value is ignored with a warning at listener startup, including when batched cardinality uses `MaxBatchSize = 1`. Negative values remain invalid.
 
 ## Linked Outputs
 
@@ -317,9 +317,9 @@ Keeping the default batch size at 1 permits scalar bindings to omit `MaxBatchSiz
 
 ## Implementation Boundary
 
-The intended listener admission change is limited to cardinality: one active chunk-processing task for batched bindings, a configurable concurrent-task limit for single-event bindings. The scaler remains independent. Existing start/stop serialization, host drain-mode policy, acknowledgement rules, and host-wide linked-output serialization remain in place.
+Listener admission follows cardinality: one active chunk-processing task for batched bindings, a configurable concurrent-task limit for single-event bindings. The scaler remains independent. Existing start/stop serialization, host drain-mode policy, acknowledgement rules, and host-wide linked-output serialization remain in place.
 
-The following files are the implementation surfaces to align after agreement, not evidence that this intended design is already implemented:
+The following files implement this behavior:
 
 - [Listener admission and chunk processing](../src/Microsoft.Azure.Functions.Extensions.Connector/Polling/ConnectorPollingListener.cs)
 - [Effective listener configuration and validation](../src/Microsoft.Azure.Functions.Extensions.Connector/Polling/ConnectorPollingOptions.cs)

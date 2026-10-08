@@ -47,7 +47,8 @@ internal sealed record ConnectorPollingOptions(
                 "Connector trigger MaxBatchSize must be 1 when cardinality is one. Set cardinality to many for batched invocation.");
         }
 
-        int maxConcurrentCalls = ResolveMaxConcurrentCalls(attribute.MaxConcurrentCalls, defaults.DefaultMaxConcurrentCalls);
+        int maxConcurrentCalls = ResolveMaxConcurrentCalls(
+            attribute.MaxConcurrentCalls, defaults.DefaultMaxConcurrentCalls, isBatched);
 
         return new ConnectorPollingOptions(
             attribute.Connection,
@@ -79,12 +80,19 @@ internal sealed record ConnectorPollingOptions(
         return value;
     }
 
-    internal static int ResolveMaxConcurrentCalls(int configuredValue, int defaultValue)
+    private static int ResolveMaxConcurrentCalls(
+        int configuredValue, int defaultValue, bool isBatched)
     {
         if (configuredValue < 0)
         {
             throw new InvalidOperationException(
                 "Connector trigger MaxConcurrentCalls must be zero or greater.");
+        }
+
+        if (isBatched)
+        {
+            // Retain the explicit value only for the startup warning; batch admission is fixed at one task.
+            return configuredValue;
         }
 
         int value = configuredValue == 0 ? defaultValue : configuredValue;

@@ -12,23 +12,23 @@ public class ConnectorPollingOptionsTests
         {
             Connection = "ConnectorNamespace",
             TriggerConfigName = "%OnNewEmailTriggerConfigName%",
-            MaxBatchSize = 4,
+            MaxBatchSize = 1,
             MaxConcurrentCalls = 8,
         };
 
         var result = ConnectorPollingOptions.Create(
             attribute,
             new ConnectorOptions(),
-            isBatched: true);
+            isBatched: false);
 
         Assert.Equal("ConnectorNamespace", result.Connection);
         Assert.Equal(
             "%OnNewEmailTriggerConfigName%",
             result.TriggerConfigName);
-        Assert.Equal(4, result.MaxBatchSize);
+        Assert.Equal(1, result.MaxBatchSize);
         Assert.Equal(8, result.MaxConcurrentCalls);
         Assert.Equal(TimeSpan.FromSeconds(30), result.MaxPollingInterval);
-        Assert.True(result.IsBatched);
+        Assert.False(result.IsBatched);
     }
 
     [Fact]
@@ -36,7 +36,7 @@ public class ConnectorPollingOptionsTests
     {
         var defaults = new ConnectorOptions
         {
-            DefaultMaxBatchSize = 3,
+            DefaultMaxBatchSize = 1,
             DefaultMaxConcurrentCalls = 7,
             MaxPollingInterval = TimeSpan.FromSeconds(45),
         };
@@ -44,12 +44,75 @@ public class ConnectorPollingOptionsTests
         var result = ConnectorPollingOptions.Create(
             CreateValidAttribute(),
             defaults,
-            isBatched: true);
+            isBatched: false);
 
-        Assert.Equal(3, result.MaxBatchSize);
+        Assert.Equal(1, result.MaxBatchSize);
         Assert.Equal(7, result.MaxConcurrentCalls);
         Assert.Equal(TimeSpan.FromSeconds(45), result.MaxPollingInterval);
+        Assert.False(result.IsBatched);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(7)]
+    [InlineData(int.MaxValue)]
+    public void Create_BatchedDeliveryIgnoresHostConcurrency(
+        int defaultMaxConcurrentCalls)
+    {
+        var defaults = new ConnectorOptions
+        {
+            DefaultMaxBatchSize = 3,
+            DefaultMaxConcurrentCalls = defaultMaxConcurrentCalls,
+        };
+
+        var result = ConnectorPollingOptions.Create(
+            CreateValidAttribute(), defaults, isBatched: true);
+
+        Assert.Equal(3, result.MaxBatchSize);
+        Assert.Equal(0, result.MaxConcurrentCalls);
         Assert.True(result.IsBatched);
+    }
+
+    [Fact]
+    public void Create_BatchedDeliveryUsesBatchSizeOverride()
+    {
+        ConnectorTriggerAttribute attribute = CreateValidAttribute();
+        attribute.MaxBatchSize = 4;
+
+        var result = ConnectorPollingOptions.Create(
+            attribute, new ConnectorOptions(), isBatched: true);
+
+        Assert.Equal(4, result.MaxBatchSize);
+        Assert.Equal(0, result.MaxConcurrentCalls);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(1, 16)]
+    [InlineData(4, 1)]
+    [InlineData(4, 16)]
+    public void Create_BatchedBindingPreservesIgnoredMaxConcurrentCallsForWarning(
+        int maxBatchSize, int maxConcurrentCalls)
+    {
+        ConnectorTriggerAttribute attribute = CreateValidAttribute();
+        attribute.MaxBatchSize = maxBatchSize;
+        attribute.MaxConcurrentCalls = maxConcurrentCalls;
+
+        var result = ConnectorPollingOptions.Create(
+            attribute, new ConnectorOptions(), isBatched: true);
+
+        Assert.Equal(maxConcurrentCalls, result.MaxConcurrentCalls);
+        Assert.True(result.IsBatched);
+    }
+
+    [Fact]
+    public void Create_SingleDeliveryUsesBuiltInConcurrencyDefault()
+    {
+        var result = ConnectorPollingOptions.Create(
+            CreateValidAttribute(), new ConnectorOptions());
+
+        Assert.Equal(16, result.MaxConcurrentCalls);
     }
 
     [Fact]
@@ -95,14 +158,16 @@ public class ConnectorPollingOptionsTests
         Assert.Contains("DefaultMaxBatchSize", exception.Message);
     }
 
-    [Fact]
-    public void Create_Throws_WhenAttributeMaxConcurrentCallsIsNegative()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Create_Throws_WhenAttributeMaxConcurrentCallsIsNegative(bool isBatched)
     {
         ConnectorTriggerAttribute attribute = CreateValidAttribute();
         attribute.MaxConcurrentCalls = -1;
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            ConnectorPollingOptions.Create(attribute, new ConnectorOptions()));
+            ConnectorPollingOptions.Create(attribute, new ConnectorOptions(), isBatched));
 
         Assert.Contains("MaxConcurrentCalls", exception.Message);
     }

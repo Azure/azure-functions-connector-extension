@@ -29,8 +29,9 @@ public sealed class ConnectorOptions : IOptionsFormatter
     public int DefaultTargetPendingEventThreshold { get; set; } = 16;
 
     /// <summary>
-    /// Gets or sets the default maximum number of concurrent function invocations per worker instance.
-    /// The value must be greater than zero.
+    /// Gets or sets the default maximum number of concurrent single-event processing tasks
+    /// per listener on one worker instance. Each task includes preparation, invocation, and acknowledgement.
+    /// The value must be greater than zero. It does not apply to batched delivery.
     /// </summary>
     public int DefaultMaxConcurrentCalls { get; set; } = 16;
 

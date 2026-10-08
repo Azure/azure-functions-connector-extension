@@ -75,7 +75,7 @@ internal sealed class ConnectorPollingListenerFactory(
 
 /// <summary>
 /// Connector Namespace Poll listener supporting bounded concurrent
-/// single-message or batched function invocations.
+/// single-event processing or sequential batch processing.
 /// </summary>
 internal sealed class ConnectorPollingListener : IListener
 {
@@ -157,6 +157,14 @@ internal sealed class ConnectorPollingListener : IListener
             {
                 ThrowIfDisposed();
                 cancellationToken.ThrowIfCancellationRequested();
+                if (Options.IsBatched && Options.MaxConcurrentCalls > 0)
+                {
+                    _logger.LogWarning(
+                        "Connector Poll MaxConcurrentCalls={MaxConcurrentCalls} is ignored for batched function {FunctionName}. MaxConcurrentCalls applies only to single-event delivery; batches are processed one at a time per listener.",
+                        Options.MaxConcurrentCalls,
+                        Registration.FunctionName);
+                }
+
                 _receiveCancellation = new CancellationTokenSource();
                 _processingCancellation = new CancellationTokenSource();
                 _messagePump = RunMessagePumpAsync(
@@ -271,6 +279,7 @@ internal sealed class ConnectorPollingListener : IListener
         CancellationToken processingCancellationToken)
     {
         var activeInvocations = new HashSet<Task>();
+        int processingTaskLimit = Options.IsBatched ? 1 : Options.MaxConcurrentCalls;
         TimeSpan emptyQueueDelay = InitialEmptyQueueDelay;
         TimeSpan failureDelay = InitialFailureDelay;
         try
@@ -278,9 +287,9 @@ internal sealed class ConnectorPollingListener : IListener
             while (!receiveCancellationToken.IsCancellationRequested)
             {
                 activeInvocations.RemoveWhere(static task => task.IsCompleted);
-                int availableInvocationSlots =
-                    Options.MaxConcurrentCalls - activeInvocations.Count;
-                if (availableInvocationSlots <= 0)
+                int availableProcessingCapacity =
+                    processingTaskLimit - activeInvocations.Count;
+                if (availableProcessingCapacity <= 0)
                 {
                     await Task.WhenAny(activeInvocations)
                         .WaitAsync(receiveCancellationToken)
@@ -290,9 +299,11 @@ internal sealed class ConnectorPollingListener : IListener
 
                 try
                 {
-                    int maxEvents = CalculateMaxEvents(
-                        availableInvocationSlots,
-                        Options.MaxBatchSize);
+                    int maxEvents = Options.IsBatched
+                        ? Options.MaxBatchSize
+                        : Math.Min(
+                            ConnectorPollingProtocolLimits.MaximumBatchSize,
+                            availableProcessingCapacity);
                     ConnectorReceiveResult receiveResult =
                         await _deliveryClient.ReceiveAsync(
                             endpoints,
@@ -564,18 +575,6 @@ internal sealed class ConnectorPollingListener : IListener
         currentDelay.Ticks >= maximumDelay.Ticks / 2
             ? maximumDelay
             : TimeSpan.FromTicks(currentDelay.Ticks * 2);
-
-    private static int CalculateMaxEvents(
-        int availableInvocationSlots,
-        int maxBatchSize)
-    {
-        int maximumBatchSize =
-            ConnectorPollingProtocolLimits.MaximumBatchSize;
-        return availableInvocationSlots >=
-            (maximumBatchSize + maxBatchSize - 1) / maxBatchSize
-                ? maximumBatchSize
-                : availableInvocationSlots * maxBatchSize;
-    }
 
     private sealed record PreparedMessage(
         ConnectorTriggerEventInput Input,

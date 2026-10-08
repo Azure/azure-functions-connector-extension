@@ -72,7 +72,7 @@ https://<function-app-domain>/runtime/webhooks/connector?functionName=<function-
 
 - **Connector trigger binding** - receive callbacks from Connector Namespace managed connectors
 - **Poll delivery** - receive and acknowledge leased events with target-based scaling
-- **Batching, concurrent calls, and scaling targets** - configure invocation shape, per-instance parallelism, and target-based scaling independently
+- **Batching, single-event concurrent calls, and scaling targets** - configure invocation shape, single-event parallelism, and target-based scaling independently; batch listeners process one batch at a time
 - **Poll message metadata** - bind the stable delivery `MessageId` with `ConnectorEvent<T>`
 - **POCO binding** - bind directly to SDK types like `Office365OnNewEmailTriggerPayload`
 - **String/JSON binding** - bind to raw JSON string
@@ -146,7 +146,6 @@ Poll functions configure a credential connection separately from their Trigger C
     TriggerConfigName = "%OnNewEmailTriggerConfigName%",
     IsBatched = true,
     MaxBatchSize = 4,
-    MaxConcurrentCalls = 4,
     TargetPendingEventThreshold = 16)]
 ```
 
@@ -176,7 +175,9 @@ The extension defensively implements `outputsLink` delivery, but Connector Names
 
 An omitted or zero `MaxBatchSize` uses `extensions.connector.defaultMaxBatchSize` from `host.json`; the built-in default is `1`. The resolved value supplied to the listener is always between `1` and `32`.
 
-An omitted or zero `MaxConcurrentCalls` uses `extensions.connector.defaultMaxConcurrentCalls`; the built-in default is `16`. Receive capacity is capped at 32 events and otherwise equals the available invocation slots multiplied by `MaxBatchSize`.
+`MaxConcurrentCalls` applies only to single-event delivery, aligning with the [Service Bus extension's single-message-only setting](https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-service-bus#hostjson-settings). For single-event bindings, an omitted or zero value uses `extensions.connector.defaultMaxConcurrentCalls`; the built-in default is `16`. The limit is per listener on one instance, with no CPU-core multiplier. A processing task occupies capacity from preparation through function invocation and acknowledgement, including any linked-output limiter wait. Receive requests at most `min(32, MaxConcurrentCalls - activeProcessingTasks)` events; no Receive occurs when capacity is full.
+
+Batched listeners process one batch at a time, including preparation, invocation, and acknowledgement, and request at most the effective `MaxBatchSize` events per Receive. This also applies to batched cardinality with `MaxBatchSize = 1`. Omit `MaxConcurrentCalls` or leave it at zero on batch bindings; this produces no warning and does not inherit the host-level concurrent-call default. A positive trigger value is ignored with a warning at listener startup, not used as a batch-concurrency limit. Negative values remain invalid. Different listeners or instances can still process batches concurrently; sequential local processing does not guarantee event ordering.
 
 When Receive returns no messages, the listener uses randomized exponential backoff starting at one second and resetting whenever messages are received. The delay is capped at 30 seconds by default. Configure the cap in `host.json`:
 
@@ -222,9 +223,12 @@ OnNewEmailTriggerConfigName=<poll-trigger-config-name>
 
 Customer setup or provisioning tooling derives `pollingEndpoint` from the Trigger Config's service-generated `pollingEndpoints.receiveUri` and writes it to the Function App settings. The extension does not discover the endpoint through ARM. If Connector Namespace returns a different runtime endpoint, the Function App setting must be updated.
 
-`TargetPendingEventThreshold` is the configured pending-event target per worker instance. Target-scaler precedence is `TargetScalerContext.InstanceConcurrency`, then `TargetPendingEventThreshold`, then `DefaultTargetPendingEventThreshold`. The selected value is used in `ceil(approximateQueueDepth / effectiveTarget)`. `MaxConcurrentCalls` separately controls active invocation-processing tasks on each worker.
+`TargetPendingEventThreshold` is the configured pending-event target per worker instance, with a built-in default of `16`. Target-scaler precedence is `TargetScalerContext.InstanceConcurrency`, then a nonzero `TargetPendingEventThreshold`, then `DefaultTargetPendingEventThreshold`. The selected value must be positive and is used in `ceil(approximateQueueDepth / effectiveTarget)`. It is a scaling target, not a hard limit on locally pending events. `MaxConcurrentCalls` separately controls single-event processing tasks per listener; the runtime scaling override does not change that limit or enable concurrent batches.
 
 `MaxBatchSize` controls how many events may be delivered in one function invocation. It does not participate in target scaling.
+
+See the [visual guide to batching, concurrency, and scaling](./docs/connector-poll-concurrency-visual-guide.md) for examples and diagrams of the implemented behavior.
+
 ## Documentation
 
 - **[Operations to Functions Signature Mapping](./docs/operations-functions-match.md)** - Complete reference of all connector trigger operations and their Azure Functions signatures across .NET, Python, and TypeScript SDKs.
@@ -280,6 +284,10 @@ azure-functions-connector-extension/
 ## Building
 
 Requires .NET SDK 10.0.100 or later (see `global.json`).
+
+NuGet uses the public `azfunc/public/upstream-public` Azure Artifacts feed configured in `NuGet.config`. Each Node.js sample's `.npmrc`, beside its `package.json`, matches the Connectors Node.js SDK by setting only `omit-lockfile-registry-resolved=true`. Lockfiles retain package versions and integrity hashes without embedding registry URLs. npm feed selection comes from your user-level or CI configuration, not the repository. Run npm commands from the selected sample directory, and keep credentials out of checked-in configuration.
+
+If your selected Azure Artifacts feed returns `E401`, configure credentials in your user-level `.npmrc` following the [Azure Artifacts npm authentication guidance](https://learn.microsoft.com/azure/devops/artifacts/npm/npmrc); do not add credentials to the sample's checked-in `.npmrc`.
 
 ```bash
 dotnet build

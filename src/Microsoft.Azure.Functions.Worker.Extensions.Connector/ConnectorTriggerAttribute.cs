@@ -44,12 +44,17 @@ public sealed class ConnectorTriggerAttribute : TriggerBindingAttribute, ISuppor
     /// Gets or sets the maximum number of events supplied to one function invocation.
     /// Valid batch sizes are one through 32. A value of zero uses the host-level default.
     /// Values greater than one require <see cref="IsBatched"/>.
+    /// Batched delivery processes one batch at a time per listener, even when the batch size is one.
     /// </summary>
     public int MaxBatchSize { get; set; }
 
     /// <summary>
-    /// Gets or sets the maximum number of concurrent function invocations per worker instance.
-    /// The value must be non-negative. A value of zero uses the host-level default.
+    /// Gets or sets the maximum number of concurrent single-event processing tasks per listener
+    /// on one worker instance. Each task includes preparation, invocation, and acknowledgement.
+    /// The value must be non-negative. In single-event mode, a value of zero uses the host-level default (built-in value 16).
+    /// Applies only to single-event delivery, as in the Service Bus extension.
+    /// When <see cref="IsBatched"/> is true, positive values are ignored with a startup warning;
+    /// batches are processed one at a time per listener.
     /// </summary>
     public int MaxConcurrentCalls { get; set; }
 

@@ -301,7 +301,7 @@ public class ConnectorTriggerBindingProviderTests
             "on-new-email",
             pollingListener.Options.TriggerConfigName);
         Assert.Equal(2, pollingListener.Options.MaxBatchSize);
-        Assert.Equal(6, pollingListener.Options.MaxConcurrentCalls);
+        Assert.Equal(0, pollingListener.Options.MaxConcurrentCalls);
         Assert.True(pollingListener.Options.IsBatched);
     }
 

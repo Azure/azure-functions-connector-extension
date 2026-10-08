@@ -18,7 +18,7 @@
 
 ## Purpose
 
-Deliver production Poll support through a stacked PR sequence while preserving existing Webhook behavior. The stack now includes the trigger contract, configuration, protocol models, target scaler, runtime clients, a concurrent listener with invocation batching, and the worker binding. This document records the delivered implementation boundaries, open service dependencies, and final completion criteria; the authoritative behavioral and architectural decisions are in `connector-trigger-poll-delivery-design.md`.
+Deliver production Poll support through a stacked PR sequence while preserving existing Webhook behavior. The stack now includes the trigger contract, configuration, protocol models, target scaler, runtime clients, a listener with bounded single-event concurrency and sequential invocation batching, and the worker binding. This document records the delivered implementation boundaries, open service dependencies, and final completion criteria; the authoritative behavioral and architectural decisions are in `connector-trigger-poll-delivery-design.md`.
 
 The connection-scoped `pollingEndpoint` and `TriggerConfigName` migration, together with scaling/release completion, are combined in the final stacked Poll delivery PR. No additional implementation PR follows it.
 
@@ -43,7 +43,7 @@ Phase 0 is complete: sanitized evidence is preserved outside the repository, tem
 
 ## PR 1: Trigger Contract
 
-Replace the earlier public `MaxEvents` seam with independent batching and per-instance event-capacity controls:
+Replace the earlier public `MaxEvents` seam with independent batching, single-event concurrency, and scaling controls:
 
 ```csharp
 [ConnectorTrigger(
@@ -52,7 +52,6 @@ Replace the earlier public `MaxEvents` seam with independent batching and per-in
     TriggerConfigName = "%OnNewEmailTriggerConfigName%",
     IsBatched = true,
     MaxBatchSize = 4,
-    MaxConcurrentCalls = 8,
     TargetPendingEventThreshold = 16)]
 ```
 
@@ -68,13 +67,14 @@ Changes:
   public int DefaultTargetPendingEventThreshold { get; set; } = 16;
   ```
 
-- Treat `0` on each attribute property as use-host-default.
+- Treat `0` on each applicable attribute property as use-host-default.
 - Accept `MaxBatchSize` as `0` for the host default or from `1` through `32`, and require the effective value to be from `1` through `32`.
-- Accept non-negative `MaxConcurrentCalls` and `TargetPendingEventThreshold` values and require each effective value to be greater than zero.
-- Define `MaxConcurrentCalls` as the maximum number of active invocation-processing tasks per worker instance.
+- Accept non-negative single-event `MaxConcurrentCalls` and `TargetPendingEventThreshold` values and require each effective value to be greater than zero.
+- Define `MaxConcurrentCalls` as the maximum number of active single-event processing tasks per listener on one worker instance, including preparation, invocation, and acknowledgement, with no CPU-core multiplier.
+- Apply `MaxConcurrentCalls` only to single-event delivery, aligning with the [Service Bus extension's single-message-only setting](https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-service-bus#hostjson-settings). Batch bindings should omit it or leave it at zero; ignore a positive trigger value with a warning at listener startup, including when `MaxBatchSize = 1`. Negative values remain invalid. The host-level default affects only single-event listeners.
 - Define `TargetPendingEventThreshold` as the desired pending events per worker instance used only for target-based scaling.
-- Determine Receive capacity from invocation slots: `min(32, availableInvocationSlots * effectiveMaxBatchSize)`.
-- Keep `MaxBatchSize` independent of scaling; use it for invocation batching and to convert available invocation slots into Receive event capacity.
+- Request `min(32, MaxConcurrentCalls - activeProcessingTasks)` events for single-event listeners. Idle batched listeners request at most `MaxBatchSize` and finish the entire chunk before receiving again.
+- Keep `MaxBatchSize` independent of scaling; use it for invocation batching and batched Receive sizing.
 - Preserve `Webhook` as the default.
 - Keep `Connection` literal; do not apply `%...%` name resolution to it.
 - Resolve `TriggerConfigName` through Functions `%...%` app-setting resolution.
@@ -232,7 +232,7 @@ Requirements:
 - Array `T[]` and `ConnectorEvent<T>[]` bindings accept an effective `MaxBatchSize` of `1` or greater; a final invocation batch may contain fewer items.
 - Apply shape validation after resolving `DefaultMaxBatchSize`, so a scalar parameter with `MaxBatchSize = 0` fails when the host default is greater than `1`.
 - Fail incompatible bindings during indexing or listener startup rather than ignoring `MaxBatchSize`, dropping events, or changing the parameter shape.
-- Keep `MaxConcurrentCalls` and `TargetPendingEventThreshold` independent of parameter shape.
+- Apply `MaxConcurrentCalls` only to scalar bindings; array bindings use one processing task at a time. Keep `TargetPendingEventThreshold` independent of parameter shape.
 - Support closed generic payload types; reject unresolved open generic functions.
 - Preserve each Poll `MessageId` with its corresponding payload.
 - Use `null` for Webhook `MessageId` unless the service defines an equivalent stable Webhook identifier.
@@ -253,28 +253,28 @@ Invocation batching is implemented in the lifecycle-safe, capacity-aware message
 The listener now:
 
 - Honors explicit one/many cardinality independently from `MaxBatchSize`.
-- Uses the configured endpoints and receives no more than `availableInvocationSlots * MaxBatchSize`, capped at 32.
-- Partitions Receive results into chunks of at most `MaxBatchSize`, with one active processing task per occupied invocation slot.
+- Uses the configured endpoints and receives at most `min(32, MaxConcurrentCalls - activeProcessingTasks)` events in single-event mode or `MaxBatchSize` events when a batched listener is idle.
+- Partitions Receive results into chunks of at most `MaxBatchSize`, with one active task per event in single-event mode and one active chunk per batched listener.
 - Preserves normal batching for inline outputs and invokes each linked output individually behind a singleton host-wide limiter.
 - Acknowledges all prepared messages only after a successful invocation.
 - Passes metadata-rich scalar and collection values through the worker binding.
 
-Capacity calculation:
+Single-event capacity calculation, used only when capacity is positive:
 
 ```csharp
-int availableInvocationSlots =
-    effectiveMaxConcurrentCalls - activeInvocations.Count;
-int maxEvents = Math.Min(
-    32,
-    availableInvocationSlots * effectiveMaxBatchSize);
+int availableProcessingCapacity =
+    effectiveMaxConcurrentCalls - activeProcessingTasks;
+int maxEvents = Math.Min(32, availableProcessingCapacity);
 ```
+
+Batched listeners have a fixed one-chunk processing limit. When idle, they request at most `MaxBatchSize`; preparation, sub-invocations, linked-output waiting, and acknowledgement must all finish before the next Receive.
 
 Requirements:
 
 - Receive only when `maxEvents > 0`.
-- Do not create more active processing tasks than effective `MaxConcurrentCalls`.
+- Do not create more active single-event processing tasks than effective `MaxConcurrentCalls`.
 - Partition each Receive result into invocation batches containing at most `MaxBatchSize` events.
-- Allow no more than `MaxConcurrentCalls` active invocation-processing tasks per worker instance.
+- Allow at most one active chunk per batched listener, including when the effective batch size is one.
 - Group inline messages normally, but place every linked-output message in a single-event invocation.
 - Use one singleton host-wide linked-output invocation slot and hold it from before download through function execution and acknowledgement.
 - Keep the slot process-local so each scaled-out Functions host can process one linked-output invocation; do not add distributed serialization.
@@ -289,7 +289,7 @@ Requirements:
 - Serialize Start/Stop, release completed pump state before restarting, and retain cancellation sources until their pump finishes even when Stop is cancelled or Dispose races with shutdown.
 - Stop receiving during shutdown, use host drain mode to finish in-flight work without a listener-owned grace timer, otherwise cancel processing immediately, and leave unfinished events unacknowledged. Cancel and Dispose always cancel processing.
 
-Inline processing remains concurrent. Only linked-output invocations are serialized host-wide to bound retained payload memory.
+Inline processing can overlap in single-event mode; batch chunks are sequential per listener. Different listeners or instances can process batches concurrently without guaranteeing event ordering. Linked-output invocations are additionally serialized host-wide to bound retained payload memory.
 
 ## PR 8: Scaling and Completion
 
@@ -319,6 +319,7 @@ Requirements:
 
 - Calculate `ceil(pendingEvents / effectiveTarget)` and require the effective target to be greater than zero.
 - Keep `MaxConcurrentCalls` and `MaxBatchSize` out of the scaling calculation.
+- Keep the runtime `InstanceConcurrency` override confined to the scaler's denominator; it does not change local single-event concurrency or allow concurrent batches. `TargetPendingEventThreshold` is a scaling target, not a hard local pending-event limit.
 - Document that aggregate queue depth cannot distinguish inline from linked events. Revisit the calculation if the service exposes payload-class or byte backlog metrics.
 - Return zero depth when a queue-depth query fails so the target can scale down to zero.
 - Validate scale from zero.
@@ -356,7 +357,7 @@ The 100 MiB value remains a defensive protocol ceiling, not a validated customer
 
 - Run service-backed .NET, Node.js, and Python tests with representative sizes through 100 MiB and establish the supported payload limit from measured peak memory and execution behavior.
 - Measure deferred worker transport amplification and remove avoidable full-payload copies where possible.
-- Measure the singleton limiter with multiple Poll functions and determine whether the `functions × MaxConcurrentCalls` waiter bound requires a bounded global queue, non-waiting admission, or a byte-budget limiter.
+- Measure the singleton limiter with multiple Poll functions and determine whether the sum of per-listener processing limits (one per batched listener, `MaxConcurrentCalls` per single-event listener) requires a bounded global queue, non-waiting admission, or a byte-budget limiter.
 - Verify mixed workloads do not allow linked waiters to starve inline processing.
 - Obtain service-owned lock-expiration metadata before adding any expiration-based admission decision; never hardcode or expose a user-configured lock duration.
 - Validate linked-heavy scaling and request linked-count or byte-backlog signals if aggregate approximate depth under-scales the workload.

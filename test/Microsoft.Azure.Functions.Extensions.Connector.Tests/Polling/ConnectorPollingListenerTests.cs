@@ -5,6 +5,7 @@ using Azure.Core;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Host;
 using Microsoft.Azure.WebJobs.Host.Executors;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using System.Net;
@@ -581,45 +582,6 @@ public class ConnectorPollingListenerTests
     }
 
     [Fact]
-    public async Task Listener_CapsReceiveCapacityAtProtocolMaximum()
-    {
-        int receiveCount = 0;
-        var delayStarted = NewCompletionSource();
-        var deliveryClient = new StubConnectorPollDeliveryClient
-        {
-            ReceiveAsyncHandler = (_, maxEvents, _) =>
-            {
-                Assert.Equal(
-                    ConnectorPollingProtocolLimits.MaximumBatchSize,
-                    maxEvents);
-                Interlocked.Increment(ref receiveCount);
-                return Task.FromResult(
-                    new ConnectorReceiveResult([], false));
-            },
-        };
-
-        using ConnectorPollingListener listener = CreateListener(
-            Mock.Of<ITriggeredFunctionExecutor>(),
-            Endpoints,
-            deliveryClient,
-            new StubConnectorLinkedOutputClient(),
-            maxBatchSize: ConnectorPollingProtocolLimits.MaximumBatchSize,
-            maxConcurrentCalls: int.MaxValue,
-            isBatched: true,
-            delayAsync: (_, cancellationToken) =>
-            {
-                delayStarted.TrySetResult();
-                return Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-            });
-
-        await listener.StartAsync(CancellationToken.None);
-        await delayStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await listener.StopAsync(CancellationToken.None);
-
-        Assert.Equal(1, receiveCount);
-    }
-
-    [Fact]
     public async Task Listener_BacksOffRepeatedReceiveFailures()
     {
         var deliveryClient = new StubConnectorPollDeliveryClient
@@ -771,17 +733,25 @@ public class ConnectorPollingListenerTests
             delays.Take(3));
     }
 
-    [Fact]
-    public async Task Listener_UsesMaxConcurrentCallsForBatchedInvocations()
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(1, 16)]
+    [InlineData(2, 0)]
+    [InlineData(2, 1)]
+    [InlineData(2, 16)]
+    [InlineData(32, int.MaxValue)]
+    public async Task Listener_ProcessesBatchesSequentiallyThroughAcknowledgement(
+        int maxBatchSize, int maxConcurrentCalls)
     {
-        ConnectorPollMessage[] messages =
-        [
-            CreateInlineMessage("message-1", "lock-1", """{"value":1}"""),
-            CreateInlineMessage("message-2", "lock-2", """{"value":2}"""),
-            CreateInlineMessage("message-3", "lock-3", """{"value":3}"""),
-        ];
-        int receiveMaxEvents = 0;
+        ConnectorPollMessage[] messages = Enumerable.Range(1, maxBatchSize + 1)
+            .Select(index => CreateInlineMessage(
+                $"message-{index}", $"lock-{index}", """{"value":1}"""))
+            .ToArray();
         int receiveCount = 0;
+        var firstInvocationEntered = NewCompletionSource();
+        var releaseFirstInvocation = NewCompletionSource();
+        var firstAcknowledgementEntered = NewCompletionSource();
+        var releaseFirstAcknowledgement = NewCompletionSource();
         var acknowledgementsCompleted = NewCompletionSource();
         var acknowledgedMessageIds = new List<string>();
         var acknowledgementSizes = new List<int>();
@@ -790,13 +760,24 @@ public class ConnectorPollingListenerTests
         {
             ReceiveAsyncHandler = (_, maxEvents, _) =>
             {
-                Interlocked.Increment(ref receiveCount);
-                receiveMaxEvents = maxEvents;
+                Assert.Equal(maxBatchSize, maxEvents);
+                int count = Interlocked.Increment(ref receiveCount);
                 return Task.FromResult(
-                    new ConnectorReceiveResult(messages, false));
+                    count switch
+                    {
+                        1 => new ConnectorReceiveResult(messages[..maxBatchSize], true),
+                        2 => new ConnectorReceiveResult(messages[maxBatchSize..], false),
+                        _ => new ConnectorReceiveResult([], false),
+                    });
             },
-            AcknowledgeAsyncHandler = (_, locks, _) =>
+            AcknowledgeAsyncHandler = async (_, locks, _) =>
             {
+                if (Interlocked.Increment(ref acknowledgementCount) == 1)
+                {
+                    firstAcknowledgementEntered.TrySetResult();
+                    await releaseFirstAcknowledgement.Task;
+                }
+
                 lock (acknowledgedMessageIds)
                 {
                     acknowledgedMessageIds.AddRange(
@@ -804,12 +785,12 @@ public class ConnectorPollingListenerTests
                     acknowledgementSizes.Add(locks.Count);
                 }
 
-                if (Interlocked.Increment(ref acknowledgementCount) == 2)
+                if (Volatile.Read(ref acknowledgementCount) == 2)
                 {
                     acknowledgementsCompleted.TrySetResult();
                 }
 
-                return Task.FromResult(Acknowledged(locks));
+                return Acknowledged(locks);
             },
         };
 
@@ -817,8 +798,6 @@ public class ConnectorPollingListenerTests
         int maximumActiveInvocations = 0;
         int enteredInvocations = 0;
         var invocationSizes = new List<int>();
-        var bothInvocationsEntered = NewCompletionSource();
-        var releaseInvocations = NewCompletionSource();
         var executor = new Mock<ITriggeredFunctionExecutor>();
         executor
             .Setup(value => value.TryExecuteAsync(
@@ -839,40 +818,154 @@ public class ConnectorPollingListenerTests
                     int active =
                         Interlocked.Increment(ref activeInvocations);
                     UpdateMaximum(ref maximumActiveInvocations, active);
-                    if (Interlocked.Increment(ref enteredInvocations) == 2)
+                    if (Interlocked.Increment(ref enteredInvocations) == 1)
                     {
-                        bothInvocationsEntered.TrySetResult();
+                        firstInvocationEntered.TrySetResult();
+                        await releaseFirstInvocation.Task;
                     }
 
-                    await releaseInvocations.Task;
                     Interlocked.Decrement(ref activeInvocations);
                     return new FunctionResult(true);
                 });
 
+        var logger = new WarningLogger();
         using ConnectorPollingListener listener = CreateListener(
             executor.Object,
             Endpoints,
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
-            maxBatchSize: 2,
-            maxConcurrentCalls: 2,
-            isBatched: true);
+            maxBatchSize: maxBatchSize,
+            maxConcurrentCalls: maxConcurrentCalls,
+            isBatched: true,
+            logger: logger);
 
         await listener.StartAsync(CancellationToken.None);
-        await bothInvocationsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(2, maximumActiveInvocations);
+        await firstInvocationEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StartAsync(CancellationToken.None);
         Assert.Equal(1, Volatile.Read(ref receiveCount));
 
-        releaseInvocations.TrySetResult();
+        releaseFirstInvocation.TrySetResult();
+        await firstAcknowledgementEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, Volatile.Read(ref receiveCount));
+        Assert.Equal(1, Volatile.Read(ref enteredInvocations));
+        releaseFirstAcknowledgement.TrySetResult();
         await acknowledgementsCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await listener.StopAsync(CancellationToken.None);
 
-        Assert.Equal(4, receiveMaxEvents);
-        Assert.Equal([1, 2], invocationSizes.Order());
-        Assert.Equal(
-            ["message-1", "message-2", "message-3"],
-            acknowledgedMessageIds.Order());
-        Assert.Equal([1, 2], acknowledgementSizes.Order());
+        Assert.Equal(1, maximumActiveInvocations);
+        Assert.Equal(2, receiveCount);
+        Assert.Equal([maxBatchSize, 1], invocationSizes);
+        Assert.Equal(messages.Select(message => message.MessageId), acknowledgedMessageIds);
+        Assert.Equal([maxBatchSize, 1], acknowledgementSizes);
+        if (maxConcurrentCalls > 0)
+        {
+            string warning = Assert.Single(logger.Warnings);
+            Assert.Contains($"MaxConcurrentCalls={maxConcurrentCalls}", warning);
+            Assert.Contains("is ignored for batched function TestFunction", warning);
+        }
+        else
+        {
+            Assert.Empty(logger.Warnings);
+        }
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(16, 16)]
+    [InlineData(32, 32)]
+    [InlineData(33, 32)]
+    [InlineData(int.MaxValue, 32)]
+    public async Task Listener_SingleEventReceiveIsCappedAt32(
+        int maxConcurrentCalls, int expectedMaxEvents)
+    {
+        int receiveMaxEvents = 0;
+        var delayStarted = NewCompletionSource();
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, maxEvents, _) =>
+            {
+                receiveMaxEvents = maxEvents;
+                return Task.FromResult(new ConnectorReceiveResult([], false));
+            },
+        };
+        using ConnectorPollingListener listener = CreateListener(
+            Mock.Of<ITriggeredFunctionExecutor>(),
+            Endpoints,
+            deliveryClient,
+            new StubConnectorLinkedOutputClient(),
+            maxConcurrentCalls: maxConcurrentCalls,
+            delayAsync: (_, cancellationToken) =>
+            {
+                delayStarted.TrySetResult();
+                return Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            });
+
+        await listener.StartAsync(CancellationToken.None);
+        await delayStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(expectedMaxEvents, receiveMaxEvents);
+    }
+
+    [Fact]
+    public async Task Listener_SingleEventCapacityRemainsOccupiedThroughAcknowledgement()
+    {
+        var bothAcknowledgementsEntered = NewCompletionSource();
+        var releaseFirstAcknowledgement = NewCompletionSource();
+        var releaseSecondAcknowledgement = NewCompletionSource();
+        var nextReceiveEntered = NewCompletionSource();
+        int receiveCount = 0;
+        int acknowledgementCount = 0;
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (_, maxEvents, _) =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
+                {
+                    Assert.Equal(2, maxEvents);
+                    return Task.FromResult(new ConnectorReceiveResult(
+                        [
+                            CreateInlineMessage("message-1", "lock-1", """{"value":1}"""),
+                            CreateInlineMessage("message-2", "lock-2", """{"value":2}"""),
+                        ], true));
+                }
+
+                Assert.Equal(1, maxEvents);
+                nextReceiveEntered.TrySetResult();
+                return Task.FromResult(new ConnectorReceiveResult([], false));
+            },
+            AcknowledgeAsyncHandler = async (_, locks, _) =>
+            {
+                if (Interlocked.Increment(ref acknowledgementCount) == 2)
+                {
+                    bothAcknowledgementsEntered.TrySetResult();
+                }
+
+                await (locks.Single().MessageId == "message-1"
+                    ? releaseFirstAcknowledgement.Task
+                    : releaseSecondAcknowledgement.Task);
+                return Acknowledged(locks);
+            },
+        };
+        var executor = new Mock<ITriggeredFunctionExecutor>();
+        executor.Setup(value => value.TryExecuteAsync(
+            It.IsAny<TriggeredFunctionData>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FunctionResult(true));
+        using ConnectorPollingListener listener = CreateListener(
+            executor.Object, Endpoints, deliveryClient,
+            new StubConnectorLinkedOutputClient(), maxConcurrentCalls: 2);
+
+        await listener.StartAsync(CancellationToken.None);
+        await bothAcknowledgementsEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, Volatile.Read(ref receiveCount));
+
+        releaseFirstAcknowledgement.TrySetResult();
+        await nextReceiveEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        releaseSecondAcknowledgement.TrySetResult();
+        await listener.StopAsync(CancellationToken.None);
+
+        Assert.Equal(2, receiveCount);
+        Assert.Equal(2, acknowledgementCount);
     }
 
     [Fact]
@@ -982,7 +1075,6 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             new StubConnectorLinkedOutputClient(),
             maxBatchSize: 2,
-            maxConcurrentCalls: 2,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
@@ -1127,8 +1219,7 @@ public class ConnectorPollingListenerTests
             Endpoints,
             deliveryClient,
             linkedOutputClient,
-            maxBatchSize: 1,
-            maxConcurrentCalls: 2,
+            maxBatchSize: 2,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
@@ -1266,7 +1357,6 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 2,
-            maxConcurrentCalls: 2,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
@@ -1298,14 +1388,26 @@ public class ConnectorPollingListenerTests
                 new ConnectorOutputsLink(
                     new Uri("https://content.example/output-2?sig=secret"))),
         ];
-        var acknowledgementsCompleted = NewCompletionSource();
+        var lastAcknowledgementEntered = NewCompletionSource();
+        var releaseLastAcknowledgement = NewCompletionSource();
+        var nextReceiveEntered = NewCompletionSource();
+        int receiveCount = 0;
         int acknowledgementCount = 0;
         var acknowledgementSizes = new List<int>();
         var deliveryClient = new StubConnectorPollDeliveryClient
         {
-            ReceiveAsyncHandler = (_, _, _) =>
-                Task.FromResult(new ConnectorReceiveResult(messages, false)),
-            AcknowledgeAsyncHandler = (_, locks, _) =>
+            ReceiveAsyncHandler = (_, maxEvents, _) =>
+            {
+                Assert.Equal(4, maxEvents);
+                if (Interlocked.Increment(ref receiveCount) == 1)
+                {
+                    return Task.FromResult(new ConnectorReceiveResult(messages, true));
+                }
+
+                nextReceiveEntered.TrySetResult();
+                return Task.FromResult(new ConnectorReceiveResult([], false));
+            },
+            AcknowledgeAsyncHandler = async (_, locks, _) =>
             {
                 lock (acknowledgementSizes)
                 {
@@ -1314,10 +1416,11 @@ public class ConnectorPollingListenerTests
 
                 if (Interlocked.Increment(ref acknowledgementCount) == 3)
                 {
-                    acknowledgementsCompleted.TrySetResult();
+                    lastAcknowledgementEntered.TrySetResult();
+                    await releaseLastAcknowledgement.Task;
                 }
 
-                return Task.FromResult(Acknowledged(locks));
+                return Acknowledged(locks);
             },
         };
         var linkedOutputClient = new StubConnectorLinkedOutputClient
@@ -1348,15 +1451,18 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 4,
-            maxConcurrentCalls: 4,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
-        await acknowledgementsCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await lastAcknowledgementEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, Volatile.Read(ref receiveCount));
+        releaseLastAcknowledgement.TrySetResult();
+        await nextReceiveEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await listener.StopAsync(CancellationToken.None);
 
-        Assert.Equal([1, 1, 2], invocationSizes.Order());
-        Assert.Equal([1, 1, 2], acknowledgementSizes.Order());
+        Assert.Equal(2, receiveCount);
+        Assert.Equal([2, 1, 1], invocationSizes);
+        Assert.Equal([2, 1, 1], acknowledgementSizes);
     }
 
     [Fact]
@@ -1399,39 +1505,6 @@ public class ConnectorPollingListenerTests
 
         Assert.Contains("message-1", bindingContent);
         Assert.DoesNotContain("lock-secret", bindingContent);
-    }
-
-    [Fact]
-    public async Task Listener_ReceivesWithoutUsingApproximateHasMessages()
-    {
-        int receiveCount = 0;
-        var deliveryClient = new StubConnectorPollDeliveryClient
-        {
-            ReceiveAsyncHandler = (_, _, _) =>
-            {
-                Interlocked.Increment(ref receiveCount);
-                return Task.FromResult(
-                    new ConnectorReceiveResult([], false));
-            },
-        };
-        var delayStarted = NewCompletionSource();
-
-        using ConnectorPollingListener listener = CreateListener(
-            Mock.Of<ITriggeredFunctionExecutor>(),
-            Endpoints,
-            deliveryClient,
-            new StubConnectorLinkedOutputClient(),
-            delayAsync: (_, cancellationToken) =>
-            {
-                delayStarted.TrySetResult();
-                return Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-            });
-
-        await listener.StartAsync(CancellationToken.None);
-        await delayStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await listener.StopAsync(CancellationToken.None);
-
-        Assert.Equal(1, receiveCount);
     }
 
     [Fact]
@@ -1524,7 +1597,6 @@ public class ConnectorPollingListenerTests
             deliveryClient,
             linkedOutputClient,
             maxBatchSize: 2,
-            maxConcurrentCalls: 2,
             isBatched: true);
 
         await listener.StartAsync(CancellationToken.None);
@@ -1547,7 +1619,8 @@ public class ConnectorPollingListenerTests
         TimeSpan? maxPollingInterval = null,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
         ConnectorLinkedOutputInvocationLimiter? linkedOutputInvocationLimiter = null,
-        bool drainModeEnabled = true)
+        bool drainModeEnabled = true,
+        ILogger<ConnectorPollingListener>? logger = null)
     {
         var registration = new ConnectorFunctionRegistration("TestFunction", executor);
         var options = new ConnectorPollingOptions(
@@ -1568,7 +1641,7 @@ public class ConnectorPollingListenerTests
             linkedOutputClient,
             linkedOutputInvocationLimiter
                 ?? new ConnectorLinkedOutputInvocationLimiter(),
-            NullLogger<ConnectorPollingListener>.Instance,
+            logger ?? NullLogger<ConnectorPollingListener>.Instance,
             Mock.Of<IDrainModeManager>(
                 manager => manager.IsDrainModeEnabled == drainModeEnabled),
             delayAsync ?? WaitUntilCancelledAsync);
@@ -1611,6 +1684,25 @@ public class ConnectorPollingListenerTests
 
     private static TaskCompletionSource NewCompletionSource() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private sealed class WarningLogger : ILogger<ConnectorPollingListener>
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning)
+            {
+                Warnings.Add(formatter(state, exception));
+            }
+        }
+    }
 
     private static void UpdateMaximum(ref int maximum, int value)
     {

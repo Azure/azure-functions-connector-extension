@@ -18,7 +18,6 @@ public sealed class OnNewEmailPoll(ILogger<OnNewEmailPoll> logger)
             TriggerConfigName = "%OnNewEmailTriggerConfigName%",
             IsBatched = true,
             MaxBatchSize = 4,
-            MaxConcurrentCalls = 4,
             TargetPendingEventThreshold = 16)]
         ConnectorEvent<Office365OnNewEmailTriggerPayload>[] emails)
     {
