@@ -68,8 +68,11 @@ internal sealed class ConnectorTriggerBinding : ITriggerBinding
     public Task<IListener> CreateListenerAsync(ListenerFactoryContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
+        string functionName = _attribute.DeliveryMode == ConnectorTriggerDeliveryMode.Webhook
+            ? context.Descriptor.ShortName.Split('.').Last()
+            : context.Descriptor.ShortName;
         var registration = new ConnectorFunctionRegistration(
-            context.Descriptor.ShortName,
+            functionName,
             context.Executor);
 
         IListener listener = _attribute.DeliveryMode switch
