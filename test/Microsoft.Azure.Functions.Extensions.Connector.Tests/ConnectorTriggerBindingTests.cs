@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using System.Net;
 using System.Reflection;
+using System.Text;
 using Azure.Core;
 using Microsoft.Azure.WebJobs.Host.Bindings;
 using Microsoft.Azure.WebJobs.Host.Executors;
@@ -120,6 +122,47 @@ public class ConnectorTriggerBindingTests
             binding.CreateListenerAsync(CreateListenerContext()));
     }
 
+    [Theory]
+    [InlineData("TestFunction")]
+    [InlineData("Functions.TestFunction")]
+    public async Task CreateListenerAsync_WebhookRoutesByPublicFunctionName(
+        string shortName)
+    {
+        const string payload = "{\"test\":\"data\"}";
+        var executor = new Mock<ITriggeredFunctionExecutor>();
+        executor.Setup(e => e.TryExecuteAsync(
+                It.IsAny<TriggeredFunctionData>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FunctionResult(true));
+        ConnectorTriggerBinding binding = CreateBinding(
+            GetParameter(),
+            new ConnectorTriggerAttribute());
+        var context = new ListenerFactoryContext(
+            new TestFunctionDescriptor { ShortName = shortName },
+            executor.Object,
+            CancellationToken.None);
+        using IListener listener = await binding.CreateListenerAsync(context);
+        await listener.StartAsync(CancellationToken.None);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "http://localhost/runtime/webhooks/connector?functionName=TestFunction")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+        };
+
+        using HttpResponseMessage response = await _configProvider.ConvertAsync(
+            request,
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        executor.Verify(e => e.TryExecuteAsync(
+                It.Is<TriggeredFunctionData>(data =>
+                    data.TriggerValue is ConnectorTriggerInput &&
+                    ((ConnectorTriggerInput)data.TriggerValue).ToSinglePayloadJson() == payload),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     [Fact]
     public async Task CreateListenerAsync_RejectsNullContext()
     {
@@ -129,6 +172,47 @@ public class ConnectorTriggerBindingTests
 
         await Assert.ThrowsAsync<ArgumentNullException>(() =>
             binding.CreateListenerAsync(null!));
+    }
+
+    [Theory]
+    [InlineData("TestFunction")]
+    [InlineData("Functions.TestFunction")]
+    public async Task CreateListenerAsync_PollPreservesRegistrationAndConfiguration(
+        string shortName)
+    {
+        var executor = Mock.Of<ITriggeredFunctionExecutor>();
+        ConnectorTriggerBinding binding = CreateBinding(
+            GetParameter(),
+            new ConnectorTriggerAttribute
+            {
+                DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
+                Connection = "ConnectorNamespace",
+                TriggerConfigName = "on-new-email",
+                MaxBatchSize = 1,
+                MaxConcurrentCalls = 4,
+            });
+        var context = new ListenerFactoryContext(
+            new TestFunctionDescriptor { ShortName = shortName },
+            executor,
+            CancellationToken.None);
+
+        using var listener = Assert.IsType<ConnectorPollingListener>(
+            await binding.CreateListenerAsync(context));
+
+        Assert.Equal(shortName, listener.Registration.FunctionName);
+        Assert.Same(executor, listener.Registration.Executor);
+        Assert.Equal("ConnectorNamespace", listener.Options.Connection);
+        Assert.Equal("on-new-email", listener.Options.TriggerConfigName);
+        Assert.Equal(1, listener.Options.MaxBatchSize);
+        Assert.Equal(4, listener.Options.MaxConcurrentCalls);
+        Assert.False(listener.Options.IsBatched);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "http://localhost/runtime/webhooks/connector?functionName=TestFunction");
+        using HttpResponseMessage response = await _configProvider.ConvertAsync(
+            request,
+            CancellationToken.None);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

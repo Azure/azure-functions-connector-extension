@@ -26,7 +26,7 @@
     <PackageIcon Condition="'$(PackageIcon)' == ''">icon.png</PackageIcon>
     <ReadmeFile Condition="'$(ReadmeFile)' == ''">README.md</ReadmeFile>
     <PackageReadmeFile Condition="'$(PackageReadmeFile)' == '' AND Exists('$(ReadmeFile)')">$(ReadmeFile)</PackageReadmeFile>
-    <ReleaseNotesFile Condition="'$(ReleaseNotesFile)' == ''">release_notes.md</ReleaseNotesFile>
+    <ReleaseNotesFile Condition="'$(ReleaseNotesFile)' == ''">$(SrcRoot)release_notes.md</ReleaseNotesFile>
     <!-- PackageReleaseNotes: see Release.targets -->
   </PropertyGroup>
 

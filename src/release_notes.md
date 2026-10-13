@@ -2,11 +2,9 @@
 
 ### Microsoft.Azure.Functions.Extensions.Connector
 
-- Add preview support for Connector Namespace Poll triggers with single-event and batched delivery, configurable batching, single-event concurrent calls, independent target scaling based on pending events, and Poll message IDs.
-- Apply `MaxConcurrentCalls` only to single-event delivery, aligning with Service Bus. Process one batch at a time per listener and ignore positive `MaxConcurrentCalls` on batch bindings with a startup warning.
-- Configure Poll with a connection-scoped `pollingEndpoint` and a binding-scoped `TriggerConfigName`, while preserving Webhook defaults.
+- Fix a Webhook routing regression introduced in `0.4.0-alpha` that returned HTTP 404 for existing callback URLs. Register Webhook listeners using the public function name without the host-generated `Functions.` prefix.
+- Preserve Poll listener registration and delivery behavior.
 
 ### Microsoft.Azure.Functions.Worker.Extensions.Connector
 
-- Add preview support for Connector Namespace Poll triggers in .NET isolated worker apps, with single-event and batched delivery and Poll message IDs.
-- Add `TriggerConfigName` metadata for Poll bindings.
+- Update the referenced host extension to `0.4.1-alpha` to include the Webhook routing fix for .NET isolated worker apps.
