@@ -1,20 +1,9 @@
-# Azure Functions Connector Extension (Preview)
-
-> **⚠️ Preview Extension Notice**
->
-> This extension is in early preview and may contain breaking changes without prior notice. It includes features that are still under development and not yet ready for production use. Users should be aware that:
->
-> - Trigger behavior and binding contracts may change between versions
-> - Performance characteristics and stability may vary across releases
-> - Security updates may require version upgrades
->
-> This feature preview has no SLA provided during the preview. DO NOT use the preview features in any production or critical environments.
-> We welcome feedback and contributions — please [open an issue](https://github.com/Azure/azure-functions-connector-extension/issues) with questions, suggestions, or bug reports.
+# Azure Functions Connector Extension
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build](https://dev.azure.com/azfunc/public/_apis/build/status/1710?branchName=main)](https://dev.azure.com/azfunc/public/_build?definitionId=1710&branchName=main)
 
-An Azure Functions trigger extension for receiving Webhook and preview Poll events from Connector Namespace managed connectors (Office 365, Teams, SharePoint, etc.).
+An Azure Functions trigger extension for receiving Webhook and Poll events from Connector Namespace managed connectors (Office 365, Teams, SharePoint, etc.).
 
 - [Learn Documentation](https://learn.microsoft.com/azure/azure-functions/functions-connectors-overview)
 - [Try Samples](https://aka.ms/functions-connectors-samples)
@@ -41,7 +30,7 @@ For non-.NET languages (Node.js, Python, etc.), use the **preview extension bund
 
 ## Overview
 
-This extension enables Azure Functions to receive events from Connector Namespace managed connectors. Webhook delivery sends callbacks to the extension endpoint; preview Poll delivery has the Functions host receive and acknowledge leased events from Connector Namespace.
+This extension enables Azure Functions to receive events from Connector Namespace managed connectors. Webhook delivery sends callbacks to the extension endpoint; Poll delivery has the Functions host receive and acknowledge leased events from Connector Namespace.
 
 **Webhook endpoint pattern:**
 
@@ -87,7 +76,7 @@ https://<function-app-domain>/runtime/webhooks/connector?functionName=<function-
 Add the worker extension NuGet package or project reference:
 
 ```bash
-dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector --prerelease
+dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector
 ```
 
 ### Strongly-typed Payloads
@@ -253,7 +242,7 @@ This repository includes [Copilot Skills](https://docs.github.com/en/copilot/cus
 These samples build and reference local extension code and are meant for extension testing:
 
 - **[Webhook delivery](./test/webhook)** - .NET isolated, Node.js, and Python Webhook samples
-- **[Poll delivery](./test/poll)** - Dedicated .NET, TypeScript, and Python Poll preview samples
+- **[Poll delivery](./test/poll)** - Dedicated .NET, TypeScript, and Python Poll samples
 
 ## Project Structure
 
@@ -274,7 +263,7 @@ azure-functions-connector-extension/
 │       ├── ConnectorTriggerAttribute.cs                         #   Trigger attribute
 │       └── Converters/                                          #   Type converters
 ├── test/
-│   ├── poll/                                                    # Poll preview samples for all supported workers
+│   ├── poll/                                                    # Poll samples for all supported workers
 │   ├── webhook/                                                 # Webhook samples for all supported workers
 │   ├── test-requests.http                                       # HTTP test requests
 │   └── Microsoft.Azure.Functions.Extensions.Connector.Tests/    # Unit tests
