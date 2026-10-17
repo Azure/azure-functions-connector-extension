@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Microsoft.Azure.Functions.Worker.Extensions.Connector</AssemblyName>
-    <Description>Connector trigger extension for Azure Functions isolated worker with Webhook and preview Poll delivery</Description>
+    <Description>Connector trigger extension for Azure Functions isolated worker with Webhook and Poll delivery</Description>
   </PropertyGroup>
 
   <ItemGroup>
