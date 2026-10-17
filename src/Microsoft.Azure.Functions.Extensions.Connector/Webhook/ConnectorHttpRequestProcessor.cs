@@ -44,8 +44,10 @@ internal sealed class ConnectorHttpRequestProcessor
         }
 
         // Validate Content-Type
-        var contentType = request.Content?.Headers?.ContentType?.MediaType;
-        if (!string.Equals(contentType, ExpectedContentType, StringComparison.OrdinalIgnoreCase))
+        HttpContent? content = request.Content;
+        var contentType = content?.Headers.ContentType?.MediaType;
+        if (content == null ||
+            !string.Equals(contentType, ExpectedContentType, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning("Connector trigger received unsupported Content-Type: {ContentType}", contentType ?? "(none)");
             return new HttpResponseMessage(HttpStatusCode.UnsupportedMediaType)
@@ -59,9 +61,7 @@ internal sealed class ConnectorHttpRequestProcessor
             string body;
             try
             {
-                body = request.Content != null
-                    ? await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
-                    : string.Empty;
+                body = await content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRequestBodyTooLarge(ex))
             {

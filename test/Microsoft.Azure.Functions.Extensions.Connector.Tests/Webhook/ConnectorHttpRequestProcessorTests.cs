@@ -54,6 +54,26 @@ public class ConnectorHttpRequestProcessorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_ReturnsUnsupportedMediaType_WhenContentIsMissing()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector");
+        bool invoked = false;
+
+        using var response = await _processor.ProcessAsync(
+            request,
+            "TestFunction",
+            (_, _, _) =>
+            {
+                invoked = true;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+            },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        Assert.False(invoked);
+    }
+
+    [Fact]
     public async Task ProcessAsync_ReturnsUnsupportedMediaType_WhenContentTypeIsMissing()
     {
         // Arrange
