@@ -108,8 +108,10 @@ dotnet add package Azure.Connectors.Sdk --prerelease
 Add to `requirements.txt` (include packages based on your approach):
 
 ```text
-# >=2.2.0b4 required Python 3.13+, >=1.26.0b3 for Python < 3.13
-azure-functions>=2.2.0b4
+# Python 3.13+
+azure-functions>=2.4.0b1; python_version>='3.13'
+# Python 3.10-3.12 (Webhook only)
+azure-functions>=1.26.0b3; python_version<'3.13'
 
 # Typed Functions integration for Office 365 OnNewEmail
 azurefunctions-extensions-connectors
@@ -118,7 +120,7 @@ azurefunctions-extensions-connectors
 azure-connectors
 ```
 
-Add to `local.settings.json` for Python < 3.13:
+Add to `local.settings.json` for Python 3.10-3.12:
 
 ```json
 {

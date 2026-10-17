@@ -158,7 +158,7 @@ Requirements:
 - Continue sharing one `Connection` prefix across Functions that use the same Connector Namespace. Store its gateway-level base in `<Connection>__pollingEndpoint`.
 - Preserve the service-provided host and gateway identifier exactly; do not derive either value from the Connector Namespace resource name or ID.
 - Append `/triggerConfigs/<TriggerConfigName>` and only the fixed `/receive`, `/acknowledge`, and `/approximateQueueDepth` operations.
-- Require HTTPS on the default port, treat the configured authority as opaque trusted application configuration, and require the exact path `/api/connectorGateways/<non-empty-gateway-id>`.
+- Accept `https://<connector-namespace-host>` for stable DNS and `https://<host>/api/connectorGateways/<non-empty-gateway-id>` for legacy routing. Add `/api` only for the hostname-only form before appending Trigger Config and operation segments. Preserve the authority, including an explicit non-default port; require HTTPS without user information, query strings, or fragments.
 - Reject endpoint values that already contain `triggerConfigs`, an operation, or any other extra segment.
 - Validate `TriggerConfigName` as one non-empty path segment.
 - Perform no control-plane endpoint discovery and maintain no endpoint cache.
@@ -182,7 +182,7 @@ Requirements:
 - Authenticate runtime operations with the API Hub scope.
 - Require the Function identity to have an access policy on the connection referenced by the trigger config.
 - Preserve the service-backed authorization evidence: the same API Hub token and approximate-queue-depth endpoint returned `200 OK` with the connection access policy, `403 Forbidden` without it, and `200 OK` after restoration.
-- Preserve existing endpoint query parameters.
+- Keep configured bases query-free; the delivery client owns the Receive query.
 - Explicitly send `maxEvents` in the range 1-32.
 - Parse `x-ms-more-messages-available`.
 - Process acknowledgement statuses per item.
@@ -344,14 +344,14 @@ Final smoke test:
 3. Generate new connector events.
 4. Verify typed payload-only and metadata-rich invocation.
 5. Verify batching, concurrent-call limits, and success-only acknowledgement.
-6. Verify linked output when the service test path is available. Until then, rely on synthetic unit tests because Connector Namespace does not emit linked-output messages in the available environment.
+6. Extend linked-output service validation beyond the Brazil South local .NET isolated smoke test, which verified a 96 KiB synthetic attachment, complete worker conversion, content integrity, and acknowledgement. Retain synthetic coverage for failure and memory-safety cases not yet exercised against the service.
 7. Confirm acknowledged events do not reappear and failed events are redelivered.
 8. Confirm queue depth returns to zero.
 9. Stop the host and restore the trigger to its disabled state.
 
 ## Deferred Linked-Output Release Work
 
-The Connector Namespace team confirmed the intended linked-output authentication, lifetime, redelivery, 100 MiB wire maximum, response shape, content type, compression, redirects, retry safety, integrity metadata, deletion, and authority behavior. The extension implements that protocol with synthetic coverage, but the service-side feature is still in development and does not emit linked-output messages in the available test environment.
+The Connector Namespace team confirmed the intended linked-output authentication, lifetime, redelivery, 100 MiB wire maximum, response shape, content type, compression, redirects, retry safety, integrity metadata, deletion, and authority behavior. The extension implements that protocol with synthetic coverage. A 2026-10-16 Brazil South local .NET isolated smoke test verified real linked delivery of a 96 KiB synthetic attachment, content integrity, and acknowledgement; this does not establish broader size, worker, memory, or regional support.
 
 The 100 MiB value remains a defensive protocol ceiling, not a validated customer payload guarantee. Before enabling or advertising linked-output support:
 

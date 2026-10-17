@@ -21,6 +21,9 @@ public sealed class ConnectorTriggerAttribute : TriggerBindingAttribute, ISuppor
 
     /// <summary>
     /// Gets or sets the app setting name or prefix for the Connector Namespace connection.
+    /// Its <c>pollingEndpoint</c> is <c>https://&lt;connector-namespace-host&gt;</c> for stable DNS,
+    /// or <c>https://&lt;host&gt;/api/connectorGateways/&lt;gateway-id&gt;</c> for legacy routing.
+    /// Supply <see cref="TriggerConfigName"/> separately; the extension constructs operation paths.
     /// </summary>
     public string? Connection { get; set; }
 
@@ -52,7 +55,7 @@ public sealed class ConnectorTriggerAttribute : TriggerBindingAttribute, ISuppor
     /// Gets or sets the maximum number of concurrent single-event processing tasks per listener
     /// on one worker instance. Each task includes preparation, invocation, and acknowledgement.
     /// The value must be non-negative. In single-event mode, a value of zero uses the host-level default (built-in value 16).
-    /// Applies only to single-event delivery, as in the Service Bus extension.
+    /// Applies only to single-event delivery.
     /// When <see cref="IsBatched"/> is true, positive values are ignored with a startup warning;
     /// batches are processed one at a time per listener.
     /// </summary>

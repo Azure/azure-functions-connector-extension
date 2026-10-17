@@ -19,23 +19,37 @@ public class ConnectorPollingListenerTests
         new Uri("https://runtime.example/acknowledge"),
         new Uri("https://runtime.example/approximateQueueDepth"));
 
-    [Fact]
-    public void Factory_ResolvesTriggerConfigNameFromAppSetting()
+    [Theory]
+    [InlineData("https://app-12.region.logic.azure.com/api/connectorGateways/ns", "https://app-12.region.logic.azure.com/api/connectorGateways/ns")]
+    [InlineData("https://gateway.region.connectornamespaces.azure.com", "https://gateway.region.connectornamespaces.azure.com/api")]
+    public async Task Factory_ResolvesTriggerConfigNameAndBuildsRuntimeEndpoints(
+        string pollingEndpoint,
+        string expectedRuntimeBase)
     {
+        var receivedEndpoints = new TaskCompletionSource<ConnectorPollingEndpoints>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (endpoints, _, _) =>
+            {
+                receivedEndpoints.TrySetResult(endpoints);
+                return Task.FromResult(new ConnectorReceiveResult([], false));
+            },
+        };
         var nameResolver = new TestNameResolver(
             name => name == "OnNewEmailTriggerConfigName"
                 ? "on-new-email"
                 : null);
         var factory = new ConnectorPollingListenerFactory(
             new TestPollDeliveryClientFactory(
-                _ => new StubConnectorPollDeliveryClient()),
+                _ => deliveryClient),
             new StubConnectorLinkedOutputClient(),
             new ConnectorLinkedOutputInvocationLimiter(),
             nameResolver,
             NullLoggerFactory.Instance,
             Mock.Of<IDrainModeManager>());
 
-        ConnectorPollingListener listener = factory.Create(
+        using ConnectorPollingListener listener = factory.Create(
             new ConnectorFunctionRegistration(
                 "TestFunction",
                 Mock.Of<ITriggeredFunctionExecutor>()),
@@ -46,11 +60,32 @@ public class ConnectorPollingListenerTests
                 1),
             new ConnectorConnectionOptions(
                 Mock.Of<TokenCredential>(),
-                "https://app-12.region.logic.azure.com/api/connectorGateways/ns"));
+                pollingEndpoint));
 
         Assert.Equal(
             "on-new-email",
             listener.Options.TriggerConfigName);
+
+        try
+        {
+            await listener.StartAsync(CancellationToken.None);
+            ConnectorPollingEndpoints endpoints = await receivedEndpoints.Task
+                .WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal(
+                $"{expectedRuntimeBase}/triggerConfigs/on-new-email/receive",
+                endpoints.ReceiveUri.AbsoluteUri);
+            Assert.Equal(
+                $"{expectedRuntimeBase}/triggerConfigs/on-new-email/acknowledge",
+                endpoints.AcknowledgeUri.AbsoluteUri);
+            Assert.Equal(
+                $"{expectedRuntimeBase}/triggerConfigs/on-new-email/approximateQueueDepth",
+                endpoints.ApproximateQueueDepthUri.AbsoluteUri);
+        }
+        finally
+        {
+            await listener.StopAsync(CancellationToken.None);
+        }
     }
 
     [Fact]

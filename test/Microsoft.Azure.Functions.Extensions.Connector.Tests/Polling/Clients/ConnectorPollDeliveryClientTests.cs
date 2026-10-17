@@ -153,6 +153,26 @@ public class ConnectorPollDeliveryClientTests
             Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
     }
 
+    [Theory]
+    [InlineData("https://gateway.example", "https://gateway.example/api")]
+    [InlineData("https://gateway.example:8443", "https://gateway.example:8443/api")]
+    [InlineData("https://regional.example/api/connectorGateways/gateway", "https://regional.example/api/connectorGateways/gateway")]
+    [InlineData("https://regional.example:8443/api/connectorGateways/gateway", "https://regional.example:8443/api/connectorGateways/gateway")]
+    public async Task ReceiveAsync_AddsMaxEventsToConfiguredEndpoint(string pollingEndpoint, string runtimeBase)
+    {
+        var handler = new SequenceHttpMessageHandler(_ =>
+            JsonResponse(HttpStatusCode.OK, """{"messages":[]}"""));
+        ConnectorPollDeliveryClient client = CreateClient(new TestTokenCredential(), handler);
+        ConnectorPollingEndpoints endpoints = ConnectorPollingEndpoints.Create(pollingEndpoint, "trigger");
+
+        await client.ReceiveAsync(endpoints, 4, CancellationToken.None);
+
+        Assert.Empty(endpoints.ReceiveUri.Query);
+        Assert.Equal(
+            $"{runtimeBase}/triggerConfigs/trigger/receive?maxEvents=4",
+            Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
+    }
+
     [Fact]
     public async Task ReceiveAsync_ReplacesEncodedMaxEventsParameter()
     {

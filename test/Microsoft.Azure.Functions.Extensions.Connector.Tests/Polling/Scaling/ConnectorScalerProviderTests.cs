@@ -116,14 +116,18 @@ public class ConnectorScalerProviderTests
         Assert.Same(apiHubCredential, depthCredential);
     }
 
-    [Fact]
-    public void Provider_ResolvesTriggerConfigNameFromAppSetting()
+    [Theory]
+    [InlineData("https://app-12.region.logic.azure.com/api/connectorGateways/ns", "/api/connectorGateways/ns")]
+    [InlineData("https://gateway.region.connectornamespaces.azure.com", "/api")]
+    public void Provider_ResolvesTriggerConfigNameFromAppSetting(
+        string pollingEndpoint,
+        string runtimePath)
     {
         ConnectorPollingEndpoints? selectedEndpoints = null;
         var connectionProvider = new TestConnectionOptionsProvider(
             (_, _) => new ConnectorConnectionOptions(
                 new TestTokenCredential(),
-                PollingEndpoint));
+                pollingEndpoint));
         var depthFactory = new TestDepthClientFactory(
             (endpoints, _, _) =>
             {
@@ -144,8 +148,9 @@ public class ConnectorScalerProviderTests
 
         Assert.NotNull(selectedEndpoints);
         Assert.Equal(
-            "https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/on-new-email/approximateQueueDepth",
-            selectedEndpoints.ApproximateQueueDepthUri.ToString());
+            $"{runtimePath}/triggerConfigs/on-new-email/approximateQueueDepth",
+            selectedEndpoints.ApproximateQueueDepthUri.AbsolutePath);
+        Assert.Equal(new Uri(pollingEndpoint).Host, selectedEndpoints.ApproximateQueueDepthUri.Host);
     }
 
     [Fact]

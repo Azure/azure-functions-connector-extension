@@ -160,13 +160,22 @@ These values are application configuration. Show them directly to the user, but 
 
 ## Step 3: Derive the Function Settings
 
-Validate the Receive URI and remove only the final `/triggerConfigs/<name>/receive` path:
+Derive the connection setting from `pollingEndpoints.receiveUri` using these two forms:
+
+| Receive URI | Connection `pollingEndpoint` |
+| --- | --- |
+| `https://<connector-namespace-host>/api/triggerconfigs/<name>/receive` | `https://<connector-namespace-host>` |
+| `https://<host>/api/connectorGateways/<id>/triggerconfigs/<name>/receive` | `https://<host>/api/connectorGateways/<id>` |
+
+Supply the Trigger Config name separately. The extension constructs all operation paths and supplies `maxEvents` on Receive requests. Preserve the service-provided authority; do not configure a query string or a standalone `/api` base.
+
+Both connection endpoint forms accept one optional trailing slash; the extension removes it before constructing operation paths.
 
 ```powershell
 $receiveUri = [Uri]$pollingEndpoints.receiveUri
 $pathMatch = [regex]::Match(
     $receiveUri.AbsolutePath,
-    "^(?<base>/api/connectorGateways/[^/]+)/triggerConfigs/[^/]+/receive$",
+    "^(?<base>/api(?:/connectorGateways/[^/]+)?)/triggerConfigs/[^/]+/receive$",
     [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 
 if (-not $pathMatch.Success) {
@@ -174,7 +183,12 @@ if (-not $pathMatch.Success) {
 }
 
 $endpointBuilder = [UriBuilder]$receiveUri
-$endpointBuilder.Path = $pathMatch.Groups["base"].Value
+$endpointBuilder.Path = if ($pathMatch.Groups["base"].Value -eq "/api") {
+    ""
+} else {
+    $pathMatch.Groups["base"].Value
+}
+$endpointBuilder.Query = ""
 $pollingEndpoint = $endpointBuilder.Uri.AbsoluteUri
 
 Write-Output ""
@@ -183,7 +197,7 @@ Write-Output "${connectionPrefix}__pollingEndpoint=$pollingEndpoint"
 Write-Output "$triggerConfigSetting=$triggerConfigName"
 ```
 
-Preserve the service-generated authority, gateway identifier, and query exactly. Do not derive them from the Connector Namespace resource ID.
+Preserve the service-generated authority and gateway identifier exactly. Do not derive them from the Connector Namespace resource ID or copy operation query parameters into the connection setting.
 
 The resulting binding is:
 
@@ -193,6 +207,25 @@ The resulting binding is:
     Connection = "ConnectorNamespace",
     TriggerConfigName = "%OnNewEmailTriggerConfigName%")]
 ```
+
+For Python 3.13+ with `azure-functions>=2.4.0b1`, use the native decorator:
+
+```python
+from typing import List
+
+@app.connector_trigger(
+    arg_name="payloads",
+    delivery_mode=func.DeliveryMode.POLL,
+    connection="ConnectorNamespace",
+    trigger_config_name="%OnNewEmailTriggerConfigName%",
+    cardinality=func.Cardinality.MANY,
+    max_batch_size=4,
+)
+def on_new_email_poll(payloads: List[str]) -> None:
+    ...
+```
+
+Here `app` is a `func.FunctionApp()` and `func` is `azure.functions`. Use `typing.List[str]`: the 2.4.0b1 SDK type check does not accept the built-in `list[str]` annotation. Each list element is one Poll event's JSON, not one email from an event's body. For single-event delivery, use `func.Cardinality.ONE`, a `str` parameter, and `max_batch_size=1`. Omit `max_concurrent_calls` for batched delivery.
 
 ## Step 4: Configure Identity and Access
 

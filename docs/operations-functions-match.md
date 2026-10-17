@@ -6,8 +6,10 @@ This document maps connector trigger operation names to their corresponding Azur
 
 | Python Version | Decorator | Package Requirement | Required App Settings |
 | --- | --- | --- |  --- |
-| 3.13+ | `@app.connector_trigger` | `azure-functions>=2.2.0b4` | - |
-| < 3.13 | `@app.connector_trigger` | `azure-functions>=1.26.0b3` | `PYTHON_ISOLATE_WORKER_DEPENDENCIES=1` |
+| 3.13+ | `@app.connector_trigger` | `azure-functions>=2.4.0b1` for Poll and Webhook samples | - |
+| 3.10-3.12 (Webhook) | `@app.connector_trigger` | `azure-functions>=1.26.0b3` | `PYTHON_ISOLATE_WORKER_DEPENDENCIES=1` |
+
+Poll configuration through `delivery_mode`, `connection`, and `trigger_config_name`, including `cardinality=func.Cardinality.MANY`, requires Python 3.13+ and `azure-functions>=2.4.0b1`. Annotate batched Poll parameters as `typing.List[str]`, one JSON string per event; a connector event may itself contain multiple items. See the [Python Poll sample](../test/poll/README.md). The older-Python row above describes the existing Webhook path.
 
 ## Python: Choosing Packages by Trigger Operation
 
