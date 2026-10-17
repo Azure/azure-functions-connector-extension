@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -280,5 +281,139 @@ public class ConnectorHttpRequestProcessorTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("valid JSON", content);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessAsync_ReturnsRequestEntityTooLarge_ForHostBodyLimit(bool wrapped)
+    {
+        Exception exception = new BadHttpRequestException("Request body too large.", 413);
+        if (wrapped)
+        {
+            exception = new HttpRequestException("Error while copying content.", exception);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new FailingContent(exception)
+        };
+        int invocations = 0;
+
+        using var response = await _processor.ProcessAsync(
+            request,
+            "TestFunction",
+            (_, _, _) =>
+            {
+                invocations++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+            },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        Assert.Equal(0, invocations);
+    }
+
+    [Theory]
+    [InlineData(400)]
+    [InlineData(408)]
+    [InlineData(431)]
+    public async Task ProcessAsync_ReturnsInternalServerError_ForOtherHostReadErrors(int statusCode)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new FailingContent(new BadHttpRequestException("Other host error.", statusCode))
+        };
+        int invocations = 0;
+
+        using var response = await _processor.ProcessAsync(
+            request,
+            "TestFunction",
+            (_, _, _) =>
+            {
+                invocations++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted));
+            },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(0, invocations);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessAsync_ReturnsInternalServerError_ForUnrelatedReadErrors(bool hasStatusCode)
+    {
+        Exception exception = hasStatusCode
+            ? new HttpRequestException("Other HTTP error.", null, HttpStatusCode.RequestEntityTooLarge)
+            : new IOException("Request body too large.");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new FailingContent(exception)
+        };
+
+        using var response = await _processor.ProcessAsync(
+            request,
+            "TestFunction",
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted)),
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsInternalServerError_WhenCallbackThrowsHostLimitException()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = JsonContent("{}")
+        };
+
+        using var response = await _processor.ProcessAsync(
+            request,
+            "TestFunction",
+            (_, _, _) => Task.FromException<HttpResponseMessage>(
+                new BadHttpRequestException("Callback failure.", 413)),
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_ReturnsRequestTimeout_WhenBodyReadIsCancelled()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/connector")
+        {
+            Content = new FailingContent(new OperationCanceledException())
+        };
+
+        using var response = await _processor.ProcessAsync(
+            request,
+            "TestFunction",
+            (_, _, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted)),
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.RequestTimeout, response.StatusCode);
+    }
+
+    private sealed class FailingContent : HttpContent
+    {
+        private readonly Exception _exception;
+
+        public FailingContent(Exception exception)
+        {
+            _exception = exception;
+            Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            Task.FromException(_exception);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 }

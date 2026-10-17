@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Functions.Extensions.Connector.Shared;
 using Microsoft.Extensions.Logging;
 
@@ -15,7 +16,6 @@ namespace Microsoft.Azure.Functions.Extensions.Connector;
 /// </summary>
 internal sealed class ConnectorHttpRequestProcessor
 {
-    private const long MaxBodySize = 10 * 1024 * 1024; // 10 MB
     private const string ExpectedContentType = ConnectorMediaTypes.Json;
 
     private readonly ILogger<ConnectorHttpRequestProcessor> _logger;
@@ -54,23 +54,18 @@ internal sealed class ConnectorHttpRequestProcessor
             };
         }
 
-        // Validate Content-Length header (pre-read check)
-        if (request.Content?.Headers?.ContentLength > MaxBodySize)
-        {
-            _logger.LogWarning("Request body too large: {ContentLength} bytes",
-                request.Content.Headers.ContentLength);
-            return new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge);
-        }
-
         try
         {
-            string body = request.Content != null
-                ? await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
-                : string.Empty;
-
-            if (body.Length > MaxBodySize)
+            string body;
+            try
             {
-                _logger.LogWarning("Request body too large: {Length} bytes", body.Length);
+                body = request.Content != null
+                    ? await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
+                    : string.Empty;
+            }
+            catch (Exception ex) when (IsRequestBodyTooLarge(ex))
+            {
+                _logger.LogWarning(ex, "Request body exceeded the host limit for function {FunctionName}", functionName);
                 return new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge);
             }
 
@@ -104,6 +99,19 @@ internal sealed class ConnectorHttpRequestProcessor
             _logger.LogError(ex, "Error processing request for function {FunctionName}", functionName);
             return new HttpResponseMessage(HttpStatusCode.InternalServerError);
         }
+    }
+
+    private static bool IsRequestBodyTooLarge(Exception exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+        {
+            if (current is BadHttpRequestException { StatusCode: StatusCodes.Status413PayloadTooLarge })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void LogRequestInfo(HttpRequestMessage request, string functionName, int bodyLength)
