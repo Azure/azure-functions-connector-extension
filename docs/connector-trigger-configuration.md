@@ -25,7 +25,7 @@ Endpoint forms:
 | `https://<connector-namespace-host>/api/triggerconfigs/<name>/receive` | `https://<connector-namespace-host>` |
 | `https://<host>/api/connectorGateways/<id>/triggerconfigs/<name>/receive` | `https://<host>/api/connectorGateways/<id>` |
 
-Use a service-provided endpoint in one of these forms; preserve its authority and gateway ID rather than guessing a hostname or removing query parameters from another URL. The extension constructs the operation paths; do not configure a query string, a full Receive URL, or a standalone `/api` base. Endpoints require HTTPS without user information or fragments.
+Preserve the service-provided authority and gateway ID; do not guess a hostname or strip unknown query parameters. The extension constructs the operation paths; do not configure a query string, a full Receive URL, or a standalone `/api` base. Endpoints require HTTPS without user information or fragments.
 
 ### Identity settings
 

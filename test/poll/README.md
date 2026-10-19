@@ -1,6 +1,6 @@
 # Connector Poll Repository Test Apps
 
-These apps are repository integration tests, not customer samples. Public samples will be maintained separately in [Azure-Samples](https://github.com/Azure-Samples). Python/SDK requirements and invocation cardinality here describe these test apps; they do not require existing Poll applications to migrate.
+These are repository test apps; their SDK and batching requirements do not mandate changes to existing Poll apps. Customer-facing .NET samples are in [Azure-Samples/functions-connectors-net](https://github.com/Azure-Samples/functions-connectors-net).
 
 Poll is the simplest local starting point: the Function host connects outbound to the real Connector Namespace, so no public callback or dev tunnel is needed. These apps validate the same trigger from each supported language worker:
 
