@@ -5,92 +5,106 @@ namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 
 public class ConnectorPollingEndpointsTests
 {
-    [Fact]
-    public void Create_AppendsOnlyRuntimeOperationsAndPreservesOpaqueValues()
+    [Theory]
+    [InlineData("https://gateway.example", "https://gateway.example/api")]
+    [InlineData("https://gateway.example/", "https://gateway.example/api")]
+    [InlineData("https://gateway.example:443", "https://gateway.example/api")]
+    [InlineData("https://gateway.example:8443", "https://gateway.example:8443/api")]
+    [InlineData("https://gateway.example:8443/", "https://gateway.example:8443/api")]
+    [InlineData("https://regional.example/api/connectorGateways/gateway", "https://regional.example/api/connectorGateways/gateway")]
+    [InlineData("https://regional.example/api/connectorGateways/gateway/", "https://regional.example/api/connectorGateways/gateway")]
+    [InlineData("https://regional.example:443/api/connectorGateways/gateway", "https://regional.example/api/connectorGateways/gateway")]
+    [InlineData("https://regional.example:8443/api/connectorGateways/gateway", "https://regional.example:8443/api/connectorGateways/gateway")]
+    [InlineData("https://regional.example:8443/api/connectorGateways/gateway/", "https://regional.example:8443/api/connectorGateways/gateway")]
+    public void Create_BuildsAllOperations(
+        string pollingEndpoint,
+        string runtimeBase)
     {
         ConnectorPollingEndpoints endpoints = ConnectorPollingEndpoints.Create(
-            "https://scale.region.logic.azure.com/api/connectorGateways/ns?opaque=a%2Fb",
-            "name");
+            pollingEndpoint,
+            "trigger name");
 
         Assert.Equal(
-            "https://scale.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/name/receive?opaque=a%2Fb",
-            endpoints.ReceiveUri.ToString());
-        Assert.Equal(
-            "https://scale.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/name/acknowledge?opaque=a%2Fb",
-            endpoints.AcknowledgeUri.ToString());
-        Assert.Equal(
-            "https://scale.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs/name/approximateQueueDepth?opaque=a%2Fb",
-            endpoints.ApproximateQueueDepthUri.ToString());
-    }
-
-    [Fact]
-    public void Create_AcceptsOpaqueHttpsRuntimeHost()
-    {
-        ConnectorPollingEndpoints endpoints =
-            ConnectorPollingEndpoints.Create(
-                "https://gateway.contoso.example/api/connectorGateways/gateway",
-                "trigger-name");
-
-        Assert.EndsWith(
-            "/api/connectorGateways/gateway/triggerConfigs/trigger-name/receive",
+            $"{runtimeBase}/triggerConfigs/trigger%20name/receive",
             endpoints.ReceiveUri.AbsoluteUri);
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData(" ")]
-    [InlineData(" http://app-12.region.logic.azure.com/api/connectorGateways/ns")]
-    [InlineData("http://app-12.region.logic.azure.com/api/connectorGateways/ns")]
-    [InlineData("https://user@app-12.region.logic.azure.com/api/connectorGateways/ns")]
-    [InlineData("https://app-12.region.logic.azure.com/api/connectorGateways/ns#fragment")]
-    [InlineData("/relative/trigger")]
-    [InlineData("https://app-12.region.logic.azure.com:444/api/connectorGateways/ns")]
-    [InlineData("https://app-12.region.logic.azure.com/connectorGateways/ns")]
-    [InlineData("https://app-12.region.logic.azure.com/custom/api/connectorGateways/ns")]
-    [InlineData("https://app-12.region.logic.azure.com/api/connectorGateways")]
-    [InlineData("https://app-12.region.logic.azure.com/api/connectorGateways/ns/")]
-    [InlineData("https://app-12.region.logic.azure.com/api/connectorGateways/ns/triggerConfigs")]
-    [InlineData("https://app-12.region.logic.azure.com/api/connectorGateways/ns%2Fextra")]
-    [InlineData("https://app-12.region.logic.azure.com/api/%7Eunit/ns")]
-    [InlineData("https://app-12.region.logic.azure.com/api/extra/../connectorGateways/ns")]
-    public void Create_RejectsInvalidPollingEndpoint(string? pollingEndpoint)
-    {
-        InvalidOperationException exception =
-            Assert.Throws<InvalidOperationException>(() =>
-                ConnectorPollingEndpoints.Create(
-                    pollingEndpoint!,
-                    "name"));
-
         Assert.Equal(
-            "Connector connection pollingEndpoint must be a valid Connector Namespace polling base URL.",
-            exception.Message);
+            $"{runtimeBase}/triggerConfigs/trigger%20name/acknowledge",
+            endpoints.AcknowledgeUri.AbsoluteUri);
+        Assert.Equal(
+            $"{runtimeBase}/triggerConfigs/trigger%20name/approximateQueueDepth",
+            endpoints.ApproximateQueueDepthUri.AbsoluteUri);
+
+        Assert.Empty(endpoints.ReceiveUri.Query);
+        Assert.Empty(endpoints.AcknowledgeUri.Query);
+        Assert.Empty(endpoints.ApproximateQueueDepthUri.Query);
+    }
+
+    [Theory]
+    [InlineData("https://gateway.example")]
+    [InlineData("https://regional.example/api/connectorGateways/gateway")]
+    public void Create_RejectsQueryStrings(string pollingEndpoint)
+    {
+        foreach (string query in new[]
+        {
+            "?",
+            "?maxEvents=4",
+            "?opaque=a%2Fb&version=1"
+        })
+        {
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+                ConnectorPollingEndpoints.Create(pollingEndpoint + query, "trigger"));
+
+            Assert.Contains("without a query string", exception.Message);
+        }
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    [InlineData(" ")]
+    [InlineData("/relative")]
+    [InlineData("http://gateway.example")]
+    [InlineData("http://gateway.example:8443")]
+    [InlineData("https://user@gateway.example")]
+    [InlineData("https://gateway.example#fragment")]
+    [InlineData("https://gateway.example:65536")]
+    [InlineData("https://gateway.example:not-a-port")]
+    [InlineData("https://gateway.example/api")]
+    [InlineData("https://gateway.example/api/triggerconfigs/trigger/receive")]
+    [InlineData("https://regional.example/api/connectorGateways")]
+    [InlineData("https://regional.example/api/connectorGateways/gateway/extra")]
+    [InlineData("https://regional.example/api/connectorGateways/gateway%2Fextra")]
+    [InlineData("https://regional.example/api/connectorGateways/..")]
+    [InlineData("https://gateway.example/extra/..")]
+    [InlineData("https://regional.example/api/extra/../connectorGateways/gateway")]
+    [InlineData("https://regional.example/api/connectorGateways/%2e%2e")]
+    [InlineData("https://regional.example/api/connectorGateways/gateway%5Cextra")]
+    [InlineData("https://regional.example/api/connectorGateways/gateway//")]
+    [InlineData("https://gateway.example//")]
+    [InlineData("https://gateway.example\\")]
+    [InlineData(" https://gateway.example")]
+    public void Create_RejectsInvalidEndpoint(string? pollingEndpoint)
+    {
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            ConnectorPollingEndpoints.Create(pollingEndpoint!, "trigger"));
+
+        Assert.Contains("pollingEndpoint", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
     [InlineData(" name")]
-    [InlineData("name ")]
     [InlineData("name/extra")]
     [InlineData("name\\extra")]
     [InlineData("name%2Fextra")]
-    [InlineData("na%6De")]
     [InlineData(".")]
     [InlineData("..")]
     [InlineData("name\nextra")]
-    public void Create_RejectsInvalidTriggerConfigName(
-        string? triggerConfigName)
+    public void Create_RejectsInvalidTriggerConfigName(string? triggerConfigName)
     {
-        InvalidOperationException exception =
-            Assert.Throws<InvalidOperationException>(() =>
-                ConnectorPollingEndpoints.Create(
-                    "https://app-12.region.logic.azure.com/api/connectorGateways/ns",
-                    triggerConfigName!));
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            ConnectorPollingEndpoints.Create("https://gateway.example", triggerConfigName!));
 
-        Assert.Equal(
-            "Connector trigger TriggerConfigName must be a valid path segment.",
-            exception.Message);
+        Assert.Contains("TriggerConfigName", exception.Message);
     }
 }

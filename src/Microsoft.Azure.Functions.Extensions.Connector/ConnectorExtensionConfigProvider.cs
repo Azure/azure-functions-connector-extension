@@ -165,9 +165,11 @@ internal sealed class ConnectorExtensionConfigProvider : IExtensionConfigProvide
             writer.WriteString(
                 ConnectorBindingDataContract.PropertyNames.DeliveryMode,
                 input.DeliveryMode.ToString());
+
+            // Keep the JSON string value UTF-8 to avoid large UTF-16 escaping buffers.
             writer.WriteString(
                 ConnectorBindingDataContract.PropertyNames.Data,
-                input.Outputs.ToString());
+                input.Outputs.ToMemory().Span);
             if (input.MessageId is null)
             {
                 writer.WriteNull(

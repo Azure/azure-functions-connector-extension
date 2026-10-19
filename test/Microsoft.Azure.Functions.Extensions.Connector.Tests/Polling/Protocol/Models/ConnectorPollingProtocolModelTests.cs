@@ -58,7 +58,7 @@ public class ConnectorPollingProtocolModelTests
     {
         Assert.Equal(
             104_857_600,
-            ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes);
+            ConnectorPollingProtocolLimits.MaximumReceiveResponseSizeInBytes);
     }
 
     [Fact]

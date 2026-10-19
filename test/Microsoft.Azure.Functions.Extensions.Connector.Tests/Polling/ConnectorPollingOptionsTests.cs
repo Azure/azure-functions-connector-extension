@@ -6,6 +6,20 @@ namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
 public class ConnectorPollingOptionsTests
 {
     [Fact]
+    public void Constructor_UsesBuiltInDefaults()
+    {
+        var defaults = new ConnectorOptions();
+        var options = new ConnectorPollingOptions(
+            "ConnectorNamespace",
+            "OnNewEmail",
+            defaults.DefaultMaxBatchSize,
+            defaults.DefaultMaxConcurrentCalls);
+
+        Assert.Equal(defaults.MaxPollingInterval, options.MaxPollingInterval);
+        Assert.Equal(defaults.MaxLinkedOutputSizeInBytes, options.MaxLinkedOutputSizeInBytes);
+    }
+
+    [Fact]
     public void Create_UsesAttributeOverrides()
     {
         var attribute = new ConnectorTriggerAttribute
@@ -28,6 +42,7 @@ public class ConnectorPollingOptionsTests
         Assert.Equal(1, result.MaxBatchSize);
         Assert.Equal(8, result.MaxConcurrentCalls);
         Assert.Equal(TimeSpan.FromSeconds(30), result.MaxPollingInterval);
+        Assert.Equal(100 * 1024 * 1024, result.MaxLinkedOutputSizeInBytes);
         Assert.False(result.IsBatched);
     }
 
@@ -200,6 +215,39 @@ public class ConnectorPollingOptionsTests
             ConnectorPollingOptions.Create(CreateValidAttribute(), defaults));
 
         Assert.Contains("MaxPollingInterval", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(50 * 1024 * 1024)]
+    [InlineData(110 * 1024 * 1024)]
+    [InlineData(int.MaxValue)]
+    public void Create_UsesHostLinkedOutputSizeLimit(int maximumSizeInBytes)
+    {
+        var defaults = new ConnectorOptions
+        {
+            MaxLinkedOutputSizeInBytes = maximumSizeInBytes,
+        };
+
+        var result = ConnectorPollingOptions.Create(CreateValidAttribute(), defaults);
+
+        Assert.Equal(maximumSizeInBytes, result.MaxLinkedOutputSizeInBytes);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Create_Throws_WhenMaxLinkedOutputSizeInBytesIsNotPositive(int maximumSizeInBytes)
+    {
+        var defaults = new ConnectorOptions
+        {
+            MaxLinkedOutputSizeInBytes = maximumSizeInBytes,
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ConnectorPollingOptions.Create(CreateValidAttribute(), defaults));
+
+        Assert.Contains("MaxLinkedOutputSizeInBytes", exception.Message);
     }
 
     [Fact]

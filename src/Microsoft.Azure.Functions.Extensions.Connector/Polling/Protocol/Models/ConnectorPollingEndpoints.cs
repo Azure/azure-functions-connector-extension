@@ -3,17 +3,20 @@
 
 namespace Microsoft.Azure.Functions.Extensions.Connector;
 
+/// <summary>
+/// Constructs Poll operation URLs from a stable-DNS hostname or a legacy gateway base URL.
+/// </summary>
 internal sealed class ConnectorPollingEndpoints
 {
-    private const string ApiSegment = "api";
-    private const string ConnectorGatewaysSegment = "connectorGateways";
+    private const string StableDnsApiPath = "/api";
+    private const string LegacyGatewayPathPrefix = $"{StableDnsApiPath}/connectorGateways/";
     private const string TriggerConfigsSegment = "triggerConfigs";
     private const string ReceiveOperation = "receive";
     private const string AcknowledgeOperation = "acknowledge";
     private const string ApproximateQueueDepthOperation =
         "approximateQueueDepth";
     private const string InvalidEndpointMessage =
-        "Connector connection pollingEndpoint must be a valid Connector Namespace polling base URL.";
+        "Connector connection pollingEndpoint must be https://<connector-namespace-host> or https://<host>/api/connectorGateways/<gateway-id>, without a query string.";
     private const string InvalidTriggerConfigNameMessage =
         "Connector trigger TriggerConfigName must be a valid path segment.";
 
@@ -35,18 +38,30 @@ internal sealed class ConnectorPollingEndpoints
 
     internal Uri ApproximateQueueDepthUri { get; }
 
+    /// <summary>
+    /// Creates Receive, Acknowledge, and Approximate Queue Depth URLs.
+    /// </summary>
+    /// <param name="pollingEndpoint">
+    /// Either <c>https://&lt;connector-namespace-host&gt;</c> for stable DNS, or
+    /// <c>https://&lt;host&gt;/api/connectorGateways/&lt;gateway-id&gt;</c> for legacy routing.
+    /// Query strings are not supported in either form.
+    /// Explicit non-default ports are preserved.
+    /// Do not include a Trigger Config, operation, or a standalone <c>/api</c> path.
+    /// </param>
+    /// <param name="triggerConfigName">The Trigger Config name, supplied as one path segment.</param>
     internal static ConnectorPollingEndpoints Create(
         string pollingEndpoint,
         string triggerConfigName)
     {
+        // The delivery client adds maxEvents; configured bases must not supply query parameters.
         if (string.IsNullOrWhiteSpace(pollingEndpoint) ||
-            !pollingEndpoint.Equals(
-                pollingEndpoint.Trim(),
-                StringComparison.Ordinal) ||
+            !pollingEndpoint.Equals(pollingEndpoint.Trim(), StringComparison.Ordinal) ||
+            pollingEndpoint.Contains('?') ||
             !Uri.TryCreate(
                 pollingEndpoint,
                 UriKind.Absolute,
-                out Uri? baseUri))
+                out Uri? baseUri) ||
+            !baseUri.IsWellFormedOriginalString())
         {
             throw InvalidPollingEndpoint();
         }
@@ -60,27 +75,45 @@ internal sealed class ConnectorPollingEndpoints
             throw InvalidPollingEndpoint(exception);
         }
 
-        string rawPath = GetRawPath(pollingEndpoint);
-        string canonicalPath = GetRawPath(
-            baseUri.GetLeftPart(UriPartial.Path));
-        string rawQuery = GetRawQuery(pollingEndpoint);
-        if (!rawPath.Equals(canonicalPath, StringComparison.Ordinal) ||
-            !rawQuery.Equals(baseUri.Query, StringComparison.Ordinal))
+        string path = baseUri.AbsolutePath;
+        // Uri normalizes dot segments; reject those rather than changing the configured route.
+        if (!GetOriginalPath(pollingEndpoint).Equals(path, StringComparison.Ordinal))
         {
             throw InvalidPollingEndpoint();
         }
 
-        ValidateRuntimeAuthority(baseUri);
-        ValidateConnectorGatewayPath(baseUri);
+        // Remove only one slash so repeated trailing slashes remain invalid.
+        if (path.EndsWith('/'))
+        {
+            path = path[..^1];
+        }
+
+        string runtimePath;
+        if (path.Length == 0)
+        {
+            // Stable-DNS endpoints supply only the authority; add the runtime API prefix.
+            runtimePath = StableDnsApiPath;
+        }
+        else if (path.StartsWith(LegacyGatewayPathPrefix, StringComparison.OrdinalIgnoreCase) &&
+            IsValidOpaqueSegment(path[LegacyGatewayPathPrefix.Length..]))
+        {
+            // Legacy endpoints already include the gateway routing prefix.
+            runtimePath = path;
+        }
+        else
+        {
+            throw InvalidPollingEndpoint();
+        }
+
+        string runtimeBase = $"{baseUri.GetLeftPart(UriPartial.Authority)}{runtimePath}";
         string triggerConfigSegment =
             ValidateAndEscapeTriggerConfigName(triggerConfigName);
 
         return new ConnectorPollingEndpoints(
-            AppendOperation(baseUri, rawQuery, triggerConfigSegment, ReceiveOperation),
-            AppendOperation(baseUri, rawQuery, triggerConfigSegment, AcknowledgeOperation),
+            AppendOperation(runtimeBase, triggerConfigSegment, ReceiveOperation),
+            AppendOperation(runtimeBase, triggerConfigSegment, AcknowledgeOperation),
             AppendOperation(
-                baseUri,
-                rawQuery,
+                runtimeBase,
                 triggerConfigSegment,
                 ApproximateQueueDepthOperation));
     }
@@ -92,78 +125,28 @@ internal sealed class ConnectorPollingEndpoints
         $"{nameof(ApproximateQueueDepthUri)} = {ConnectorPollingUri.Redact(ApproximateQueueDepthUri)} }}";
 
     private static Uri AppendOperation(
-        Uri baseUri,
-        string rawQuery,
+        string runtimeBase,
         string triggerConfigSegment,
         string operation)
     {
-        string basePath = baseUri
-            .GetLeftPart(UriPartial.Path)
-            .TrimEnd('/');
         return new Uri(
-            $"{basePath}/{TriggerConfigsSegment}/{triggerConfigSegment}/{operation}{rawQuery}",
+            $"{runtimeBase}/{TriggerConfigsSegment}/{triggerConfigSegment}/{operation}",
             UriKind.Absolute);
     }
 
-    private static string GetRawPath(string absoluteUri)
+    private static string GetOriginalPath(string endpoint)
     {
-        int schemeSeparator = absoluteUri.IndexOf(
-            Uri.SchemeDelimiter,
-            StringComparison.Ordinal);
-        int authorityEnd = absoluteUri.IndexOfAny(
-            ['/', '?', '#'],
-            schemeSeparator + Uri.SchemeDelimiter.Length);
-        if (authorityEnd < 0 || absoluteUri[authorityEnd] != '/')
-        {
-            return "/";
-        }
-
-        int pathEnd = absoluteUri.IndexOfAny(
-            ['?', '#'],
-            authorityEnd);
-        return pathEnd < 0
-            ? absoluteUri[authorityEnd..]
-            : absoluteUri[authorityEnd..pathEnd];
-    }
-
-    private static string GetRawQuery(string absoluteUri)
-    {
-        int queryStart = absoluteUri.IndexOf('?');
-        return queryStart < 0
-            ? string.Empty
-            : absoluteUri[queryStart..];
-    }
-
-    private static void ValidateConnectorGatewayPath(Uri baseUri)
-    {
-        string[] segments = baseUri.AbsolutePath.Split(
-            '/',
-            StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length != 3 ||
-            baseUri.AbsolutePath.EndsWith('/') ||
-            !segments[0].Equals(
-                ApiSegment,
-                StringComparison.OrdinalIgnoreCase) ||
-            !segments[1].Equals(
-                ConnectorGatewaysSegment,
-                StringComparison.OrdinalIgnoreCase) ||
-            !IsValidOpaqueSegment(segments[2]))
-        {
-            throw InvalidPollingEndpoint();
-        }
-    }
-
-    private static void ValidateRuntimeAuthority(Uri baseUri)
-    {
-        if (!baseUri.IsDefaultPort)
-        {
-            throw InvalidPollingEndpoint();
-        }
+        // URI validation has already rejected queries and fragments, so the remainder is only the path.
+        int authorityStart = endpoint.IndexOf(Uri.SchemeDelimiter, StringComparison.Ordinal) +
+            Uri.SchemeDelimiter.Length;
+        int pathStart = endpoint.IndexOf('/', authorityStart);
+        return pathStart < 0 ? "/" : endpoint[pathStart..];
     }
 
     private static string ValidateAndEscapeTriggerConfigName(
         string triggerConfigName)
     {
+        // Require an unescaped name so it is encoded exactly once when building the path.
         if (string.IsNullOrWhiteSpace(triggerConfigName) ||
             !triggerConfigName.Equals(
                 triggerConfigName.Trim(),
@@ -181,19 +164,13 @@ internal sealed class ConnectorPollingEndpoints
 
     private static bool IsValidOpaqueSegment(string segment)
     {
-        try
-        {
-            string value = Uri.UnescapeDataString(segment);
-            return !string.IsNullOrWhiteSpace(value) &&
-                !value.Equals(".", StringComparison.Ordinal) &&
-                !value.Equals("..", StringComparison.Ordinal) &&
-                !value.Contains('/') &&
-                !value.Contains('\\');
-        }
-        catch (UriFormatException)
-        {
-            return false;
-        }
+        // Decode first so encoded separators and dot segments cannot bypass validation.
+        string value = Uri.UnescapeDataString(segment);
+        return !string.IsNullOrWhiteSpace(value) &&
+            !value.Equals(".", StringComparison.Ordinal) &&
+            !value.Equals("..", StringComparison.Ordinal) &&
+            !value.Contains('/') &&
+            !value.Contains('\\');
     }
 
     private static InvalidOperationException InvalidPollingEndpoint(

@@ -19,23 +19,37 @@ public class ConnectorPollingListenerTests
         new Uri("https://runtime.example/acknowledge"),
         new Uri("https://runtime.example/approximateQueueDepth"));
 
-    [Fact]
-    public void Factory_ResolvesTriggerConfigNameFromAppSetting()
+    [Theory]
+    [InlineData("https://app-12.region.logic.azure.com/api/connectorGateways/ns", "https://app-12.region.logic.azure.com/api/connectorGateways/ns")]
+    [InlineData("https://gateway.region.connectornamespaces.azure.com", "https://gateway.region.connectornamespaces.azure.com/api")]
+    public async Task Factory_ResolvesTriggerConfigNameAndBuildsRuntimeEndpoints(
+        string pollingEndpoint,
+        string expectedRuntimeBase)
     {
+        var receivedEndpoints = new TaskCompletionSource<ConnectorPollingEndpoints>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var deliveryClient = new StubConnectorPollDeliveryClient
+        {
+            ReceiveAsyncHandler = (endpoints, _, _) =>
+            {
+                receivedEndpoints.TrySetResult(endpoints);
+                return Task.FromResult(new ConnectorReceiveResult([], false));
+            },
+        };
         var nameResolver = new TestNameResolver(
             name => name == "OnNewEmailTriggerConfigName"
                 ? "on-new-email"
                 : null);
         var factory = new ConnectorPollingListenerFactory(
             new TestPollDeliveryClientFactory(
-                _ => new StubConnectorPollDeliveryClient()),
+                _ => deliveryClient),
             new StubConnectorLinkedOutputClient(),
             new ConnectorLinkedOutputInvocationLimiter(),
             nameResolver,
             NullLoggerFactory.Instance,
             Mock.Of<IDrainModeManager>());
 
-        ConnectorPollingListener listener = factory.Create(
+        using ConnectorPollingListener listener = factory.Create(
             new ConnectorFunctionRegistration(
                 "TestFunction",
                 Mock.Of<ITriggeredFunctionExecutor>()),
@@ -46,11 +60,32 @@ public class ConnectorPollingListenerTests
                 1),
             new ConnectorConnectionOptions(
                 Mock.Of<TokenCredential>(),
-                "https://app-12.region.logic.azure.com/api/connectorGateways/ns"));
+                pollingEndpoint));
 
         Assert.Equal(
             "on-new-email",
             listener.Options.TriggerConfigName);
+
+        try
+        {
+            await listener.StartAsync(CancellationToken.None);
+            ConnectorPollingEndpoints endpoints = await receivedEndpoints.Task
+                .WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal(
+                $"{expectedRuntimeBase}/triggerConfigs/on-new-email/receive",
+                endpoints.ReceiveUri.AbsoluteUri);
+            Assert.Equal(
+                $"{expectedRuntimeBase}/triggerConfigs/on-new-email/acknowledge",
+                endpoints.AcknowledgeUri.AbsoluteUri);
+            Assert.Equal(
+                $"{expectedRuntimeBase}/triggerConfigs/on-new-email/approximateQueueDepth",
+                endpoints.ApproximateQueueDepthUri.AbsoluteUri);
+        }
+        finally
+        {
+            await listener.StopAsync(CancellationToken.None);
+        }
     }
 
     [Fact]
@@ -1084,8 +1119,11 @@ public class ConnectorPollingListenerTests
         Assert.Equal(0, acknowledgementCount);
     }
 
-    [Fact]
-    public async Task Listener_HydratesLinkedOutputBeforeInvocation()
+    [Theory]
+    [InlineData(100 * 1024 * 1024)]
+    [InlineData(50 * 1024 * 1024)]
+    [InlineData(110 * 1024 * 1024)]
+    public async Task Listener_HydratesLinkedOutputBeforeInvocation(int maximumSizeInBytes)
     {
         ConnectorPollMessage message = ConnectorPollMessage.FromOutputsLink(
             "message-1",
@@ -1106,7 +1144,7 @@ public class ConnectorPollingListenerTests
             {
                 Assert.Same(message.OutputsLink, outputsLink);
                 Assert.Equal(
-                    ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes,
+                    maximumSizeInBytes,
                     maximumPayloadSize);
                 Interlocked.Increment(ref downloadCount);
                 return Task.FromResult(
@@ -1128,7 +1166,8 @@ public class ConnectorPollingListenerTests
             executor.Object,
             Endpoints,
             deliveryClient,
-            linkedOutputClient);
+            linkedOutputClient,
+            maxLinkedOutputSizeInBytes: maximumSizeInBytes);
 
         await listener.StartAsync(CancellationToken.None);
         await invocationCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -1620,7 +1659,8 @@ public class ConnectorPollingListenerTests
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
         ConnectorLinkedOutputInvocationLimiter? linkedOutputInvocationLimiter = null,
         bool drainModeEnabled = true,
-        ILogger<ConnectorPollingListener>? logger = null)
+        ILogger<ConnectorPollingListener>? logger = null,
+        int maxLinkedOutputSizeInBytes = ConnectorOptions.BuiltInDefaultMaxLinkedOutputSizeInBytes)
     {
         var registration = new ConnectorFunctionRegistration("TestFunction", executor);
         var options = new ConnectorPollingOptions(
@@ -1631,7 +1671,8 @@ public class ConnectorPollingListenerTests
             isBatched)
         {
             MaxPollingInterval =
-                maxPollingInterval ?? TimeSpan.FromSeconds(30),
+                maxPollingInterval ?? ConnectorOptions.BuiltInDefaultMaxPollingInterval,
+            MaxLinkedOutputSizeInBytes = maxLinkedOutputSizeInBytes,
         };
         return new ConnectorPollingListener(
             registration,

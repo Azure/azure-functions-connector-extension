@@ -94,3 +94,4 @@ __queuestorage__/
 *.bak
 ~$*
 AzuriteConfig
+.azure/*

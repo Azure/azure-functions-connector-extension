@@ -272,7 +272,7 @@ internal sealed class ConnectorPollDeliveryClient : IConnectorPollDeliveryClient
     {
         return await ConnectorPollingContentReader.ReadAsync(
             response.Content,
-            ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes,
+            ConnectorPollingProtocolLimits.MaximumReceiveResponseSizeInBytes,
             reason => new ConnectorPollDeliveryException(
                 $"Connector {operation} {reason}."),
             cancellationToken).ConfigureAwait(false);

@@ -18,7 +18,10 @@ internal sealed record ConnectorPollingOptions(
         TimeSpan.FromSeconds(1);
 
     internal TimeSpan MaxPollingInterval { get; init; } =
-        TimeSpan.FromSeconds(30);
+        ConnectorOptions.BuiltInDefaultMaxPollingInterval;
+
+    internal int MaxLinkedOutputSizeInBytes { get; init; } =
+        ConnectorOptions.BuiltInDefaultMaxLinkedOutputSizeInBytes;
 
     internal static ConnectorPollingOptions Create(
         ConnectorTriggerAttribute attribute,
@@ -59,6 +62,8 @@ internal sealed record ConnectorPollingOptions(
         {
             MaxPollingInterval =
                 ResolveMaxPollingInterval(defaults.MaxPollingInterval),
+            MaxLinkedOutputSizeInBytes =
+                ResolveMaxLinkedOutputSizeInBytes(defaults.MaxLinkedOutputSizeInBytes),
         };
     }
 
@@ -111,6 +116,17 @@ internal sealed record ConnectorPollingOptions(
         {
             throw new InvalidOperationException(
                 $"Connector MaxPollingInterval must be at least {MinimumPollingInterval}.");
+        }
+
+        return configuredValue;
+    }
+
+    private static int ResolveMaxLinkedOutputSizeInBytes(int configuredValue)
+    {
+        if (configuredValue < 1)
+        {
+            throw new InvalidOperationException(
+                "Connector MaxLinkedOutputSizeInBytes must be greater than zero.");
         }
 
         return configuredValue;

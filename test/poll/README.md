@@ -1,12 +1,16 @@
 # Connector Poll Sample Apps
 
-These apps validate the same Connector Namespace Poll trigger from each supported language worker:
+Poll is the simplest local starting point: the Function host connects outbound to the real Connector Namespace, so no public callback or dev tunnel is needed. These apps validate the same trigger from each supported language worker:
 
 - `dotnet` - .NET isolated with a typed Office 365 payload and Poll `MessageId`.
 - `nodejs` - TypeScript batched binding with Office 365 payload types from `@azure/connectors`.
-- `python` - Python v2 single-event generic binding that parses JSON into Office 365 models from `azure-connectors`.
+- `python` - Python 3.13+ with `@app.connector_trigger`, batched Poll delivery, and Office 365 models from `azure-connectors`.
 
-Each sample uses Poll delivery with the same connection and endpoint settings:
+## Required setup
+
+Create an authorized connector connection and an enabled Poll Trigger Config using the [Poll registration skill](../../.github/skills/poll-trigger-registration/SKILL.md). Authorize both the namespace identity and the Function/developer identity with connection-level access policies.
+
+Each sample requires the same binding settings:
 
 ```text
 DeliveryMode = Poll
@@ -14,13 +18,44 @@ Connection = ConnectorNamespace
 TriggerConfigName = %OnNewEmailTriggerConfigName%
 ```
 
-.NET isolated and Node.js enable batched invocation with `MaxBatchSize = 4`; each listener processes one batch at a time, and scaling uses `TargetPendingEventThreshold = 16`. .NET isolated uses `IsBatched = true`; Node.js uses `cardinality: 'many'`. Batch bindings omit `MaxConcurrentCalls`; a positive value is ignored with a startup warning, and a negative value is invalid. Python uses `cardinality=func.Cardinality.ONE`, `maxBatchSize=1`, `maxConcurrentCalls=1`, and `targetPendingEventThreshold=16` because the Python worker's generic binding decoder does not accept batched `collection_string` input.
+`Connection` names the Function configuration prefix, not the connector connection resource. Because these samples use an app-setting expression for the trigger name, their `OnNewEmailTriggerConfigName` setting must be populated.
 
-`MaxConcurrentCalls` applies only to single-event delivery, aligning with the [Service Bus extension](https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-service-bus#hostjson-settings). Its built-in default is 16 per listener on one instance, with no CPU-core multiplier; the Python sample explicitly selects 1. Processing capacity remains occupied through preparation, invocation, and acknowledgement. Scaling uses `ceil(approximateQueueDepth / effectiveTarget)`, preferring a supplied runtime `InstanceConcurrency` over the configured threshold; neither batch size nor `MaxConcurrentCalls` changes the scaling formula or is changed by the runtime scaling override.
+## Sample behavior and optional tuning
 
-An Office 365 Poll event contains an `outputs.body` that can be a single email or a `{ "value": [...] }` collection, independently of Functions invocation cardinality. The Node.js sample types both shapes using SDK models; these TypeScript types do not add runtime validation. The Python generic binding receives JSON as a string and uses `TriggerCallbackPayload.from_dict` with an SDK-model parser to normalize both shapes into typed `GraphClientReceiveMessage` objects, including nested attachments and sensitivity labels. One Python invocation still processes one Poll event, which may contain several emails.
+All three samples enable batched invocation with a maximum of 4 events and a scaling target of 16 pending events per instance. .NET isolated uses `IsBatched = true`, Node.js uses `cardinality: 'many'`, and Python uses `cardinality=func.Cardinality.MANY`. Each listener processes one batch at a time. Batch bindings omit the concurrent-call setting; a positive value is ignored with a startup warning, and a negative value is invalid.
 
-Linked-output events are delivered one per invocation and serialized host-wide to bound memory. Connector Namespace does not yet emit linked-output messages in the available test environment, so the samples currently validate inline batching only.
+`MaxConcurrentCalls` applies only to single-event delivery. Its built-in default is 16 per listener on one instance, with no CPU-core multiplier. Processing capacity remains occupied through preparation, invocation, and acknowledgement. Scaling uses `ceil(approximateQueueDepth / effectiveTarget)`, preferring a supplied runtime `InstanceConcurrency` over the configured threshold; neither batch size nor `MaxConcurrentCalls` changes the scaling formula or is changed by the runtime scaling override.
+
+An Office 365 Poll event contains an `outputs.body` that can be a single email or a `{ "value": [...] }` collection, independently of Functions invocation cardinality. The Node.js sample types both shapes using SDK models; these TypeScript types do not add runtime validation. Python uses a `typing.List[str]` parameter with one JSON string per Poll event, then uses `TriggerCallbackPayload.from_dict` to parse each event into typed `GraphClientReceiveMessage` objects, including nested attachments and sensitivity labels. One invocation can contain several Poll events, and each event can contain several emails.
+
+The Python sample requires `azure-functions>=2.4.0b1`, which supports the Poll decorator arguments and decoding of batched `collection_string` input:
+
+```python
+from typing import List
+
+@app.function_name(name="OnNewEmailPoll")
+@app.connector_trigger(
+    arg_name="payloads",
+    delivery_mode=func.DeliveryMode.POLL,
+    connection="ConnectorNamespace",
+    trigger_config_name="%OnNewEmailTriggerConfigName%",
+    cardinality=func.Cardinality.MANY,
+    max_batch_size=4,
+    target_pending_event_threshold=16,
+)
+def on_new_email_poll(payloads: List[str]) -> None:
+    ...
+```
+
+Use snake_case decorator arguments; the SDK emits the host's camelCase binding metadata.
+
+Use `typing.List[str]` rather than the built-in `list[str]` annotation: the 2.4.0b1 binding type check accepts the former.
+
+Linked-output events are delivered one per invocation and serialized host-wide to bound memory. Their configurable download limit defaults to 100 MiB; it is not a supported payload-size or process-memory guarantee. See the [linked-output configuration](../../docs/connector-trigger-configuration.md#linked-output-download-limit) for overrides and memory considerations.
+
+The batch, concurrency, scaling, and polling-interval settings are optional. Their defaults and precedence are listed in the [configuration reference](../../docs/connector-trigger-configuration.md). No Connector-specific `host.json` settings are required; explicit binding values do not need to be repeated as host defaults.
+
+## Local connection settings
 
 Copy each sample's checked-in `local.settings.example.json` to `local.settings.json`, which remains gitignored, then configure:
 
@@ -31,9 +66,32 @@ OnNewEmailTriggerConfigName=<poll-trigger-config-name>
 
 Never add or commit a real endpoint or credential value.
 
-Obtain the two values from the trigger configuration's `pollingEndpoints.receiveUri`. Remove the final `/triggerConfigs/<name>/receive` segments to obtain the gateway-level `ConnectorNamespace__pollingEndpoint`, and configure that `<name>` as `OnNewEmailTriggerConfigName`. Preserve the service-provided host and gateway identifier exactly. The host may use the current `logic.azure.com` form or a `connectornamespaces` stable-DNS form; the extension treats it as opaque trusted configuration.
+Obtain the settings from the trigger configuration's `pollingEndpoints.receiveUri`:
+
+| Receive URI | `ConnectorNamespace__pollingEndpoint` |
+| --- | --- |
+| `https://<connector-namespace-host>/api/triggerconfigs/<name>/receive` | `https://<connector-namespace-host>` |
+| `https://<host>/api/connectorGateways/<id>/triggerconfigs/<name>/receive` | `https://<host>/api/connectorGateways/<id>` |
+
+Configure `<name>` as `OnNewEmailTriggerConfigName`. The extension constructs the operation paths and supplies `maxEvents` on Receive requests. Do not include a query string, `/api` in the stable-DNS setting, or a Trigger Config in either setting.
+
+Both endpoint forms accept one optional trailing slash.
 
 For local development, `Connection = ConnectorNamespace` uses the signed-in developer credential when no credential selector is configured. For Azure, configure `ConnectorNamespace__credential=managedidentity` and optionally `ConnectorNamespace__clientId` or `ConnectorNamespace__managedIdentityResourceId`. The selected identity must have an access policy on the connection referenced by the trigger.
+
+## Build prerequisites
+
+Use .NET SDK 10.0.100 or later, Azure Functions Core Tools v4, and Azurite. The NuGet feed is configured in the repository's `NuGet.config`.
+
+The Python Poll sample requires Python 3.13 or newer because `azure-functions` 2.4.0b1 declares that minimum Python version.
+
+Install Python SDK and model dependencies separately with pip using the sample's `requirements.txt`. Neither an extension bundle nor the repository-local host extension build installs `azure-functions` or `azure-connectors`; bundles distribute the host extension NuGet, not Python packages. See [worker dependency and bundle configuration](../../docs/connector-trigger-configuration.md#non-net-workers).
+
+Each Node.js sample's `.npmrc` sets only `omit-lockfile-registry-resolved=true`. Lockfiles retain package versions and integrity hashes without embedding registry URLs. npm feed selection comes from user-level or CI configuration. Run npm commands from the selected sample directory.
+
+If the selected Azure Artifacts feed returns `E401`, configure credentials in your user-level `.npmrc` using the [Azure Artifacts npm authentication guidance](https://learn.microsoft.com/azure/devops/artifacts/npm/npmrc). Never commit credentials to the sample configuration.
+
+## Build and run
 
 Build the .NET sample against the repository-local projects:
 
@@ -52,13 +110,21 @@ npm run build
 Pop-Location
 dotnet build .\test\poll\nodejs\NodePollExtensions.csproj
 
-py -3.13 -m pip install `
-    -r .\test\poll\python\requirements.txt `
-    --target .\test\poll\python\.python_packages\lib\site-packages
+py -3.13 -m venv .\test\poll\python\.venv
+.\test\poll\python\.venv\Scripts\python.exe -m pip install `
+    -r .\test\poll\python\requirements.txt
 dotnet build .\test\poll\python\PythonPollExtensions.csproj
 ```
 
-Start Azurite, then run `func start` from the selected sample directory.
+Start Azurite, then run `func start` from the selected sample directory. For Python, activate the sample-local virtual environment first:
+
+```powershell
+Set-Location .\test\poll\python
+.\.venv\Scripts\Activate.ps1
+func start
+```
+
+Keep the virtual environment inside the sample directory so the local worker recognizes its SDK dependencies. Merely installing a newer SDK into an external environment does not ensure Core Tools selects it.
 
 Validate the typed sample code without connecting to Azure:
 

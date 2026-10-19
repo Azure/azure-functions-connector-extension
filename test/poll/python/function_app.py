@@ -3,7 +3,7 @@
 import json
 import logging
 from dataclasses import fields
-from typing import Any
+from typing import Any, List
 
 import azure.functions as func
 from azure.connectors import TriggerCallbackPayload
@@ -17,28 +17,31 @@ app = func.FunctionApp()
 
 
 @app.function_name(name="OnNewEmailPoll")
-@app.generic_trigger(
-    arg_name="payload",
-    type="connectorTrigger",
-    deliveryMode="Poll",
+@app.connector_trigger(
+    arg_name="payloads",
+    delivery_mode=func.DeliveryMode.POLL,
     connection="ConnectorNamespace",
-    triggerConfigName="%OnNewEmailTriggerConfigName%",
-    cardinality=func.Cardinality.ONE,
-    maxBatchSize=1,
-    maxConcurrentCalls=1,
-    targetPendingEventThreshold=16,
+    trigger_config_name="%OnNewEmailTriggerConfigName%",
+    cardinality=func.Cardinality.MANY,
+    max_batch_size=4,
+    target_pending_event_threshold=16,
 )
-def on_new_email_poll(payload: str) -> None:
-    """Log a Connector Namespace Poll event."""
-    event = TriggerCallbackPayload.from_dict(
-        json.loads(payload), item_parser=_parse_email
-    )
-    if event is None or event.body is None:
-        raise ValueError("Office 365 Poll payload must contain a body.")
+def on_new_email_poll(payloads: List[str]) -> None:
+    """Parse each Poll event in the invocation into typed Office 365 messages."""
+    email_count = 0
+    for payload in payloads:
+        event = TriggerCallbackPayload.from_dict(
+            json.loads(payload), item_parser=_parse_email
+        )
+        if event is None or event.body is None:
+            raise ValueError("Office 365 Poll payload must contain a body.")
 
-    emails: list[GraphClientReceiveMessage] = event.body.value or []
+        emails: list[GraphClientReceiveMessage] = event.body.value or []
+        email_count += len(emails)
     logging.info(
-        "Received a Poll connector payload containing %s email(s).", len(emails)
+        "Received a Poll invocation with %s event(s) containing %s email(s).",
+        len(payloads),
+        email_count,
     )
 
 
