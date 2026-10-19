@@ -38,10 +38,10 @@ internal sealed class ConnectorMetricsProvider
         catch (Exception exception)
         {
             _logger.LogFunctionScaleWarning(
-                "Failed to query Connector queue depth; returning zero depth.",
+                "Failed to query Connector queue depth; no scale metrics are available for this observation.",
                 _functionName,
                 exception);
-            return new ConnectorTriggerMetrics(0, DateTime.UtcNow);
+            throw;
         }
     }
 }

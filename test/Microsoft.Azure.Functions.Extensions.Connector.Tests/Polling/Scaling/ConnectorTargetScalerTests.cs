@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Microsoft.Azure.WebJobs.Host.Scale;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Microsoft.Azure.Functions.Extensions.Connector.Tests;
@@ -146,35 +147,86 @@ public class ConnectorTargetScalerTests
         Assert.Equal(int.MaxValue, result.TargetWorkerCount);
     }
 
-    [Fact]
-    public async Task MetricsProvider_ReturnsZeroAfterSuccessfulSampleWhenQueryFails()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(9)]
+    public async Task MetricsProvider_PropagatesFailureAfterSuccessAndRecovers(long recoveryDepth)
     {
-        var depthClient = new SequenceDepthClient(12, new HttpRequestException("transient"));
+        var failure = new ConnectorQueueDepthException("query failed");
+        var depthClient = new SequenceDepthClient(12, failure, recoveryDepth);
         var provider = new ConnectorMetricsProvider(
             depthClient,
             "Function",
             NullLogger<ConnectorMetricsProvider>.Instance);
 
         ConnectorTriggerMetrics first = await provider.GetMetricsAsync();
-        ConnectorTriggerMetrics second = await provider.GetMetricsAsync();
+        ConnectorQueueDepthException exception =
+            await Assert.ThrowsAsync<ConnectorQueueDepthException>(() =>
+                provider.GetMetricsAsync());
+        DateTime recoveryStartedAtUtc = DateTime.UtcNow;
+        ConnectorTriggerMetrics recovered = await provider.GetMetricsAsync();
 
+        Assert.Same(failure, exception);
         Assert.Equal(12, first.ApproximateQueueDepth);
-        Assert.Equal(0, second.ApproximateQueueDepth);
-        Assert.NotSame(first, second);
-        Assert.True(second.SampledAtUtc >= first.SampledAtUtc);
+        Assert.Equal(recoveryDepth, recovered.ApproximateQueueDepth);
+        Assert.NotSame(first, recovered);
+        Assert.InRange(recovered.SampledAtUtc, recoveryStartedAtUtc, DateTime.UtcNow);
+        Assert.Equal(3, depthClient.CallCount);
     }
 
     [Fact]
-    public async Task MetricsProvider_InitialFailureReturnsZero()
+    public async Task MetricsProvider_InitialFailurePropagates()
     {
+        var failure = new ConnectorQueueDepthException("initial");
         var provider = new ConnectorMetricsProvider(
-            new SequenceDepthClient(new HttpRequestException("initial")),
+            new SequenceDepthClient(failure),
             "Function",
             NullLogger<ConnectorMetricsProvider>.Instance);
 
-        ConnectorTriggerMetrics metrics = await provider.GetMetricsAsync();
+        ConnectorQueueDepthException exception =
+            await Assert.ThrowsAsync<ConnectorQueueDepthException>(() =>
+                provider.GetMetricsAsync());
 
-        Assert.Equal(0, metrics.ApproximateQueueDepth);
+        Assert.Same(failure, exception);
+    }
+
+    [Fact]
+    public async Task MetricsProvider_LogsWarningAndPropagatesNonCallerCancellation()
+    {
+        var failure = new OperationCanceledException("request timeout");
+        var logger = new WarningLogger();
+        var provider = new ConnectorMetricsProvider(
+            new SequenceDepthClient(failure), "Function", logger);
+
+        OperationCanceledException exception =
+            await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                provider.GetMetricsAsync());
+
+        Assert.Same(failure, exception);
+        string warning = Assert.Single(logger.Warnings);
+        Assert.Contains("no scale metrics are available for this observation", warning);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(17, 2)]
+    public async Task GetScaleResultAsync_PropagatesFailureAndRecovers(
+        long recoveryDepth, int expectedTarget)
+    {
+        var failure = new ConnectorQueueDepthException("query failed");
+        var depthClient = new SequenceDepthClient(failure, recoveryDepth);
+        ConnectorTargetScaler scaler = CreateScaler(
+            depthClient, 16, new ConnectorOptions());
+
+        ConnectorQueueDepthException exception =
+            await Assert.ThrowsAsync<ConnectorQueueDepthException>(() =>
+                scaler.GetScaleResultAsync(new TargetScalerContext()));
+        TargetScalerResult recovered =
+            await scaler.GetScaleResultAsync(new TargetScalerContext());
+
+        Assert.Same(failure, exception);
+        Assert.Equal(expectedTarget, recovered.TargetWorkerCount);
+        Assert.Equal(2, depthClient.CallCount);
     }
 
     [Fact]
@@ -182,14 +234,50 @@ public class ConnectorTargetScalerTests
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
+        var failure = new OperationCanceledException(cancellation.Token);
+        var logger = new WarningLogger();
         var provider = new ConnectorMetricsProvider(
-            new SequenceDepthClient(
-                new OperationCanceledException(cancellation.Token)),
+            new SequenceDepthClient(failure),
             "Function",
-            NullLogger<ConnectorMetricsProvider>.Instance);
+            logger);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            provider.GetMetricsAsync(cancellation.Token));
+        OperationCanceledException exception =
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                provider.GetMetricsAsync(cancellation.Token));
+
+        Assert.Same(failure, exception);
+        Assert.Equal(cancellation.Token, exception.CancellationToken);
+        Assert.Empty(logger.Warnings);
+    }
+
+    [Fact]
+    public async Task MetricsProvider_WarningAndPropagatedFailureDoNotExposeCredentialDetails()
+    {
+        const string sensitiveDetails =
+            "https://runtime.test/depth?signature=secret-value credential=secret-token payload=private";
+        var logger = new WarningLogger();
+        var depthClient = new ConnectorQueueDepthClient(
+            new ConnectorPollingEndpoints(
+                new Uri("https://runtime.test/receive"),
+                new Uri("https://runtime.test/ack"),
+                new Uri("https://runtime.test/depth")),
+            new ThrowingTokenCredential(new InvalidOperationException(sensitiveDetails)),
+            new TestHttpClientFactory(new SequenceHttpMessageHandler()),
+            "Function",
+            NullLogger<ConnectorQueueDepthClient>.Instance);
+        var provider = new ConnectorMetricsProvider(depthClient, "Function", logger);
+
+        ConnectorQueueDepthException exception =
+            await Assert.ThrowsAsync<ConnectorQueueDepthException>(() =>
+                provider.GetMetricsAsync());
+
+        Assert.Equal("Connector approximate queue depth request failed.", exception.Message);
+        Assert.Null(exception.InnerException);
+        Assert.DoesNotContain(sensitiveDetails, exception.ToString(), StringComparison.Ordinal);
+        string warning = Assert.Single(logger.Warnings);
+        Assert.Contains("Function", warning);
+        Assert.Contains("no scale metrics are available for this observation", warning);
+        Assert.DoesNotContain(sensitiveDetails, warning, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -207,5 +295,24 @@ public class ConnectorTargetScalerTests
             "Function",
             NullLogger<ConnectorMetricsProvider>.Instance);
         return new ConnectorTargetScaler("Function", metrics, attributeTargetPendingEventThreshold, options, NullLogger<ConnectorTargetScaler>.Instance);
+    }
+
+    private sealed class WarningLogger : ILogger
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state,
+            Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning)
+            {
+                Warnings.Add($"{formatter(state, exception)} {exception}");
+            }
+        }
     }
 }
