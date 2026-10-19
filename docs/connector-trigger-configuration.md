@@ -27,6 +27,8 @@ Endpoint forms:
 
 Preserve the service-provided authority and gateway ID. The extension constructs the operation paths; do not configure a query string, a full Receive URL, or a standalone `/api` base. Endpoints require HTTPS without user information or fragments.
 
+Both forms have been exercised against live Connector Namespace resources. If a service-returned endpoint does not match either form, obtain a supported endpoint from Connector Namespace rather than guessing a hostname or stripping potentially required routing or authorization query parameters.
+
 ### Identity settings
 
 | Connection setting | Required? | Use |
@@ -65,7 +67,7 @@ For other workers, use these equivalents:
 | `IsBatched = true` | `cardinality: "many"` | `cardinality=func.Cardinality.MANY` |
 | `MaxBatchSize`, `MaxConcurrentCalls`, `TargetPendingEventThreshold` | `maxBatchSize`, `maxConcurrentCalls`, `targetPendingEventThreshold` | `max_batch_size`, `max_concurrent_calls`, `target_pending_event_threshold` |
 
-Python Poll decorators and batch decoding require `azure-functions>=2.4.0b1` and Python 3.13+. Set `delivery_mode=func.DeliveryMode.POLL` and annotate batched parameters as `typing.List[str]`, one JSON string per event. The 2.4.0b1 binding type check does not accept the built-in `list[str]` annotation. With `func.Cardinality.ONE`, use `str` and an effective `max_batch_size` of `1`. Omit `max_concurrent_calls` for batches. See the [language-specific Poll samples](../test/poll/README.md) for complete bindings.
+The Python Poll test app's native decorators and batch decoding require `azure-functions>=2.4.0b1` and Python 3.13+. Set `delivery_mode=func.DeliveryMode.POLL` and annotate batched parameters as `typing.List[str]`, one JSON string per event. The 2.4.0b1 binding type check does not accept the built-in `list[str]` annotation. With `func.Cardinality.ONE`, use `str` and an effective `max_batch_size` of `1`. Omit `max_concurrent_calls` for batches. See the [language-specific Poll test apps](../test/poll/README.md) for complete bindings.
 
 ### Optional `host.json` defaults
 
@@ -91,11 +93,19 @@ Explicit positive binding values override their corresponding host defaults; dup
 
 Empty-queue backoff starts at one second, doubles up to `maxPollingInterval`, and resets when a Receive returns messages. Jitter is capped by the idle-delay limit. While more events are available, the listener can poll again without an added delay when processing capacity permits. Receive failures have a separate backoff. See the [concurrency and scaling guide](./connector-poll-concurrency-visual-guide.md).
 
+### Queue-depth request retries
+
+Version 1.0.0 makes one queue-depth request per scale check. A failed query logs a warning and reports depth `0`. Propagating an unavailable metric alone does not guarantee a different controller scale decision.
+
+Bounded retries are deferred to a later release in [#48](https://github.com/Azure/azure-functions-connector-extension/pull/48), pending further testing. The extension/controller failure contract remains tracked in [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44).
+
 ### Delivery and validation notes
 
 Delivery is at least once. Successful invocations are acknowledged; failed ones can be redelivered after the service-managed lock expires. Scope deduplication to the namespace and trigger configuration together with `ConnectorEvent<T>.MessageId`; do not assume cross-trigger uniqueness. Single-event processing capacity includes linked-output waiting, invocation, and acknowledgement.
 
 Linked outputs are downloaded by the host, normalized to the ordinary payload shape, and invoked one event at a time behind a host-wide limiter. The download limit is not a supported payload-size guarantee; worker conversion also consumes memory. Outstanding hosting, failure and lease validation is described in the [Poll design](./connector-trigger-poll-delivery-design.md#deferred-linked-output-release-work).
+
+Linked-output test evidence covers warm, single-event handling on selected Flex Consumption memory profiles in .NET isolated, Node.js and Python. It does not qualify sustained/mixed workloads, multiple-listener lease behavior, cancellation/shutdown, or unassisted scale from zero for GA support. See the [tested coverage and remaining qualification](./connector-trigger-poll-delivery-design.md#deferred-linked-output-release-work) before applying these results to a workload.
 
 ### Linked-output download limit
 
@@ -199,6 +209,6 @@ For Node.js and Python deployments using extension bundles, select a preview bun
 }
 ```
 
-The example version range is not a minimum-version or feature-availability guarantee; verify the contents of the selected published bundle. Published bundles may lag the current checkout. The [local Poll samples](../test/poll/README.md) build the host extension directly instead of relying on a published bundle.
+The example version range is not a minimum-version or feature-availability guarantee; verify the contents of the selected published bundle. Published bundles may lag the current checkout. The [local Poll test apps](../test/poll/README.md) build the host extension directly instead of relying on a published bundle.
 
-Python Poll samples require Python 3.13+ and `azure-functions>=2.4.0b1`. The Webhook sample uses the same minimum on Python 3.13+, while retaining `azure-functions>=1.26.0b3` and `PYTHON_ISOLATE_WORKER_DEPENDENCIES=1` for Python 3.10-3.12. Typed Webhook integration additionally uses `azurefunctions-extensions-connectors`.
+The Python Poll test app requires Python 3.13+ and `azure-functions>=2.4.0b1`. The Webhook sample uses the same minimum on Python 3.13+, while retaining `azure-functions>=1.26.0b3` and `PYTHON_ISOLATE_WORKER_DEPENDENCIES=1` for Python 3.10-3.12. Typed Webhook integration additionally uses `azurefunctions-extensions-connectors`.

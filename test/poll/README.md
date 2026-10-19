@@ -1,4 +1,6 @@
-# Connector Poll Sample Apps
+# Connector Poll Repository Test Apps
+
+These apps are repository integration tests, not customer samples. Public samples will be maintained separately in [Azure-Samples](https://github.com/Azure-Samples). Python/SDK requirements and invocation cardinality here describe these test apps; they do not require existing Poll applications to migrate.
 
 Poll is the simplest local starting point: the Function host connects outbound to the real Connector Namespace, so no public callback or dev tunnel is needed. These apps validate the same trigger from each supported language worker:
 
@@ -10,7 +12,7 @@ Poll is the simplest local starting point: the Function host connects outbound t
 
 Create an authorized connector connection and an enabled Poll Trigger Config using the [Poll registration skill](../../.github/skills/poll-trigger-registration/SKILL.md). Authorize both the namespace identity and the Function/developer identity with connection-level access policies.
 
-Each sample requires the same binding settings:
+Each test app requires the same binding settings:
 
 ```text
 DeliveryMode = Poll
@@ -18,17 +20,17 @@ Connection = ConnectorNamespace
 TriggerConfigName = %OnNewEmailTriggerConfigName%
 ```
 
-`Connection` names the Function configuration prefix, not the connector connection resource. Because these samples use an app-setting expression for the trigger name, their `OnNewEmailTriggerConfigName` setting must be populated.
+`Connection` names the Function configuration prefix, not the connector connection resource. Because these test apps use an app-setting expression for the trigger name, their `OnNewEmailTriggerConfigName` setting must be populated.
 
-## Sample behavior and optional tuning
+## Test behavior and optional tuning
 
-All three samples enable batched invocation with a maximum of 4 events and a scaling target of 16 pending events per instance. .NET isolated uses `IsBatched = true`, Node.js uses `cardinality: 'many'`, and Python uses `cardinality=func.Cardinality.MANY`. Each listener processes one batch at a time. Batch bindings omit the concurrent-call setting; a positive value is ignored with a startup warning, and a negative value is invalid.
+All three test apps enable batched invocation with a maximum of 4 events and a scaling target of 16 pending events per instance. .NET isolated uses `IsBatched = true`, Node.js uses `cardinality: 'many'`, and Python uses `cardinality=func.Cardinality.MANY`. Each listener processes one batch at a time. Batch bindings omit the concurrent-call setting; a positive value is ignored with a startup warning, and a negative value is invalid.
 
 `MaxConcurrentCalls` applies only to single-event delivery. Its built-in default is 16 per listener on one instance, with no CPU-core multiplier. Processing capacity remains occupied through preparation, invocation, and acknowledgement. Scaling uses `ceil(approximateQueueDepth / effectiveTarget)`, preferring a supplied runtime `InstanceConcurrency` over the configured threshold; neither batch size nor `MaxConcurrentCalls` changes the scaling formula or is changed by the runtime scaling override.
 
-An Office 365 Poll event contains an `outputs.body` that can be a single email or a `{ "value": [...] }` collection, independently of Functions invocation cardinality. The Node.js sample types both shapes using SDK models; these TypeScript types do not add runtime validation. Python uses a `typing.List[str]` parameter with one JSON string per Poll event, then uses `TriggerCallbackPayload.from_dict` to parse each event into typed `GraphClientReceiveMessage` objects, including nested attachments and sensitivity labels. One invocation can contain several Poll events, and each event can contain several emails.
+An Office 365 Poll event contains an `outputs.body` that can be a single email or a `{ "value": [...] }` collection, independently of Functions invocation cardinality. The Node.js test app types both shapes using SDK models; these TypeScript types do not add runtime validation. Python uses a `typing.List[str]` parameter with one JSON string per Poll event, then uses `TriggerCallbackPayload.from_dict` to parse each event into typed `GraphClientReceiveMessage` objects, including nested attachments and sensitivity labels. One invocation can contain several Poll events, and each event can contain several emails.
 
-The Python sample requires `azure-functions>=2.4.0b1`, which supports the Poll decorator arguments and decoding of batched `collection_string` input:
+The Python test app requires `azure-functions>=2.4.0b1`, which supports the Poll decorator arguments and decoding of batched `collection_string` input:
 
 ```python
 from typing import List
@@ -57,7 +59,7 @@ The batch, concurrency, scaling, and polling-interval settings are optional. The
 
 ## Local connection settings
 
-Copy each sample's checked-in `local.settings.example.json` to `local.settings.json`, which remains gitignored, then configure:
+Copy each test app's checked-in `local.settings.example.json` to `local.settings.json`, which remains gitignored, then configure:
 
 ```text
 ConnectorNamespace__pollingEndpoint=https://<host>/api/connectorGateways/<connector-namespace-id>
@@ -83,17 +85,17 @@ For local development, `Connection = ConnectorNamespace` uses the signed-in deve
 
 Use .NET SDK 10.0.100 or later, Azure Functions Core Tools v4, and Azurite. The NuGet feed is configured in the repository's `NuGet.config`.
 
-The Python Poll sample requires Python 3.13 or newer because `azure-functions` 2.4.0b1 declares that minimum Python version.
+The Python Poll test app requires Python 3.13 or newer because `azure-functions` 2.4.0b1 declares that minimum Python version.
 
-Install Python SDK and model dependencies separately with pip using the sample's `requirements.txt`. Neither an extension bundle nor the repository-local host extension build installs `azure-functions` or `azure-connectors`; bundles distribute the host extension NuGet, not Python packages. See [worker dependency and bundle configuration](../../docs/connector-trigger-configuration.md#non-net-workers).
+Install Python SDK and model dependencies separately with pip using the test app's `requirements.txt`. Neither an extension bundle nor the repository-local host extension build installs `azure-functions` or `azure-connectors`; bundles distribute the host extension NuGet, not Python packages. See [worker dependency and bundle configuration](../../docs/connector-trigger-configuration.md#non-net-workers).
 
-Each Node.js sample's `.npmrc` sets only `omit-lockfile-registry-resolved=true`. Lockfiles retain package versions and integrity hashes without embedding registry URLs. npm feed selection comes from user-level or CI configuration. Run npm commands from the selected sample directory.
+Each Node.js test app's `.npmrc` sets only `omit-lockfile-registry-resolved=true`. Lockfiles retain package versions and integrity hashes without embedding registry URLs. npm feed selection comes from user-level or CI configuration. Run npm commands from the selected test app directory.
 
-If the selected Azure Artifacts feed returns `E401`, configure credentials in your user-level `.npmrc` using the [Azure Artifacts npm authentication guidance](https://learn.microsoft.com/azure/devops/artifacts/npm/npmrc). Never commit credentials to the sample configuration.
+If the selected Azure Artifacts feed returns `E401`, configure credentials in your user-level `.npmrc` using the [Azure Artifacts npm authentication guidance](https://learn.microsoft.com/azure/devops/artifacts/npm/npmrc). Never commit credentials to the test app configuration.
 
 ## Build and run
 
-Build the .NET sample against the repository-local projects:
+Build the .NET test app against the repository-local projects:
 
 ```powershell
 dotnet build .\test\poll\dotnet\PollSample.csproj
@@ -101,7 +103,7 @@ dotnet build .\test\poll\dotnet\PollSample.csproj
 
 Build the host extension before starting Node.js or Python:
 
-Their extension projects copy the current checkout's DLLs and generated extension metadata into each sample's `bin` only after the Functions SDK has refreshed and cleaned its output. Rebuild after extension changes; restarting Core Tools without rebuilding can load an older DLL.
+Their extension projects copy the current checkout's DLLs and generated extension metadata into each test app's `bin` only after the Functions SDK has refreshed and cleaned its output. Rebuild after extension changes; restarting Core Tools without rebuilding can load an older DLL.
 
 ```powershell
 Push-Location .\test\poll\nodejs
@@ -116,7 +118,7 @@ py -3.13 -m venv .\test\poll\python\.venv
 dotnet build .\test\poll\python\PythonPollExtensions.csproj
 ```
 
-Start Azurite, then run `func start` from the selected sample directory. For Python, activate the sample-local virtual environment first:
+Start Azurite, then run `func start` from the selected test app directory. For Python, activate the test app's local virtual environment first:
 
 ```powershell
 Set-Location .\test\poll\python
@@ -124,9 +126,9 @@ Set-Location .\test\poll\python
 func start
 ```
 
-Keep the virtual environment inside the sample directory so the local worker recognizes its SDK dependencies. Merely installing a newer SDK into an external environment does not ensure Core Tools selects it.
+Keep the virtual environment inside the test app directory so the local worker recognizes its SDK dependencies. Merely installing a newer SDK into an external environment does not ensure Core Tools selects it.
 
-Validate the typed sample code without connecting to Azure:
+Validate the typed test app code without connecting to Azure:
 
 ```powershell
 Push-Location .\test\poll\nodejs
@@ -135,4 +137,4 @@ Pop-Location
 .\test\poll\python\.venv\Scripts\python.exe -m unittest discover -s .\test\poll\python -p test_function_app.py
 ```
 
-The Python command assumes the sample's virtual environment has the dependencies from `requirements.txt` installed.
+The Python command assumes the test app's virtual environment has the dependencies from `requirements.txt` installed.

@@ -308,7 +308,7 @@ Requirements:
 - Keep `MaxConcurrentCalls` and `MaxBatchSize` out of the scaling calculation.
 - Keep the runtime `InstanceConcurrency` override confined to the scaler's denominator; it does not change local single-event concurrency or allow concurrent batches. `TargetPendingEventThreshold` is a scaling target, not a hard local pending-event limit.
 - Document that aggregate queue depth cannot distinguish inline from linked events. Revisit the calculation if the service exposes payload-class or byte backlog metrics.
-- The current queue-depth failure fallback returns zero; it does not distinguish an unavailable observation from an empty queue. The desired extension/controller failure policy remains open in [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44).
+- Release decision for 1.0.0: retain the existing single-attempt queue-depth query and zero-depth failure fallback. Defer bounded retries in [#48](https://github.com/Azure/azure-functions-connector-extension/pull/48) to a later release for further testing. See [queue-depth request retries](connector-trigger-configuration.md#queue-depth-request-retries); [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44) tracks the extension/controller failure contract.
 - Validate scale from zero.
 - Add integration tests, samples, and final user documentation.
 
