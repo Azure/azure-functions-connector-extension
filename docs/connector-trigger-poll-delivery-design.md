@@ -304,7 +304,9 @@ Approximate queue depth is used only for target scaling and must not be treated 
 
 ### Timeouts and Retry Policy
 
-Receive, acknowledge, and approximate queue-depth HTTP operations use a shared 30-second timeout. Linked-output downloads use a 2-minute timeout. Credential acquisition occurs before the HTTP timeout begins.
+Receive and acknowledge HTTP requests use a 30-second timeout. Queue-depth GET attempts, retry delays, and response reading share one deadline of at most 30 seconds, honoring a shorter configured HTTP client timeout. An infinite client timeout does not remove this queue-depth deadline. Linked-output downloads use a 2-minute timeout. Credential acquisition occurs before the HTTP timeout begins.
+
+`ConnectorPollingRetryPolicy` is a transport-only collaborator with no Functions scaling dependencies, suitable for extraction into the Connectors Polling SDK. Queue-depth GETs reuse the existing safe-operation limit of three attempts and 100 ms base delay (100/200 ms backoff). Retry only HTTP 408/429/500/502/503/504, `HttpRequestException` transport failures, and interrupted response reads (`IOException`). Use a fresh request and dispose each response before waiting. Honor delta/date `Retry-After` values when longer than backoff; if the delay cannot fit in the remaining deadline, propagate failure instead of retrying earlier. Permission/configuration errors, malformed/oversized/invalid depth responses, caller cancellation, and an exhausted overall deadline are not retried. Terminal failures retain sanitized diagnostics. Validate/tune these reused defaults against service/controller budgets; this is not evidence that the production controller permits the full 30-second budget.
 
 Receive and acknowledge requests are not transparently retried after ambiguous failures. If acknowledgement fails, the messages remain unacknowledged and can be redelivered after their locks expire. Long term, the Connectors Polling SDK should own the transport timeout and retry policy. The extension can expose user overrides through `ConnectorOptions` and map them into SDK options after Connector Namespace publishes supported latency and retry guidance.
 
@@ -731,16 +733,16 @@ Listener polling alone is incomplete because an app at zero instances cannot pol
 Implement a scale monitor or target scaler using approximate queue depth:
 
 - Resolve the same trigger endpoints.
-- Query approximate depth with a single attempt per observation. Evaluate bounded GET retries only after controller/service request and time budgets are agreed.
+- Query approximate depth with the bounded transport retry policy described above; keep retry decisions out of metrics/scaler code.
 - Return a zero-depth metric and target `0` only for a valid empty-queue observation. For HTTP/transport/timeouts, invalid responses, or permission/configuration failures, log a sanitized scale warning and propagate the failure without metrics or a target. Preserve caller cancellation without a scale warning.
 - Scale out based on the configured target pending-event threshold per worker instance.
 - Avoid equating approximate depth with immediately receivable messages.
 
 Scaling should use a separate service from the listener and poll client.
 
-Failures do not reuse or refresh a previous sample. Subsequent observations query the service again; a successful response resumes scaling from the newly observed zero or nonzero depth and its acquisition time. There is no extension-owned retry loop, cache, sentinel target, or synthetic worker floor, and Receive/acknowledgement behavior is unchanged.
+Failures do not reuse or refresh a previous sample. Subsequent observations query the service again; a successful response resumes scaling from the newly observed zero or nonzero depth and its acquisition time. There is no metrics/scaler-owned retry loop, cache, sentinel target, or synthetic worker floor, and Receive/acknowledgement behavior is unchanged.
 
-Failure propagation alone does not prevent scale-in. The public WebJobs SDK `dev` [ScaleManager](https://github.com/Azure/azure-webjobs-sdk/blob/dev/src/Microsoft.Azure.WebJobs.Host/Scale/ScaleManager.cs) drops failed target-scaler observations. With all failures and no monitor votes it can vote for scale-in of active workers; healthy lower targets can also permit scale-in when another scaler fails. Production controller paths remain unverified. The public `TargetScalerResult` exposes only an integer `TargetWorkerCount`, and `TargetScalerContext` carries only `InstanceConcurrency`, so this patch cannot express a controller-level hold-capacity policy. Follow-up [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44) must establish controller integration evidence for one/all/mixed scaler failures, active/zero-instance apps and recovery, and decide bounded GET retry budgets with the service/controller owners.
+Failure propagation alone does not prevent scale-in. The public WebJobs SDK `dev` [ScaleManager](https://github.com/Azure/azure-webjobs-sdk/blob/dev/src/Microsoft.Azure.WebJobs.Host/Scale/ScaleManager.cs) drops failed target-scaler observations. With all failures and no monitor votes it can vote for scale-in of active workers; healthy lower targets can also permit scale-in when another scaler fails. Production controller paths remain unverified. The public `TargetScalerResult` exposes only an integer `TargetWorkerCount`, and `TargetScalerContext` carries only `InstanceConcurrency`, so this patch cannot express a controller-level hold-capacity policy. Follow-up [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44) must establish controller integration evidence for one/all/mixed scaler failures, active/zero-instance apps and recovery, and validate/tune the bounded GET retry defaults with the service/controller owners.
 
 Target scaling follows the runtime-concurrency precedence used by Event Hubs and Service Bus:
 
@@ -895,6 +897,7 @@ Record without payload or token content:
 - Zero/non-zero depth decisions.
 - Initial failure, failure after success, and recovery to valid zero/nonzero observations without cached metrics.
 - Target-scaler failure propagation, caller cancellation without warnings, and sanitized scale warnings/exceptions.
+- Transient GET recovery/exhaustion, permanent failures without retries, bounded backoff/attempts, `Retry-After`, and one deadline covering attempts, delays, and response reading.
 - Controller integration evidence for one/all/mixed scaler failures and active/zero-instance recovery remains follow-up work; unit coverage does not establish scale-in prevention.
 - Runtime `InstanceConcurrency` precedence, configured-threshold fallback, and independence from `MaxBatchSize` and `MaxConcurrentCalls`.
 - Endpoint/auth failure behavior.

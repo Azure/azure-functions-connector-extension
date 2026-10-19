@@ -188,7 +188,7 @@ Requirements:
 - Process acknowledgement statuses per item.
 - Do not transparently retry Receive or Acknowledge after ambiguous failures.
 - Use an extension-owned 30-second HTTP timeout for Receive, Acknowledge, and queue depth, and a 2-minute timeout for linked-output downloads. Acquire credentials before starting the HTTP timeout.
-- Allow bounded transient retries only for safe queue-depth operations.
+- Allow bounded transient retries only for safe queue-depth operations: up to three attempts, 100/200 ms backoff, and one deadline of at most 30 seconds including delays and response reading (respect shorter HTTP client timeouts). Honor `Retry-After` without retrying early if it cannot fit. Retry HTTP 408/429/500/502/503/504 and transport/read failures; do not retry permission/configuration errors, invalid responses, cancellation, or an exhausted deadline. Keep policy in a transport-only collaborator for SDK extraction.
 - Follow up by moving transport timeout and retry-policy ownership into the Connectors Polling SDK. The extension can expose user overrides through `ConnectorOptions` and map them into SDK options after Connector Namespace publishes supported latency and retry guidance.
 
 Add a dedicated linked-output client or narrowly scoped collaborator:
@@ -322,9 +322,9 @@ Requirements:
 - Keep the runtime `InstanceConcurrency` override confined to the scaler's denominator; it does not change local single-event concurrency or allow concurrent batches. `TargetPendingEventThreshold` is a scaling target, not a hard local pending-event limit.
 - Document that aggregate queue depth cannot distinguish inline from linked events. Revisit the calculation if the service exposes payload-class or byte backlog metrics.
 - Return zero depth/target only for valid empty-queue observations. Log a sanitized scale warning and propagate failed depth queries without metrics or a target; preserve caller cancellation without a scale warning.
-- Keep one GET attempt per observation with no cached sample or synthetic worker floor. Subsequent observations query again and recover from newly observed zero/nonzero depth. Cover initial failure, failure after success, recovery, target-scaler propagation, cancellation, and safe diagnostics.
+- Use the bounded queue-depth transport retry policy without a cached sample or synthetic worker floor. Subsequent observations query again and recover from newly observed zero/nonzero depth. Cover initial failure, failure after success, recovery, target-scaler propagation, cancellation, safe diagnostics, retry classification/exhaustion, `Retry-After`, response disposal, and shared deadlines.
 - Do not claim this prevents controller scale-in: the public WebJobs SDK `dev` ScaleManager drops failed target observations, can vote scale-in with all failures/no monitor votes on active workers, and can permit scale-in from healthy lower targets alongside failures. Production paths are unverified; `TargetScalerResult` has only integer `TargetWorkerCount` and `TargetScalerContext` only `InstanceConcurrency`.
-- Track controller evidence for one/all/mixed failures, active/zero-instance apps and recovery, plus agreed bounded GET retry request/time budgets, in [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44). Do not change Receive/acknowledgement retry behavior.
+- Track controller evidence for one/all/mixed failures, active/zero-instance apps and recovery, plus validation/tuning of reused retry defaults against service/controller budgets, in [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44). Do not change Receive/acknowledgement retry behavior.
 - Validate scale from zero.
 - Add integration tests, samples, and final user documentation.
 

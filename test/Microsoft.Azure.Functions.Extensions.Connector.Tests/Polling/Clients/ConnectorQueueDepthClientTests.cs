@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -92,12 +93,15 @@ public class ConnectorQueueDepthClientTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.Forbidden)]
-    [InlineData(HttpStatusCode.TooManyRequests)]
-    [InlineData(HttpStatusCode.InternalServerError)]
-    public async Task GetApproximateQueueDepthAsync_ThrowsForHttpErrorWithoutRetry(
-        HttpStatusCode statusCode)
+    [InlineData(HttpStatusCode.BadRequest, 1)]
+    [InlineData(HttpStatusCode.Unauthorized, 1)]
+    [InlineData(HttpStatusCode.Forbidden, 1)]
+    [InlineData(HttpStatusCode.NotFound, 1)]
+    [InlineData(HttpStatusCode.NotImplemented, 1)]
+    [InlineData(HttpStatusCode.TooManyRequests, 3)]
+    [InlineData(HttpStatusCode.InternalServerError, 3)]
+    public async Task GetApproximateQueueDepthAsync_ThrowsAfterEligibleAttempts(
+        HttpStatusCode statusCode, int expectedAttempts)
     {
         ConnectorPollingEndpoints endpoints =
             Endpoints("https://runtime.test/depth");
@@ -111,7 +115,239 @@ public class ConnectorQueueDepthClientTests
 
         Assert.Contains($"HTTP {(int)statusCode}", exception.Message);
         Assert.DoesNotContain("sensitive-response-body", exception.ToString(), StringComparison.Ordinal);
+        Assert.Equal(expectedAttempts, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.RequestTimeout)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout)]
+    public async Task GetApproximateQueueDepthAsync_RecoversFromTransientHttpErrors(
+        HttpStatusCode statusCode)
+    {
+        var credential = new TestTokenCredential();
+        var handler = new SequenceHttpMessageHandler(
+            _ => JsonResponse(statusCode, "{}"),
+            _ => JsonResponse(statusCode, "{}"),
+            _ => JsonResponse(HttpStatusCode.OK, """{"approximateQueueDepth":0}"""));
+        var client = CreateClient(Endpoints("https://runtime.test/depth"), credential, handler);
+
+        long depth = await client.GetApproximateQueueDepthAsync();
+
+        Assert.Equal(0, depth);
+        Assert.Equal(3, handler.CallCount);
+        Assert.Single(credential.RequestedScopes);
+        Assert.NotSame(handler.Requests[0], handler.Requests[1]);
+        Assert.NotSame(handler.Requests[1], handler.Requests[2]);
+        Assert.All(handler.Requests, request =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            Assert.Equal("test-token", request.Headers.Authorization?.Parameter);
+        });
+    }
+
+    [Fact]
+    public async Task GetApproximateQueueDepthAsync_RecoversFromTransportError()
+    {
+        var handler = new AsyncSequenceHttpMessageHandler(
+            (_, _) => Task.FromException<HttpResponseMessage>(
+                new HttpRequestException("sensitive request details")),
+            (_, _) => Task.FromResult(
+                JsonResponse(HttpStatusCode.OK, """{"approximateQueueDepth":17}""")));
+        var client = CreateClient(
+            Endpoints("https://runtime.test/depth"), new TestTokenCredential(), handler);
+
+        Assert.Equal(17, await client.GetApproximateQueueDepthAsync());
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetApproximateQueueDepthAsync_RetriesInterruptedResponseReads(bool recovers)
+    {
+        const string sensitiveDetails = "response payload and endpoint secret";
+        int attempts = 0;
+        var handler = new SequenceHttpMessageHandler(_ =>
+            ++attempts == 2 && recovers
+                ? JsonResponse(HttpStatusCode.OK, """{"approximateQueueDepth":12}""")
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new TrackingHttpContent("{}", new IOException(sensitiveDetails)),
+                });
+        var client = CreateClient(
+            Endpoints("https://runtime.test/depth"), new TestTokenCredential(), handler);
+
+        if (recovers)
+        {
+            Assert.Equal(12, await client.GetApproximateQueueDepthAsync());
+            Assert.Equal(2, handler.CallCount);
+        }
+        else
+        {
+            ConnectorQueueDepthException exception =
+                await Assert.ThrowsAsync<ConnectorQueueDepthException>(() =>
+                    client.GetApproximateQueueDepthAsync());
+
+            Assert.Null(exception.InnerException);
+            Assert.DoesNotContain(sensitiveDetails, exception.ToString(), StringComparison.Ordinal);
+            Assert.Equal(3, handler.CallCount);
+        }
+    }
+
+    [Fact]
+    public async Task GetApproximateQueueDepthAsync_DisposesFailedResponseBeforeBackoff()
+    {
+        var content = new TrackingHttpContent("{}");
+        var handler = new SequenceHttpMessageHandler(
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = content },
+            _ => JsonResponse(HttpStatusCode.OK, """{"approximateQueueDepth":1}"""));
+        var client = CreateClient(
+            Endpoints("https://runtime.test/depth"),
+            new TestTokenCredential(),
+            handler,
+            retryDelayAsync: (_, _) =>
+            {
+                Assert.True(content.WasDisposed);
+                return Task.CompletedTask;
+            });
+
+        Assert.Equal(1, await client.GetApproximateQueueDepthAsync());
+        Assert.False(content.WasBuffered);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetApproximateQueueDepthAsync_HonorsRetryAfter(bool useDate)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        var handler = new SequenceHttpMessageHandler(
+            _ =>
+            {
+                var response = JsonResponse(HttpStatusCode.TooManyRequests, "{}");
+                response.Headers.RetryAfter = useDate
+                    ? new RetryConditionHeaderValue(now.AddSeconds(10))
+                    : new RetryConditionHeaderValue(TimeSpan.FromSeconds(10));
+                return response;
+            },
+            _ => JsonResponse(HttpStatusCode.OK, """{"approximateQueueDepth":1}"""));
+        var delays = new List<TimeSpan>();
+        var client = CreateClient(
+            Endpoints("https://runtime.test/depth"),
+            new TestTokenCredential(),
+            handler,
+            retryDelayAsync: (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            });
+
+        Assert.Equal(1, await client.GetApproximateQueueDepthAsync());
+        Assert.InRange(Assert.Single(delays), TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(10));
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task GetApproximateQueueDepthAsync_DoesNotShortenRetryAfterToFitBudget()
+    {
+        var handler = new SequenceHttpMessageHandler(_ =>
+        {
+            var response = JsonResponse(HttpStatusCode.ServiceUnavailable, "{}");
+            response.Headers.RetryAfter =
+                new RetryConditionHeaderValue(TimeSpan.FromMinutes(1));
+            return response;
+        });
+        var client = CreateClient(
+            Endpoints("https://runtime.test/depth"),
+            new TestTokenCredential(),
+            handler,
+            retryDelayAsync: (_, _) =>
+                throw new InvalidOperationException("A retry delay was not expected."));
+
+        ConnectorQueueDepthException exception =
+            await Assert.ThrowsAsync<ConnectorQueueDepthException>(() =>
+                client.GetApproximateQueueDepthAsync());
+
+        Assert.Contains("HTTP 503", exception.Message);
         Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task GetApproximateQueueDepthAsync_CancelsDuringRetryDelay()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var handler = new SequenceHttpMessageHandler(_ =>
+            JsonResponse(HttpStatusCode.ServiceUnavailable, "{}"));
+        var client = CreateClient(
+            Endpoints("https://runtime.test/depth"),
+            new TestTokenCredential(),
+            handler,
+            retryDelayAsync: (_, token) =>
+            {
+                cancellation.Cancel();
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            client.GetApproximateQueueDepthAsync(cancellation.Token));
+
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task GetApproximateQueueDepthAsync_DeadlineIncludesRetryDelay()
+    {
+        var handler = new SequenceHttpMessageHandler(_ =>
+            JsonResponse(HttpStatusCode.ServiceUnavailable, "{}"));
+        var client = CreateClient(
+            Endpoints("https://runtime.test/depth"),
+            new TestTokenCredential(),
+            handler,
+            TimeSpan.FromSeconds(1),
+            (_, token) => Task.Delay(Timeout.InfiniteTimeSpan, token));
+
+        ConnectorQueueDepthException exception =
+            await Assert.ThrowsAsync<ConnectorQueueDepthException>(() =>
+                client.GetApproximateQueueDepthAsync());
+
+        Assert.Equal("Connector approximate queue depth HTTP request timed out.", exception.Message);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task GetApproximateQueueDepthAsync_DeadlineIsSharedAcrossAttemptsAndBody()
+    {
+        var handler = new AsyncSequenceHttpMessageHandler(
+            (_, _) => Task.FromResult(JsonResponse(HttpStatusCode.ServiceUnavailable, "{}")),
+            (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new BlockingHttpContent(),
+                }));
+        CancellationToken? operationToken = null;
+        var client = CreateClient(
+            Endpoints("https://runtime.test/depth"),
+            new TestTokenCredential(),
+            handler,
+            TimeSpan.FromSeconds(1),
+            (_, token) =>
+            {
+                operationToken = token;
+                return Task.CompletedTask;
+            });
+
+        ConnectorQueueDepthException exception =
+            await Assert.ThrowsAsync<ConnectorQueueDepthException>(() =>
+                client.GetApproximateQueueDepthAsync());
+
+        Assert.Equal("Connector approximate queue depth HTTP request timed out.", exception.Message);
+        Assert.Equal(2, handler.CallCount);
+        Assert.True(operationToken?.IsCancellationRequested);
     }
 
     [Fact]
@@ -141,6 +377,7 @@ public class ConnectorQueueDepthClientTests
             sensitiveRequestDetails,
             exception.ToString(),
             StringComparison.Ordinal);
+        Assert.Equal(3, handler.CallCount);
     }
 
     [Fact]
@@ -160,6 +397,8 @@ public class ConnectorQueueDepthClientTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             client.GetApproximateQueueDepthAsync(cancellation.Token));
+
+        Assert.Equal(0, handler.CallCount);
     }
 
     [Fact]
@@ -187,6 +426,7 @@ public class ConnectorQueueDepthClientTests
                 () => client.GetApproximateQueueDepthAsync());
 
         Assert.Contains("byte limit", exception.Message);
+        Assert.Equal(1, handler.CallCount);
     }
 
     [Theory]
@@ -201,19 +441,27 @@ public class ConnectorQueueDepthClientTests
         var client = CreateClient(endpoints, new TestTokenCredential(), handler);
 
         await Assert.ThrowsAsync<ConnectorQueueDepthException>(() => client.GetApproximateQueueDepthAsync());
+        Assert.Equal(1, handler.CallCount);
     }
 
     private static ConnectorQueueDepthClient CreateClient(
         ConnectorPollingEndpoints endpoints,
         TestTokenCredential credential,
         HttpMessageHandler handler,
-        TimeSpan? timeout = null) =>
+        TimeSpan? timeout = null,
+        Func<TimeSpan, CancellationToken, Task>? retryDelayAsync = null) =>
         new(
             endpoints,
             credential,
             new TestHttpClientFactory(handler, timeout),
             "Function",
-            NullLogger<ConnectorQueueDepthClient>.Instance);
+            NullLogger<ConnectorQueueDepthClient>.Instance,
+            new ConnectorPollingRetryPolicy(
+                retryDelayAsync ?? ((_, token) =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    return Task.CompletedTask;
+                })));
 
     private static ConnectorPollingEndpoints Endpoints(string depthUri) => new(
         new Uri("https://runtime.test/receive"),
@@ -225,11 +473,19 @@ public class ConnectorQueueDepthClientTests
         Content = new StringContent(json, Encoding.UTF8, "application/json"),
     };
 
-    private sealed class TrackingHttpContent(string json) : HttpContent
+    private sealed class TrackingHttpContent(
+        string json, Exception? readFailure = null) : HttpContent
     {
         private readonly byte[] _content = Encoding.UTF8.GetBytes(json);
 
         internal bool WasBuffered { get; private set; }
+        internal bool WasDisposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            WasDisposed = true;
+            base.Dispose(disposing);
+        }
 
         protected override Task SerializeToStreamAsync(
             Stream stream,
@@ -246,8 +502,9 @@ public class ConnectorQueueDepthClientTests
         }
 
         protected override Task<Stream> CreateContentReadStreamAsync() =>
-            Task.FromResult<Stream>(
-                new MemoryStream(_content, writable: false));
+            readFailure is null
+                ? Task.FromResult<Stream>(new MemoryStream(_content, writable: false))
+                : Task.FromException<Stream>(readFailure);
     }
 
     private sealed class BlockingHttpContent : HttpContent

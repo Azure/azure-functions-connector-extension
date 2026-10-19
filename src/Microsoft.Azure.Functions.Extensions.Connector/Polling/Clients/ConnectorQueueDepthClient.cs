@@ -57,6 +57,7 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _functionName;
     private readonly ILogger _logger;
+    private readonly ConnectorPollingRetryPolicy _retryPolicy = new();
 
     public ConnectorQueueDepthClient(
         ConnectorPollingEndpoints endpoints,
@@ -72,6 +73,17 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
         _functionName = functionName;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    internal ConnectorQueueDepthClient(
+        ConnectorPollingEndpoints endpoints,
+        TokenCredential credential,
+        IHttpClientFactory httpClientFactory,
+        string functionName,
+        ILogger logger,
+        ConnectorPollingRetryPolicy retryPolicy)
+        : this(endpoints, credential, httpClientFactory, functionName, logger) =>
+        _retryPolicy = retryPolicy ??
+            throw new ArgumentNullException(nameof(retryPolicy));
 
     public async Task<long> GetApproximateQueueDepthAsync(
         CancellationToken cancellationToken = default)
@@ -90,38 +102,43 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
             AccessToken token = await _credential.GetTokenAsync(
                 new TokenRequestContext([ApiHubScope]),
                 cancellationToken).ConfigureAwait(false);
-            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
-            request.Headers.Authorization = new AuthenticationHeaderValue(
-                ConnectorPollingHttpConstants.BearerAuthenticationScheme,
-                token.Token);
-
             HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
-            using CancellationTokenSource timeoutSource =
-                ConnectorPollingTimeout.CreateCancellationTokenSource(
-                    client,
-                    cancellationToken);
-            CancellationToken requestCancellationToken = timeoutSource.Token;
-            using HttpResponseMessage response = await client.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                requestCancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new ConnectorQueueDepthException(
-                    $"Connector approximate queue depth request failed with HTTP {(int)response.StatusCode} ({response.StatusCode}).");
-            }
+            TimeSpan timeout =
+                client.Timeout > TimeSpan.Zero &&
+                client.Timeout < ConnectorPollingHttpConstants.RuntimeTimeout
+                    ? client.Timeout
+                    : ConnectorPollingHttpConstants.RuntimeTimeout;
+            long depth = await _retryPolicy.ExecuteAsync(
+                async requestCancellationToken =>
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+                    request.Headers.Authorization = new AuthenticationHeaderValue(
+                        ConnectorPollingHttpConstants.BearerAuthenticationScheme,
+                        token.Token);
+                    using HttpResponseMessage response = await client.SendAsync(
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        requestCancellationToken).ConfigureAwait(false);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        throw new ConnectorPollingHttpException(
+                            response.StatusCode,
+                            response.Headers.RetryAfter);
+                    }
 
-            BinaryData responseContent =
-                await ConnectorPollingContentReader.ReadAsync(
-                    response.Content,
-                    ConnectorPollingProtocolLimits
-                        .MaximumQueueDepthResponseSizeInBytes,
-                    reason => new ConnectorQueueDepthException(
-                        $"Connector approximate queue depth {reason}."),
-                    requestCancellationToken).ConfigureAwait(false);
-            long depth =
-                ConnectorPollingProtocol.DeserializeApproximateQueueDepth(
-                    responseContent);
+                    BinaryData responseContent =
+                        await ConnectorPollingContentReader.ReadAsync(
+                            response.Content,
+                            ConnectorPollingProtocolLimits
+                                .MaximumQueueDepthResponseSizeInBytes,
+                            reason => new ConnectorQueueDepthException(
+                                $"Connector approximate queue depth {reason}."),
+                            requestCancellationToken).ConfigureAwait(false);
+                    return ConnectorPollingProtocol.DeserializeApproximateQueueDepth(
+                        responseContent);
+                },
+                timeout,
+                cancellationToken).ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Connector approximate queue depth for function {FunctionName} is {Depth}.",
@@ -133,10 +150,12 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
         {
             throw;
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException exception)
         {
             throw new ConnectorQueueDepthException(
-                "Connector approximate queue depth HTTP request failed.");
+                exception.StatusCode is { } statusCode
+                    ? $"Connector approximate queue depth request failed with HTTP {(int)statusCode} ({statusCode})."
+                    : "Connector approximate queue depth HTTP request failed.");
         }
         catch (OperationCanceledException)
             when (!cancellationToken.IsCancellationRequested)
