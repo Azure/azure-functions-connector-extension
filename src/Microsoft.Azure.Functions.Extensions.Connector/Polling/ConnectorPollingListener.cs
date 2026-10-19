@@ -514,7 +514,7 @@ internal sealed class ConnectorPollingListener : IListener
             BinaryData outputs = message.Outputs ??
                 await _linkedOutputClient.DownloadAsync(
                     message.OutputsLink!,
-                    ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes,
+                    Options.MaxLinkedOutputSizeInBytes,
                     cancellationToken).ConfigureAwait(false);
             return new PreparedMessage(
                 new ConnectorTriggerEventInput(

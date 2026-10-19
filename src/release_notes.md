@@ -3,6 +3,8 @@
 ### Microsoft.Azure.Functions.Extensions.Connector
 
 - First stable release of the Azure Functions Connector extension, supporting Webhook and Poll trigger delivery.
+- Reduce avoidable UTF-16 allocations when serializing the worker-binding envelope.
+- Configure Poll linked-output downloads with `MaxLinkedOutputSizeInBytes`, defaulting to 100 MiB. The download limit is not a supported payload-size guarantee.
 
 ### Microsoft.Azure.Functions.Worker.Extensions.Connector
 

@@ -51,7 +51,7 @@ Use snake_case decorator arguments; the SDK emits the host's camelCase binding m
 
 Use `typing.List[str]` rather than the built-in `list[str]` annotation: the 2.4.0b1 binding type check accepts the former.
 
-Linked-output events are delivered one per invocation and serialized host-wide to bound memory. Local .NET isolated smoke testing against a Brazil South resource backed by BrazilUS verified a 96 KiB synthetic attachment through linked delivery, including content integrity and acknowledgement. Broader payload-size, language-worker, and regional validation remains incomplete.
+Linked-output events are delivered one per invocation and serialized host-wide to bound memory. Their configurable download limit defaults to 100 MiB; it is not a supported payload-size or process-memory guarantee. See the [linked-output configuration](../../docs/connector-trigger-configuration.md#linked-output-download-limit) for overrides and memory considerations.
 
 The batch, concurrency, scaling, and polling-interval settings are optional. Their defaults and precedence are listed in the [configuration reference](../../docs/connector-trigger-configuration.md). No Connector-specific `host.json` settings are required; explicit binding values do not need to be repeated as host defaults.
 
@@ -84,6 +84,8 @@ For local development, `Connection = ConnectorNamespace` uses the signed-in deve
 Use .NET SDK 10.0.100 or later, Azure Functions Core Tools v4, and Azurite. The NuGet feed is configured in the repository's `NuGet.config`.
 
 The Python Poll sample requires Python 3.13 or newer because `azure-functions` 2.4.0b1 declares that minimum Python version.
+
+Install Python SDK and model dependencies separately with pip using the sample's `requirements.txt`. Neither an extension bundle nor the repository-local host extension build installs `azure-functions` or `azure-connectors`; bundles distribute the host extension NuGet, not Python packages. See [worker dependency and bundle configuration](../../docs/connector-trigger-configuration.md#non-net-workers).
 
 Each Node.js sample's `.npmrc` sets only `omit-lockfile-registry-resolved=true`. Lockfiles retain package versions and integrity hashes without embedding registry URLs. npm feed selection comes from user-level or CI configuration. Run npm commands from the selected sample directory.
 

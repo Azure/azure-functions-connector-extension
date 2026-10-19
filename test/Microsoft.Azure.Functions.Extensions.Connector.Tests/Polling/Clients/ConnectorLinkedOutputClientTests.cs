@@ -95,8 +95,10 @@ public class ConnectorLinkedOutputClientTests
         Assert.Equal(byteCount, result.ToMemory().Length);
     }
 
-    [Fact]
-    public async Task DownloadAsync_RejectsActualBytesOverLimitAndRedactsUri()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DownloadAsync_RejectsBytesOverLimitAndRedactsUri(bool unknownLength)
     {
         const string json = """{"value":1}""";
         int byteCount = Encoding.UTF8.GetByteCount(json);
@@ -104,7 +106,10 @@ public class ConnectorLinkedOutputClientTests
             new SequenceHttpMessageHandler(_ =>
             {
                 HttpResponseMessage response = JsonResponse(json);
-                response.Content.Headers.ContentLength = null;
+                if (unknownLength)
+                {
+                    response.Content.Headers.ContentLength = null;
+                }
                 return response;
             }));
 
@@ -119,45 +124,44 @@ public class ConnectorLinkedOutputClientTests
         Assert.Contains("https://content.test/[REDACTED]", exception.Message);
     }
 
-    [Fact]
-    public async Task DownloadAsync_AllowsAbsoluteActualByteLimit()
+    [Theory]
+    [InlineData(100 * 1024 * 1024)]
+    [InlineData(110 * 1024 * 1024)]
+    public async Task DownloadAsync_AllowsConfiguredActualByteLimit(int maximumSizeInBytes)
     {
         ConnectorLinkedOutputClient client = CreateClient(
             new SequenceHttpMessageHandler(_ =>
-                StreamingJsonResponse(
-                    ConnectorPollingProtocolLimits
-                        .MaximumOutputsPayloadSizeInBytes)));
+                StreamingJsonResponse(maximumSizeInBytes)));
 
         BinaryData result = await client.DownloadAsync(
             new ConnectorOutputsLink(new Uri(SignedUri)),
-            ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes,
+            maximumSizeInBytes,
             CancellationToken.None);
 
         Assert.Equal(
-            ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes,
+            maximumSizeInBytes,
             result.ToMemory().Length);
     }
 
-    [Fact]
-    public async Task DownloadAsync_RejectsActualByteBeyondAbsoluteLimit()
+    [Theory]
+    [InlineData(100 * 1024 * 1024)]
+    [InlineData(110 * 1024 * 1024)]
+    public async Task DownloadAsync_RejectsActualByteBeyondConfiguredLimit(int maximumSizeInBytes)
     {
         ConnectorLinkedOutputClient client = CreateClient(
             new SequenceHttpMessageHandler(_ =>
-                StreamingJsonResponse(
-                    ConnectorPollingProtocolLimits
-                        .MaximumOutputsPayloadSizeInBytes + 1)));
+                StreamingJsonResponse(maximumSizeInBytes + 1)));
 
         await Assert.ThrowsAsync<ConnectorLinkedOutputException>(() =>
             client.DownloadAsync(
                 new ConnectorOutputsLink(new Uri(SignedUri)),
-                ConnectorPollingProtocolLimits
-                    .MaximumOutputsPayloadSizeInBytes,
+                maximumSizeInBytes,
                 CancellationToken.None));
     }
 
     [Theory]
     [InlineData(0)]
-    [InlineData(104857601)]
+    [InlineData(-1)]
     public async Task DownloadAsync_RejectsInvalidConfiguredLimit(int limit)
     {
         ConnectorLinkedOutputClient client = CreateClient(

@@ -302,7 +302,7 @@ public class ConnectorPollDeliveryClientTests
                 """{"messages":[]}""");
             response.Content.Headers.ContentLength =
                 ConnectorPollingProtocolLimits
-                    .MaximumOutputsPayloadSizeInBytes + 1L;
+                    .MaximumReceiveResponseSizeInBytes + 1L;
             return response;
         });
         ConnectorPollDeliveryClient client = CreateClient(

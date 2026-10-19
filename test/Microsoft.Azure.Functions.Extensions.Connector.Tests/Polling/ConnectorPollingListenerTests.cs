@@ -1119,8 +1119,11 @@ public class ConnectorPollingListenerTests
         Assert.Equal(0, acknowledgementCount);
     }
 
-    [Fact]
-    public async Task Listener_HydratesLinkedOutputBeforeInvocation()
+    [Theory]
+    [InlineData(100 * 1024 * 1024)]
+    [InlineData(50 * 1024 * 1024)]
+    [InlineData(110 * 1024 * 1024)]
+    public async Task Listener_HydratesLinkedOutputBeforeInvocation(int maximumSizeInBytes)
     {
         ConnectorPollMessage message = ConnectorPollMessage.FromOutputsLink(
             "message-1",
@@ -1141,7 +1144,7 @@ public class ConnectorPollingListenerTests
             {
                 Assert.Same(message.OutputsLink, outputsLink);
                 Assert.Equal(
-                    ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes,
+                    maximumSizeInBytes,
                     maximumPayloadSize);
                 Interlocked.Increment(ref downloadCount);
                 return Task.FromResult(
@@ -1163,7 +1166,8 @@ public class ConnectorPollingListenerTests
             executor.Object,
             Endpoints,
             deliveryClient,
-            linkedOutputClient);
+            linkedOutputClient,
+            maxLinkedOutputSizeInBytes: maximumSizeInBytes);
 
         await listener.StartAsync(CancellationToken.None);
         await invocationCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -1655,7 +1659,8 @@ public class ConnectorPollingListenerTests
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
         ConnectorLinkedOutputInvocationLimiter? linkedOutputInvocationLimiter = null,
         bool drainModeEnabled = true,
-        ILogger<ConnectorPollingListener>? logger = null)
+        ILogger<ConnectorPollingListener>? logger = null,
+        int maxLinkedOutputSizeInBytes = ConnectorOptions.BuiltInDefaultMaxLinkedOutputSizeInBytes)
     {
         var registration = new ConnectorFunctionRegistration("TestFunction", executor);
         var options = new ConnectorPollingOptions(
@@ -1666,7 +1671,8 @@ public class ConnectorPollingListenerTests
             isBatched)
         {
             MaxPollingInterval =
-                maxPollingInterval ?? TimeSpan.FromSeconds(30),
+                maxPollingInterval ?? ConnectorOptions.BuiltInDefaultMaxPollingInterval,
+            MaxLinkedOutputSizeInBytes = maxLinkedOutputSizeInBytes,
         };
         return new ConnectorPollingListener(
             registration,

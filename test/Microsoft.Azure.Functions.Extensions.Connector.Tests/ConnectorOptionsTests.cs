@@ -14,5 +14,6 @@ public class ConnectorOptionsTests
         Assert.Equal(16, options.DefaultMaxConcurrentCalls);
         Assert.Equal(16, options.DefaultTargetPendingEventThreshold);
         Assert.Equal(TimeSpan.FromSeconds(30), options.MaxPollingInterval);
+        Assert.Equal(100 * 1024 * 1024, options.MaxLinkedOutputSizeInBytes);
     }
 }

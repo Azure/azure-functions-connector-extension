@@ -50,12 +50,11 @@ internal sealed class ConnectorLinkedOutputClient :
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(outputsLink);
-        if (maximumPayloadSizeInBytes is < 1 or
-            > ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes)
+        if (maximumPayloadSizeInBytes < 1)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(maximumPayloadSizeInBytes),
-                $"Connector linked-output size limit must be between 1 and {ConnectorPollingProtocolLimits.MaximumOutputsPayloadSizeInBytes} bytes.");
+                "Connector linked-output size limit must be greater than zero.");
         }
 
         for (int attempt = 1;

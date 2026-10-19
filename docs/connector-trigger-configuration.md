@@ -85,16 +85,38 @@ To change defaults, place these optional properties under `extensions.connector`
 | `defaultMaxConcurrentCalls` | `16` | Single-event Poll bindings that omit `MaxConcurrentCalls` or set it to zero; must be positive. |
 | `defaultTargetPendingEventThreshold` | `16` | Poll bindings that omit `TargetPendingEventThreshold` or set it to zero; must be positive. |
 | `maxPollingInterval` | `"00:00:30"` | Maximum empty-queue delay; must be at least `"00:00:01"`. This does not control the connector's upstream polling frequency or the platform's scale-check interval. |
+| `maxLinkedOutputSizeInBytes` | `104857600` (100 MiB) | Maximum downloaded bytes per Poll `outputsLink`; must be a positive 32-bit integer. Applies to all Poll listeners on the host, not inline Receive responses or Webhook requests. |
 
-Explicit positive binding values override host defaults; duplicating them in both places is unnecessary. For scaling, a runtime-supplied `InstanceConcurrency` takes precedence over the configured target. The scaler requests `ceil(approximateQueueDepth / effectiveTarget)` instances; it does not change batch size or listener concurrency.
+Explicit positive binding values override their corresponding host defaults; duplicating them in both places is unnecessary. `maxLinkedOutputSizeInBytes` is host-only, with no per-function binding override. For scaling, a runtime-supplied `InstanceConcurrency` takes precedence over the configured target. The scaler requests `ceil(approximateQueueDepth / effectiveTarget)` instances; it does not change batch size or listener concurrency.
 
 Empty-queue backoff starts at one second, doubles up to `maxPollingInterval`, and resets when a Receive returns messages. Jitter is capped by the idle-delay limit. While more events are available, the listener can poll again without an added delay when processing capacity permits. Receive failures have a separate backoff. See the [concurrency and scaling guide](./connector-poll-concurrency-visual-guide.md).
 
 ### Delivery and validation notes
 
-Delivery is at least once. Successful invocations are acknowledged; failed ones can be redelivered after the service-managed lock expires. Use `ConnectorEvent<T>.MessageId` for deduplication. Single-event processing capacity includes linked-output waiting, invocation, and acknowledgement.
+Delivery is at least once. Successful invocations are acknowledged; failed ones can be redelivered after the service-managed lock expires. Scope deduplication to the namespace and trigger configuration together with `ConnectorEvent<T>.MessageId`; do not assume cross-trigger uniqueness. Single-event processing capacity includes linked-output waiting, invocation, and acknowledgement.
 
-Linked outputs are downloaded by the host, normalized to the ordinary payload shape, and invoked one event at a time behind a host-wide limiter. Initial local .NET isolated testing verified a 96 KiB attachment through real linked delivery from a Brazil South resource backed by BrazilUS. That is not a supported payload-size guarantee or proof of regional availability. Remaining release limits, memory, failure, redelivery, and other-worker validation are described in the [Poll design](./connector-trigger-poll-delivery-design.md#deferred-linked-output-release-work).
+Linked outputs are downloaded by the host, normalized to the ordinary payload shape, and invoked one event at a time behind a host-wide limiter. The download limit is not a supported payload-size guarantee; worker conversion also consumes memory. Outstanding hosting, failure and lease validation is described in the [Poll design](./connector-trigger-poll-delivery-design.md#deferred-linked-output-release-work).
+
+### Linked-output download limit
+
+The default limit is 100 MiB (104,857,600 bytes) per linked output. Set `extensions.connector.maxLinkedOutputSizeInBytes` to lower or raise it:
+
+```json
+{
+  "version": "2.0",
+  "extensions": {
+    "connector": {
+      "maxLinkedOutputSizeInBytes": 104857600
+    }
+  }
+}
+```
+
+To override this value through app settings, use `AzureFunctionsJobHost__extensions__connector__maxLinkedOutputSizeInBytes`. Locally, place that setting's string value in `local.settings.json` under `Values`. Restart the host after changing configuration. Zero and negative limits are invalid; there is no unlimited mode.
+
+The limit counts the complete downloaded UTF-8 JSON, including metadata and base64-encoded file content, not just the decoded file size. Both declared `Content-Length` and actual downloaded bytes are checked. An oversized output is not invoked or acknowledged and may be redelivered after its service-managed lock expires; correct the source or configuration to avoid repeated failures.
+
+This is an extension guardrail, not a Connector Namespace service maximum or a supported-payload guarantee. Downloads and worker conversion are buffered, so raising the limit can exhaust host or worker memory even with the host-wide limiter. Validate the complete workload on the selected hosting size before raising it. This option does not change inline Receive bounds, memory allocation, worker transport limits, or the Webhook-only `FUNCTIONS_REQUEST_BODY_SIZE_LIMIT`.
 
 Use the [Poll registration skill](../.github/skills/poll-trigger-registration/SKILL.md) for the ARM request, identity policies, and endpoint derivation.
 
@@ -161,18 +183,22 @@ Both modes support raw `string`/JSON and compatible model types. SDK packages ar
 
 ## Non-.NET workers
 
-Published Node.js and Python setups use the preview extension bundle until extension is released to main bundle:
+Extension bundles contain the host extension NuGet, `Microsoft.Azure.Functions.Extensions.Connector`, not language SDKs. The Python SDK, `azure-functions`, is installed with pip and released independently. Typed Python integration (`azurefunctions-extensions-connectors`) and connector models (`azure-connectors`), when used, are separate pip dependencies as well.
+
+For .NET isolated apps, `Microsoft.Azure.Functions.Worker.Extensions.Connector` is a separate application NuGet dependency, not a language SDK supplied by the host extension bundle.
+
+For Node.js and Python deployments using extension bundles, select a preview bundle containing the required Connector features until they are available in the main bundle. The configuration uses the preview bundle ID:
 
 ```json
 {
   "version": "2.0",
   "extensionBundle": {
-    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "id": "Microsoft.Azure.Functions.ExtensionBundle.Preview",
     "version": "[4.42.0, 5.0.0)"
   }
 }
 ```
 
-Use a bundle that contains the features you need; published bundle versions may lag the current checkout. The [local Poll samples](../test/poll/README.md) build the host extension directly instead of relying on a published bundle.
+The example version range is not a minimum-version or feature-availability guarantee; verify the contents of the selected published bundle. Published bundles may lag the current checkout. The [local Poll samples](../test/poll/README.md) build the host extension directly instead of relying on a published bundle.
 
 Python Poll samples require Python 3.13+ and `azure-functions>=2.4.0b1`. The Webhook sample uses the same minimum on Python 3.13+, while retaining `azure-functions>=1.26.0b3` and `PYTHON_ISOLATE_WORKER_DEPENDENCIES=1` for Python 3.10-3.12. Typed Webhook integration additionally uses `azurefunctions-extensions-connectors`.

@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Azure.WebJobs.Host.Executors;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -14,6 +15,35 @@ public class ConnectorExtensionConfigProviderTests
 {
     private readonly ConnectorExtensionConfigProvider _configProvider;
     private readonly ConnectorHttpRequestProcessor _httpRequestProcessor;
+
+    [Theory]
+    [InlineData("{\"body\":{\"contentBytes\":\"+/8=\"}}", ConnectorTriggerDeliveryMode.Poll, "message-1")]
+    [InlineData("{\"body\":{\"text\":\"\u20ac\u4e2d\U0001f600\"}}", ConnectorTriggerDeliveryMode.Poll, "message-1")]
+    [InlineData("{\"body\":{\"text\":\"\\\"\\\\\\n\"}}", ConnectorTriggerDeliveryMode.Webhook, null)]
+    [InlineData("", ConnectorTriggerDeliveryMode.Webhook, null)]
+    public void ConvertTriggerEventToBindingData_PreservesStringEnvelope(
+        string payload,
+        ConnectorTriggerDeliveryMode deliveryMode,
+        string? messageId)
+    {
+        var input = new ConnectorTriggerEventInput(
+            BinaryData.FromString(payload), messageId, deliveryMode);
+
+        var actual = ConnectorExtensionConfigProvider.ConvertTriggerEventToBindingData(input);
+
+        using var expectedStream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(expectedStream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("deliveryMode", deliveryMode.ToString());
+            writer.WriteString("data", payload);
+            writer.WriteString("messageId", messageId);
+            writer.WriteEndObject();
+        }
+        Assert.Equal(expectedStream.ToArray(), actual.Content.ToArray());
+        using var envelope = JsonDocument.Parse(actual.Content);
+        Assert.Equal(payload, envelope.RootElement.GetProperty("data").GetString());
+    }
 
     public ConnectorExtensionConfigProviderTests()
     {

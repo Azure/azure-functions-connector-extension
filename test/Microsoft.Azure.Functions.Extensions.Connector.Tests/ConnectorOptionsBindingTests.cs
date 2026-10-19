@@ -25,6 +25,7 @@ public class ConnectorOptionsBindingTests
         Assert.Equal(16, options.DefaultMaxConcurrentCalls);
         Assert.Equal(16, options.DefaultTargetPendingEventThreshold);
         Assert.Equal(TimeSpan.FromSeconds(30), options.MaxPollingInterval);
+        Assert.Equal(100 * 1024 * 1024, options.MaxLinkedOutputSizeInBytes);
     }
 
     [Fact]
@@ -36,6 +37,7 @@ public class ConnectorOptionsBindingTests
             ["AzureWebJobs:extensions:connector:defaultMaxConcurrentCalls"] = "8",
             ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "12",
             ["AzureWebJobs:extensions:connector:maxPollingInterval"] = "00:00:45",
+            ["AzureWebJobs:extensions:connector:maxLinkedOutputSizeInBytes"] = "115343360",
         };
 
         using IHost host = BuildHost(settings);
@@ -47,6 +49,7 @@ public class ConnectorOptionsBindingTests
         Assert.Equal(8, options.DefaultMaxConcurrentCalls);
         Assert.Equal(12, options.DefaultTargetPendingEventThreshold);
         Assert.Equal(TimeSpan.FromSeconds(45), options.MaxPollingInterval);
+        Assert.Equal(110 * 1024 * 1024, options.MaxLinkedOutputSizeInBytes);
     }
 
     [Fact]
@@ -58,6 +61,7 @@ public class ConnectorOptionsBindingTests
             ["AzureWebJobs:extensions:connector:defaultMaxConcurrentCalls"] = "8",
             ["AzureWebJobs:extensions:connector:defaultTargetPendingEventThreshold"] = "12",
             ["AzureWebJobs:extensions:connector:maxPollingInterval"] = "00:00:45",
+            ["AzureWebJobs:extensions:connector:maxLinkedOutputSizeInBytes"] = "115343360",
         };
 
         using IHost host = BuildHost(
@@ -68,6 +72,7 @@ public class ConnectorOptionsBindingTests
                 options.DefaultMaxConcurrentCalls = 6;
                 options.DefaultTargetPendingEventThreshold = 10;
                 options.MaxPollingInterval = TimeSpan.FromSeconds(20);
+                options.MaxLinkedOutputSizeInBytes = 50 * 1024 * 1024;
             });
 
         ConnectorOptions options =
@@ -77,6 +82,7 @@ public class ConnectorOptionsBindingTests
         Assert.Equal(6, options.DefaultMaxConcurrentCalls);
         Assert.Equal(10, options.DefaultTargetPendingEventThreshold);
         Assert.Equal(TimeSpan.FromSeconds(20), options.MaxPollingInterval);
+        Assert.Equal(50 * 1024 * 1024, options.MaxLinkedOutputSizeInBytes);
     }
 
     [Fact]
@@ -88,6 +94,7 @@ public class ConnectorOptionsBindingTests
             DefaultMaxConcurrentCalls = 8,
             DefaultTargetPendingEventThreshold = 12,
             MaxPollingInterval = TimeSpan.FromSeconds(30),
+            MaxLinkedOutputSizeInBytes = 50 * 1024 * 1024,
         };
 
         string formatted = ((IOptionsFormatter)options).Format();
@@ -96,6 +103,7 @@ public class ConnectorOptionsBindingTests
         Assert.Contains("\"DefaultMaxConcurrentCalls\": 8", formatted);
         Assert.Contains("\"DefaultTargetPendingEventThreshold\": 12", formatted);
         Assert.Contains("\"MaxPollingInterval\": \"00:00:30\"", formatted);
+        Assert.Contains("\"MaxLinkedOutputSizeInBytes\": 52428800", formatted);
     }
 
     [Fact]

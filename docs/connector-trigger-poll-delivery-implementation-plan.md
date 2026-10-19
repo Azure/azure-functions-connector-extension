@@ -3,7 +3,6 @@
 ## Table of Contents
 
 - [Purpose](#purpose)
-- [Verified Baseline](#verified-baseline)
 - [Stacking Rules](#stacking-rules)
 - [PR 1: Trigger Contract](#pr-1-trigger-contract)
 - [PR 2: Configuration](#pr-2-configuration)
@@ -21,17 +20,6 @@
 Deliver production Poll support through a stacked PR sequence while preserving existing Webhook behavior. The stack now includes the trigger contract, configuration, protocol models, target scaler, runtime clients, a listener with bounded single-event concurrency and sequential invocation batching, and the worker binding. This document records the delivered implementation boundaries, open service dependencies, and final completion criteria; the authoritative behavioral and architectural decisions are in `connector-trigger-poll-delivery-design.md`.
 
 The connection-scoped `pollingEndpoint` and `TriggerConfigName` migration, together with scaling/release completion, are combined in the final stacked Poll delivery PR. No additional implementation PR follows it.
-
-## Verified Baseline
-
-The proof of concept verified this end-to-end path:
-
-1. Obtain the server-generated `pollingEndpoints.receiveUri` from an enabled Poll trigger configuration.
-2. Split the endpoint into the gateway-level Poll base and Trigger Config name.
-3. Authenticate to the runtime with `https://apihub.azure.com/.default`.
-4. Receive messages, convert complete trigger `outputs`, execute a typed function, and acknowledge successful processing.
-
-Phase 0 is complete: sanitized evidence is preserved outside the repository, temporary POC code and settings were removed, the test trigger was disabled, and the committed baseline builds with all existing tests passing.
 
 ## Stacking Rules
 
@@ -181,7 +169,6 @@ Requirements:
 
 - Authenticate runtime operations with the API Hub scope.
 - Require the Function identity to have an access policy on the connection referenced by the trigger config.
-- Preserve the service-backed authorization evidence: the same API Hub token and approximate-queue-depth endpoint returned `200 OK` with the connection access policy, `403 Forbidden` without it, and `200 OK` after restoration.
 - Keep configured bases query-free; the delivery client owns the Receive query.
 - Explicitly send `maxEvents` in the range 1-32.
 - Parse `x-ms-more-messages-available`.
@@ -198,7 +185,7 @@ Add a dedicated linked-output client or narrowly scoped collaborator:
 - Do not attach an API Hub token; the URI signature fully authorizes the GET.
 - Disable redirects and automatic decompression.
 - Require `application/json; charset=utf-8`.
-- Enforce actual bytes read with an absolute 100 MiB (104,857,600-byte) maximum.
+- Enforce actual bytes read against `extensions.connector.maxLinkedOutputSizeInBytes`, defaulting to 100 MiB (104,857,600 bytes). Require a positive 32-bit integer, permit explicit lower or higher limits, and retain separate bounds for inline Receive responses.
 - Allow bounded retries because repeated signed GETs are safe and idempotent while the link and content remain valid.
 - Treat the linked-output HTTPS authority as opaque; it varies by cloud, region, scale unit, and environment. Authenticated Poll runtime requests use the opaque HTTPS authority from trusted application configuration and retain strict canonical path validation before an API Hub token is acquired.
 - Normalize downloaded content to the same complete `outputs` JSON used by inline messages.
@@ -321,7 +308,7 @@ Requirements:
 - Keep `MaxConcurrentCalls` and `MaxBatchSize` out of the scaling calculation.
 - Keep the runtime `InstanceConcurrency` override confined to the scaler's denominator; it does not change local single-event concurrency or allow concurrent batches. `TargetPendingEventThreshold` is a scaling target, not a hard local pending-event limit.
 - Document that aggregate queue depth cannot distinguish inline from linked events. Revisit the calculation if the service exposes payload-class or byte backlog metrics.
-- Return zero depth when a queue-depth query fails so the target can scale down to zero.
+- The current queue-depth failure fallback returns zero; it does not distinguish an unavailable observation from an empty queue. The desired extension/controller failure policy remains open in [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44).
 - Validate scale from zero.
 - Add integration tests, samples, and final user documentation.
 
@@ -337,30 +324,8 @@ Every PR must preserve:
 - At-least-once delivery semantics.
 - No automatic replay of ambiguous Receive or Acknowledge operations.
 
-Final smoke test:
-
-1. Enable a dedicated Poll trigger.
-2. Start a Function App using the local extension build.
-3. Generate new connector events.
-4. Verify typed payload-only and metadata-rich invocation.
-5. Verify batching, concurrent-call limits, and success-only acknowledgement.
-6. Extend linked-output service validation beyond the Brazil South local .NET isolated smoke test, which verified a 96 KiB synthetic attachment, complete worker conversion, content integrity, and acknowledgement. Retain synthetic coverage for failure and memory-safety cases not yet exercised against the service.
-7. Confirm acknowledged events do not reappear and failed events are redelivered.
-8. Confirm queue depth returns to zero.
-9. Stop the host and restore the trigger to its disabled state.
-
 ## Deferred Linked-Output Release Work
 
-The Connector Namespace team confirmed the intended linked-output authentication, lifetime, redelivery, 100 MiB wire maximum, response shape, content type, compression, redirects, retry safety, integrity metadata, deletion, and authority behavior. The extension implements that protocol with synthetic coverage. A 2026-10-16 Brazil South local .NET isolated smoke test verified real linked delivery of a 96 KiB synthetic attachment, content integrity, and acknowledgement; this does not establish broader size, worker, memory, or regional support.
+The implementation uses a configurable linked-output download limit, host-wide serialization, and success-only acknowledgement. The default download limit is not a Connector Namespace maximum or a supported-payload guarantee.
 
-The 100 MiB value remains a defensive protocol ceiling, not a validated customer payload guarantee. Before enabling or advertising linked-output support:
-
-- Run service-backed .NET, Node.js, and Python tests with representative sizes through 100 MiB and establish the supported payload limit from measured peak memory and execution behavior.
-- Measure deferred worker transport amplification and remove avoidable full-payload copies where possible.
-- Measure the singleton limiter with multiple Poll functions and determine whether the sum of per-listener processing limits (one per batched listener, `MaxConcurrentCalls` per single-event listener) requires a bounded global queue, non-waiting admission, or a byte-budget limiter.
-- Verify mixed workloads do not allow linked waiters to starve inline processing.
-- Obtain service-owned lock-expiration metadata before adding any expiration-based admission decision; never hardcode or expose a user-configured lock duration.
-- Validate linked-heavy scaling and request linked-count or byte-backlog signals if aggregate approximate depth under-scales the workload.
-- Complete signed-link, retry, cancellation, shutdown, acknowledgement, redelivery, retention, deletion, telemetry, and sensitive-data E2E checks.
-
-The detailed acceptance checklist is maintained in the design document under **Deferred Linked-Output Release Work**. Do not choose arbitrary payload, waiter, lock-reserve, or scaling thresholds before service-backed evidence is available.
+Remaining validation and service dependencies are maintained in the [design document](connector-trigger-poll-delivery-design.md#deferred-linked-output-release-work), rather than duplicated here. Admission, scaling and transport changes require evidence from the affected workload and the service's published contracts.
