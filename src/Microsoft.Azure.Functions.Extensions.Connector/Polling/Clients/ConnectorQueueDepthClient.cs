@@ -149,21 +149,18 @@ internal sealed class ConnectorQueueDepthClient : IConnectorQueueDepthClient
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             throw new ConnectorQueueDepthException(
-                "Connector approximate queue depth request failed.",
-                innerException: exception);
+                "Connector approximate queue depth request failed.");
         }
     }
 }
 
 internal sealed class ConnectorQueueDepthException : Exception
 {
-    public ConnectorQueueDepthException(
-        string message,
-        Exception? innerException = null)
-        : base(message, innerException)
+    public ConnectorQueueDepthException(string message)
+        : base(message)
     {
     }
 }

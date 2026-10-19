@@ -91,16 +91,26 @@ public class ConnectorQueueDepthClientTests
         Assert.Equal(2147483648L, depth);
     }
 
-    [Fact]
-    public async Task GetApproximateQueueDepthAsync_ThrowsForHttpError()
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task GetApproximateQueueDepthAsync_ThrowsForHttpErrorWithoutRetry(
+        HttpStatusCode statusCode)
     {
         ConnectorPollingEndpoints endpoints =
             Endpoints("https://runtime.test/depth");
-        var handler = new SequenceHttpMessageHandler(_ => JsonResponse(HttpStatusCode.InternalServerError, "{}"));
+        var handler = new SequenceHttpMessageHandler(_ =>
+            JsonResponse(statusCode, """{"error":"sensitive-response-body"}"""));
         var client = CreateClient(endpoints, new TestTokenCredential(), handler);
 
-        await Assert.ThrowsAsync<ConnectorQueueDepthException>(() => client.GetApproximateQueueDepthAsync());
+        ConnectorQueueDepthException exception =
+            await Assert.ThrowsAsync<ConnectorQueueDepthException>(() =>
+                client.GetApproximateQueueDepthAsync());
 
+        Assert.Contains($"HTTP {(int)statusCode}", exception.Message);
+        Assert.DoesNotContain("sensitive-response-body", exception.ToString(), StringComparison.Ordinal);
         Assert.Equal(1, handler.CallCount);
     }
 

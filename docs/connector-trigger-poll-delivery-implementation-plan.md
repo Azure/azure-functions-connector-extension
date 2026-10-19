@@ -321,7 +321,10 @@ Requirements:
 - Keep `MaxConcurrentCalls` and `MaxBatchSize` out of the scaling calculation.
 - Keep the runtime `InstanceConcurrency` override confined to the scaler's denominator; it does not change local single-event concurrency or allow concurrent batches. `TargetPendingEventThreshold` is a scaling target, not a hard local pending-event limit.
 - Document that aggregate queue depth cannot distinguish inline from linked events. Revisit the calculation if the service exposes payload-class or byte backlog metrics.
-- Return zero depth when a queue-depth query fails so the target can scale down to zero.
+- Return zero depth/target only for valid empty-queue observations. Log a sanitized scale warning and propagate failed depth queries without metrics or a target; preserve caller cancellation without a scale warning.
+- Keep one GET attempt per observation with no cached sample or synthetic worker floor. Subsequent observations query again and recover from newly observed zero/nonzero depth. Cover initial failure, failure after success, recovery, target-scaler propagation, cancellation, and safe diagnostics.
+- Do not claim this prevents controller scale-in: the public WebJobs SDK `dev` ScaleManager drops failed target observations, can vote scale-in with all failures/no monitor votes on active workers, and can permit scale-in from healthy lower targets alongside failures. Production paths are unverified; `TargetScalerResult` has only integer `TargetWorkerCount` and `TargetScalerContext` only `InstanceConcurrency`.
+- Track controller evidence for one/all/mixed failures, active/zero-instance apps and recovery, plus agreed bounded GET retry request/time budgets, in [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44). Do not change Receive/acknowledgement retry behavior.
 - Validate scale from zero.
 - Add integration tests, samples, and final user documentation.
 

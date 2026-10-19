@@ -227,6 +227,10 @@ Customer setup or provisioning tooling derives `pollingEndpoint` from the Trigge
 
 `MaxBatchSize` controls how many events may be delivered in one function invocation. It does not participate in target scaling.
 
+Queue-depth queries make a single attempt. A valid zero-depth response produces target `0`; a failed query logs a scale warning and propagates the failure without returning metrics or a worker target. HTTP/transport/timeouts, invalid responses, and permission/configuration failures are not treated as empty queues. Caller cancellation propagates without a scale warning. No previous sample is reused: subsequent observations query again, and a successful response resumes scaling from its newly observed zero or nonzero depth.
+
+This is failure signaling, **not a guarantee against scale-in**. The public WebJobs SDK `dev` ScaleManager drops failed target-scaler observations; with all failures and no monitor votes it can vote for scale-in of active workers, and healthy lower targets can still permit scale-in when another scaler fails. Production controller paths have not been verified. Controller integration evidence (including recovery from zero instances) and a bounded GET retry policy with agreed request/time budgets remain follow-up work in [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44). Receive and acknowledgement behavior is unchanged.
+
 See the [visual guide to batching, concurrency, and scaling](./docs/connector-poll-concurrency-visual-guide.md) for examples and diagrams of the implemented behavior.
 
 ## Documentation
