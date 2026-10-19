@@ -738,8 +738,8 @@ Listener polling alone is incomplete because an app at zero instances cannot pol
 Implement a scale monitor or target scaler using approximate queue depth:
 
 - Resolve the same trigger endpoints.
-- Query approximate depth with a bounded HTTP timeout; 1.0.0 does not retry queue-depth requests.
-- The 1.0.0 failure fallback logs a warning and returns zero depth. Propagating an unavailable metric alone does not guarantee a different controller scale decision. Bounded retries in [#48](https://github.com/Azure/azure-functions-connector-extension/pull/48) are deferred for further testing; [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44) tracks the remaining failure contract. See [queue-depth request retries](connector-trigger-configuration.md#queue-depth-request-retries).
+- Query approximate depth once with a bounded HTTP timeout; bounded retries are deferred beyond 1.0.0 for further testing.
+- The current failure fallback logs a warning and returns zero depth. This does not distinguish an unavailable observation from an empty queue; the extension/controller failure contract is tracked separately in [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44).
 - Scale out based on the configured target pending-event threshold per worker instance.
 - Avoid equating approximate depth with immediately receivable messages.
 
@@ -839,19 +839,7 @@ Maintain coverage for:
 
 ## Deferred Linked-Output Release Work
 
-The download, conversion, invocation and acknowledgement paths are implemented. Remaining qualification is tracked in [#39](https://github.com/Azure/azure-functions-connector-extension/issues/39); partial evidence is not a universal support guarantee.
-
-The completed evidence consists of 36 genuine warm, single-event Flex Consumption cases, each with content-integrity verification and acknowledgement:
-
-| App memory | .NET isolated | Node.js | Python |
-| --- | --- | --- | --- |
-| 4,096 MB | Inline and approximately 1/10/50/100/110 MiB | Same | Same |
-| 2,048 MB | Inline and approximately 1/10/50/100 MiB | Same | Same |
-| 512 MB | Inline and approximately 1/10 MiB | Not qualified | Not qualified |
-
-The approximately 110 MiB cases used a 120 MiB download limit; the other cases used the default. These runs used a West Central US Connector Namespace and warm Brazil South Function Apps. They do not qualify the Brazil South namespace rollout or unassisted scaling. The tested sizes are observations, not a general payload/hosting support matrix.
-
-GA support claims do not extend to the following unqualified workloads and contracts:
+The download, conversion, invocation and acknowledgement paths are implemented. Remaining qualification is tracked in [#39](https://github.com/Azure/azure-functions-connector-extension/issues/39); partial evidence is not a universal support guarantee. Outstanding work is:
 
 - Establish supported payload sizes across language workers and Flex Consumption memory profiles under sustained and mixed workloads, including explicit download-limit overrides. Verify Connector Namespace feature availability and Functions Scale Controller rollout independently; their resources do not need to be in the same region. Other hosting plans are outside the current qualification scope.
 - Validate lease aging, memory retention and inline fairness with multiple Poll listeners and longer linked-output backlogs.

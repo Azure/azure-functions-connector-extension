@@ -25,9 +25,7 @@ Endpoint forms:
 | `https://<connector-namespace-host>/api/triggerconfigs/<name>/receive` | `https://<connector-namespace-host>` |
 | `https://<host>/api/connectorGateways/<id>/triggerconfigs/<name>/receive` | `https://<host>/api/connectorGateways/<id>` |
 
-Preserve the service-provided authority and gateway ID. The extension constructs the operation paths; do not configure a query string, a full Receive URL, or a standalone `/api` base. Endpoints require HTTPS without user information or fragments.
-
-Both forms have been exercised against live Connector Namespace resources. If a service-returned endpoint does not match either form, obtain a supported endpoint from Connector Namespace rather than guessing a hostname or stripping potentially required routing or authorization query parameters.
+Use a service-provided endpoint in one of these forms; preserve its authority and gateway ID rather than guessing a hostname or removing query parameters from another URL. The extension constructs the operation paths; do not configure a query string, a full Receive URL, or a standalone `/api` base. Endpoints require HTTPS without user information or fragments.
 
 ### Identity settings
 
@@ -93,19 +91,11 @@ Explicit positive binding values override their corresponding host defaults; dup
 
 Empty-queue backoff starts at one second, doubles up to `maxPollingInterval`, and resets when a Receive returns messages. Jitter is capped by the idle-delay limit. While more events are available, the listener can poll again without an added delay when processing capacity permits. Receive failures have a separate backoff. See the [concurrency and scaling guide](./connector-poll-concurrency-visual-guide.md).
 
-### Queue-depth request retries
-
-Version 1.0.0 makes one queue-depth request per scale check. A failed query logs a warning and reports depth `0`. Propagating an unavailable metric alone does not guarantee a different controller scale decision.
-
-Bounded retries are deferred to a later release in [#48](https://github.com/Azure/azure-functions-connector-extension/pull/48), pending further testing. The extension/controller failure contract remains tracked in [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44).
-
 ### Delivery and validation notes
 
 Delivery is at least once. Successful invocations are acknowledged; failed ones can be redelivered after the service-managed lock expires. Scope deduplication to the namespace and trigger configuration together with `ConnectorEvent<T>.MessageId`; do not assume cross-trigger uniqueness. Single-event processing capacity includes linked-output waiting, invocation, and acknowledgement.
 
 Linked outputs are downloaded by the host, normalized to the ordinary payload shape, and invoked one event at a time behind a host-wide limiter. The download limit is not a supported payload-size guarantee; worker conversion also consumes memory. Outstanding hosting, failure and lease validation is described in the [Poll design](./connector-trigger-poll-delivery-design.md#deferred-linked-output-release-work).
-
-Linked-output test evidence covers warm, single-event handling on selected Flex Consumption memory profiles in .NET isolated, Node.js and Python. It does not qualify sustained/mixed workloads, multiple-listener lease behavior, cancellation/shutdown, or unassisted scale from zero for GA support. See the [tested coverage and remaining qualification](./connector-trigger-poll-delivery-design.md#deferred-linked-output-release-work) before applying these results to a workload.
 
 ### Linked-output download limit
 
