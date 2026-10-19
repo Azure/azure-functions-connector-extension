@@ -25,7 +25,7 @@ Endpoint forms:
 | `https://<connector-namespace-host>/api/triggerconfigs/<name>/receive` | `https://<connector-namespace-host>` |
 | `https://<host>/api/connectorGateways/<id>/triggerconfigs/<name>/receive` | `https://<host>/api/connectorGateways/<id>` |
 
-Preserve the service-provided authority and gateway ID. The extension constructs the operation paths; do not configure a query string, a full Receive URL, or a standalone `/api` base. Endpoints require HTTPS without user information or fragments.
+Preserve the service-provided authority and gateway ID; do not guess a hostname or strip unknown query parameters. The extension constructs the operation paths; do not configure a query string, a full Receive URL, or a standalone `/api` base. Endpoints require HTTPS without user information or fragments.
 
 ### Identity settings
 
@@ -65,7 +65,7 @@ For other workers, use these equivalents:
 | `IsBatched = true` | `cardinality: "many"` | `cardinality=func.Cardinality.MANY` |
 | `MaxBatchSize`, `MaxConcurrentCalls`, `TargetPendingEventThreshold` | `maxBatchSize`, `maxConcurrentCalls`, `targetPendingEventThreshold` | `max_batch_size`, `max_concurrent_calls`, `target_pending_event_threshold` |
 
-Python Poll decorators and batch decoding require `azure-functions>=2.4.0b1` and Python 3.13+. Set `delivery_mode=func.DeliveryMode.POLL` and annotate batched parameters as `typing.List[str]`, one JSON string per event. The 2.4.0b1 binding type check does not accept the built-in `list[str]` annotation. With `func.Cardinality.ONE`, use `str` and an effective `max_batch_size` of `1`. Omit `max_concurrent_calls` for batches. See the [language-specific Poll samples](../test/poll/README.md) for complete bindings.
+The Python Poll test app's native decorators and batch decoding require `azure-functions>=2.4.0b1` and Python 3.13+. Set `delivery_mode=func.DeliveryMode.POLL` and annotate batched parameters as `typing.List[str]`, one JSON string per event. The 2.4.0b1 binding type check does not accept the built-in `list[str]` annotation. With `func.Cardinality.ONE`, use `str` and an effective `max_batch_size` of `1`. Omit `max_concurrent_calls` for batches. See the [language-specific Poll test apps](../test/poll/README.md) for complete bindings.
 
 ### Optional `host.json` defaults
 
@@ -199,6 +199,6 @@ For Node.js and Python deployments using extension bundles, select a preview bun
 }
 ```
 
-The example version range is not a minimum-version or feature-availability guarantee; verify the contents of the selected published bundle. Published bundles may lag the current checkout. The [local Poll samples](../test/poll/README.md) build the host extension directly instead of relying on a published bundle.
+The example version range is not a minimum-version or feature-availability guarantee; verify the contents of the selected published bundle. Published bundles may lag the current checkout. The [local Poll test apps](../test/poll/README.md) build the host extension directly instead of relying on a published bundle.
 
-Python Poll samples require Python 3.13+ and `azure-functions>=2.4.0b1`. The Webhook sample uses the same minimum on Python 3.13+, while retaining `azure-functions>=1.26.0b3` and `PYTHON_ISOLATE_WORKER_DEPENDENCIES=1` for Python 3.10-3.12. Typed Webhook integration additionally uses `azurefunctions-extensions-connectors`.
+The Python Poll test app requires Python 3.13+ and `azure-functions>=2.4.0b1`. The Webhook sample uses the same minimum on Python 3.13+, while retaining `azure-functions>=1.26.0b3` and `PYTHON_ISOLATE_WORKER_DEPENDENCIES=1` for Python 3.10-3.12. Typed Webhook integration additionally uses `azurefunctions-extensions-connectors`.

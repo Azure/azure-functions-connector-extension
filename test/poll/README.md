@@ -1,4 +1,6 @@
-# Connector Poll Sample Apps
+# Connector Poll Repository Test Apps
+
+These are repository test apps; their SDK and batching requirements do not mandate changes to existing Poll apps. Customer-facing .NET samples are in [Azure-Samples/functions-connectors-net](https://github.com/Azure-Samples/functions-connectors-net).
 
 Poll is the simplest local starting point: the Function host connects outbound to the real Connector Namespace, so no public callback or dev tunnel is needed. These apps validate the same trigger from each supported language worker:
 
@@ -28,7 +30,7 @@ All three samples enable batched invocation with a maximum of 4 events and a sca
 
 An Office 365 Poll event contains an `outputs.body` that can be a single email or a `{ "value": [...] }` collection, independently of Functions invocation cardinality. The Node.js sample types both shapes using SDK models; these TypeScript types do not add runtime validation. Python uses a `typing.List[str]` parameter with one JSON string per Poll event, then uses `TriggerCallbackPayload.from_dict` to parse each event into typed `GraphClientReceiveMessage` objects, including nested attachments and sensitivity labels. One invocation can contain several Poll events, and each event can contain several emails.
 
-The Python sample requires `azure-functions>=2.4.0b1`, which supports the Poll decorator arguments and decoding of batched `collection_string` input:
+The Python test app requires `azure-functions>=2.4.0b1`, which supports the Poll decorator arguments and decoding of batched `collection_string` input:
 
 ```python
 from typing import List
@@ -83,7 +85,7 @@ For local development, `Connection = ConnectorNamespace` uses the signed-in deve
 
 Use .NET SDK 10.0.100 or later, Azure Functions Core Tools v4, and Azurite. The NuGet feed is configured in the repository's `NuGet.config`.
 
-The Python Poll sample requires Python 3.13 or newer because `azure-functions` 2.4.0b1 declares that minimum Python version.
+The Python Poll test app requires Python 3.13 or newer because `azure-functions` 2.4.0b1 declares that minimum Python version.
 
 Install Python SDK and model dependencies separately with pip using the sample's `requirements.txt`. Neither an extension bundle nor the repository-local host extension build installs `azure-functions` or `azure-connectors`; bundles distribute the host extension NuGet, not Python packages. See [worker dependency and bundle configuration](../../docs/connector-trigger-configuration.md#non-net-workers).
 

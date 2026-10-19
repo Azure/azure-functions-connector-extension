@@ -738,7 +738,7 @@ Listener polling alone is incomplete because an app at zero instances cannot pol
 Implement a scale monitor or target scaler using approximate queue depth:
 
 - Resolve the same trigger endpoints.
-- Query approximate depth with bounded retries.
+- Query approximate depth once with a bounded HTTP timeout.
 - The current failure fallback logs a warning and returns zero depth. This does not distinguish an unavailable observation from an empty queue; the extension/controller failure contract is tracked separately in [#44](https://github.com/Azure/azure-functions-connector-extension/issues/44).
 - Scale out based on the configured target pending-event threshold per worker instance.
 - Avoid equating approximate depth with immediately receivable messages.
