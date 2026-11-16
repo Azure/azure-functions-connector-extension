@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engineering the Azure Functions Connector Extension: From Webhooks to a Lease-Based Poll Runtime</title>
+<meta name="description" content="A technical deep dive into how the Connector extension was designed, built, hardened, and shipped as 1.0.0.">
+<style>
+:root {
+  --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --accent: #0078d4; --accent-2: #8661c5;
+  --border: #d1d9e0; --code-bg: #f6f8fa; --card: #f8fafc; --table-head: #eef4fb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --accent: #4cc2ff; --accent-2: #c3a6ff;
+    --border: #30363d; --code-bg: #161b22; --card: #11161d; --table-head: #1b2430;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 17px/1.7 "Segoe UI", -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+}
+.hero {
+  padding: 72px 24px 56px; color: #fff; text-align: center;
+  background: linear-gradient(135deg, #0050a0 0%, #0078d4 45%, #8661c5 100%);
+}
+.hero .eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: 13px; opacity: .85; margin: 0 0 12px; }
+.hero h1 { max-width: 920px; margin: 0 auto 16px; font-size: clamp(30px, 4.4vw, 48px); line-height: 1.15; }
+.hero p.subtitle { max-width: 760px; margin: 0 auto; font-size: 19px; opacity: .92; }
+.layout { display: grid; grid-template-columns: 260px minmax(0, 780px); gap: 48px; justify-content: center; padding: 48px 24px 96px; }
+nav.toc { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 48px); overflow: auto; font-size: 14px; }
+nav.toc h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 8px; border: 0; padding: 0; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; }
+nav.toc a { display: block; padding: 5px 10px; border-left: 2px solid var(--border); color: var(--muted); text-decoration: none; }
+nav.toc a:hover { color: var(--accent); border-left-color: var(--accent); }
+article h2 { font-size: 28px; margin: 56px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); scroll-margin-top: 16px; }
+article h3 { font-size: 21px; margin: 32px 0 8px; scroll-margin-top: 16px; }
+article a { color: var(--accent); }
+.headerlink { opacity: 0; margin-left: 8px; text-decoration: none; font-weight: 400; }
+h2:hover .headerlink, h3:hover .headerlink { opacity: .6; }
+hr { display: none; }
+code { font-family: "Cascadia Code", Consolas, "SFMono-Regular", Menlo, monospace; font-size: .88em; background: var(--code-bg); padding: .15em .4em; border-radius: 6px; }
+pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; overflow-x: auto; line-height: 1.5; }
+pre code { background: none; padding: 0; font-size: 14px; }
+pre.mermaid { background: var(--card); text-align: center; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 15px; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--border); padding: 9px 12px; text-align: left; vertical-align: top; }
+th { background: var(--table-head); }
+blockquote { margin: 0; padding: 4px 20px; border-left: 4px solid var(--accent-2); color: var(--muted); }
+article > h2#tldr + p, article > h2#tldr ~ table:first-of-type { }
+#tldr { margin-top: 0; }
+footer { text-align: center; color: var(--muted); font-size: 14px; padding: 0 24px 48px; }
+@media (max-width: 980px) { .layout { grid-template-columns: minmax(0, 1fr); } nav.toc { position: static; max-height: none; } }
+</style>
+</head>
+<body>
+<header class="hero">
+  <p class="eyebrow">Azure Functions &middot; Engineering deep dive</p>
+  <h1>Engineering the Azure Functions Connector Extension: From Webhooks to a Lease-Based Poll Runtime</h1>
+  <p class="subtitle">A technical deep dive into how the Connector extension was designed, built, hardened, and shipped as 1.0.0.</p>
+</header>
+<div class="layout">
+  <nav class="toc" aria-label="Table of contents">
+    <h2>Contents</h2>
+    <ol><li><a href="#tldr">TL;DR</a></li><li><a href="#1-the-problem">1. The problem</a></li><li><a href="#2-how-the-project-evolved">2. How the project evolved</a></li><li><a href="#3-architecture-at-a-glance">3. Architecture at a glance</a></li><li><a href="#4-the-webhook-path-small-strict-and-predictable">4. The Webhook path: small, strict, and predictable</a></li><li><a href="#5-why-build-poll-at-all">5. Why build Poll at all?</a></li><li><a href="#6-design-before-code">6. Design before code</a></li><li><a href="#7-the-poll-protocol">7. The Poll protocol</a></li><li><a href="#8-inside-the-message-pump">8. Inside the message pump</a></li><li><a href="#9-delivery-semantics-honest-at-least-once">9. Delivery semantics: honest at-least-once</a></li><li><a href="#10-large-payloads-and-the-linked-output-limiter">10. Large payloads and the linked-output limiter</a></li><li><a href="#11-scaling-from-zero">11. Scaling from zero</a></li><li><a href="#12-crossing-the-host-to-worker-boundary">12. Crossing the host-to-worker boundary</a></li><li><a href="#13-security-principles-collected">13. Security principles, collected</a></li><li><a href="#14-testing-strategy">14. Testing strategy</a></li><li><a href="#15-engineering-infrastructure">15. Engineering infrastructure</a></li><li><a href="#16-lessons-learned">16. Lessons learned</a></li><li><a href="#17-whats-next">17. What's next</a></li><li><a href="#further-reading">Further reading</a></li></ol>
+  </nav>
+  <article>
+<hr />
+<h2 id="tldr">TL;DR<a class="headerlink" href="#tldr" title="Permanent link">#</a></h2>
+<p>The Azure Functions Connector extension lets a function run when a Connector Namespace managed connector fires a trigger, such as a new Office 365 email, a new SharePoint file, or a Teams message. It ships as two NuGet packages, supports .NET isolated, Node.js/TypeScript, and Python, and offers two delivery modes:</p>
+<table>
+<thead>
+<tr>
+<th>Delivery mode</th>
+<th>Who initiates</th>
+<th>Why you would pick it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Webhook</strong></td>
+<td>Connector Namespace pushes an HTTP callback to the Function App.</td>
+<td>Lowest latency; the original and default mode.</td>
+</tr>
+<tr>
+<td><strong>Poll</strong></td>
+<td>The Functions host leases messages from Connector Namespace and acknowledges them.</td>
+<td>No public endpoint or dev tunnel, scale from zero, explicit at-least-once semantics.</td>
+</tr>
+</tbody>
+</table>
+<p>The interesting engineering is in Poll: a capacity-driven message pump, an all-or-none acknowledgement model, a host-wide limiter for large linked payloads, a target-based scaler, and a protocol layer deliberately shaped so it can later be extracted into a standalone Connectors Polling SDK.</p>
+<hr />
+<h2 id="1-the-problem">1. The problem<a class="headerlink" href="#1-the-problem" title="Permanent link">#</a></h2>
+<p>Managed connectors already know how to detect "something happened" in hundreds of SaaS systems. Connector Namespace exposes those triggers as <em>Trigger Configs</em>. The extension's job is the last mile: turn a trigger output into a strongly typed function invocation, in any supported language, with the scaling and reliability guarantees that Azure Functions developers expect from first-party bindings such as Service Bus or Event Hubs.</p>
+<p>Three constraints shaped every decision:</p>
+<ol>
+<li><strong>The payload must be identical regardless of delivery mode.</strong> An Office 365 <code>OnNewEmailV3</code> trigger produces the same <code>outputs</code> whether it arrives by Webhook or Poll. User code should never care.</li>
+<li><strong>The work must happen in the host, not the language worker.</strong> Doing acquisition, leasing, and acknowledgement in the WebJobs host extension means .NET, Python, Node.js, and generic <code>function.json</code> bindings all get identical behavior for free.</li>
+<li><strong>Security is a first-class requirement, not a review step.</strong> Tokens, lock tokens, payload bodies, and signed URLs are treated as secrets everywhere, including logs and exception messages.</li>
+</ol>
+<hr />
+<h2 id="2-how-the-project-evolved">2. How the project evolved<a class="headerlink" href="#2-how-the-project-evolved" title="Permanent link">#</a></h2>
+<p>The Git history tells a clear story: ship a narrow, correct Webhook trigger first, invest in engineering infrastructure early, then design Poll on paper before writing it as a stack of reviewable pull requests.</p>
+<table>
+<thead>
+<tr>
+<th>When</th>
+<th>Milestone</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mar 2026</td>
+<td>Repository created.</td>
+</tr>
+<tr>
+<td>Apr 2026</td>
+<td>Initial Webhook implementation (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/4">#4</a>), CI/CD pipelines (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/6">#6</a>), single-source version management (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/9">#9</a>), and a Node.js/TypeScript sample (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/10">#10</a>).</td>
+</tr>
+<tr>
+<td>May 2026</td>
+<td>Rebranding to Connector Namespace (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/15">#15</a>), SDK model packages (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/16">#16</a>), Content-Type validation and Copilot skills (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/18">#18</a>), and Python and Node samples with SDK-typed bindings (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/19">#19</a>, <a href="https://github.com/Azure/azure-functions-connector-extension/pull/20">#20</a>).</td>
+</tr>
+<tr>
+<td>Jun 2026</td>
+<td>Samples restructured into a test matrix and skills rewritten around the Connector Namespace CLI (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/27">#27</a>).</td>
+</tr>
+<tr>
+<td>Oct 2026</td>
+<td>Poll protocol foundation (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/41">#41</a>), target-based scalers (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/33">#33</a>), complete Poll delivery (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/40">#40</a>), and the 1.0.0 hardening pass covering payload limits, stable endpoints, and Webhook sizing (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/47">#47</a>).</td>
+</tr>
+<tr>
+<td>Nov 2026</td>
+<td>Connector trigger payload reference across .NET, Python, and TypeScript (<a href="https://github.com/Azure/azure-functions-connector-extension/pull/53">#53</a>).</td>
+</tr>
+</tbody>
+</table>
+<p>The release notes for 1.0.0 summarize the result: the first stable release, supporting both Webhook and Poll delivery for the host extension and the .NET isolated worker extension.</p>
+<hr />
+<h2 id="3-architecture-at-a-glance">3. Architecture at a glance<a class="headerlink" href="#3-architecture-at-a-glance" title="Permanent link">#</a></h2>
+<pre class="mermaid">flowchart LR
+    subgraph CN[&quot;Connector Namespace&quot;]
+        TC[&quot;Trigger Config&lt;br/&gt;Webhook mode&quot;]
+        Q[(&quot;Poll queue&quot;)]
+        BLOB[(&quot;Large outputs&lt;br/&gt;signed link&quot;)]
+    end
+
+    subgraph Host[&quot;Functions host extension&quot;]
+        WH[&quot;Webhook handler&quot;]
+        PL[&quot;Poll listener&quot;]
+        SC[&quot;Target scaler&quot;]
+    end
+
+    subgraph Worker[&quot;Language worker&quot;]
+        NET[&quot;.NET isolated&quot;]
+        OTHER[&quot;Python / Node.js&quot;]
+    end
+
+    TC --&gt;|callback| WH
+    Q &lt;--&gt;|receive / ack| PL
+    BLOB --&gt;|GET| PL
+    Q -.-&gt;|depth| SC
+    WH --&gt; NET
+    WH --&gt; OTHER
+    PL --&gt; NET
+    PL --&gt; OTHER
+</pre>
+<p>The repository contains two shipping packages and one shared contract:</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Microsoft.Azure.Functions.Extensions.Connector</code></td>
+<td>The WebJobs host extension: trigger binding, Webhook handler, Poll listener, protocol clients, and scaler. Loaded through extension bundles for non-.NET languages.</td>
+</tr>
+<tr>
+<td><code>Microsoft.Azure.Functions.Worker.Extensions.Connector</code></td>
+<td>The .NET isolated worker surface: <code>[ConnectorTrigger]</code>, <code>ConnectorEvent&lt;T&gt;</code>, and the input converter.</td>
+</tr>
+<tr>
+<td><code>src/Shared</code></td>
+<td>Compiled into both packages so the host-to-worker binding-data contract (<code>AzureConnectorEvent</code>, version <code>1.0</code>, and the <code>data</code>, <code>deliveryMode</code>, and <code>messageId</code> property names) can never drift.</td>
+</tr>
+</tbody>
+</table>
+<p>One deliberate structural decision: <code>ConnectorTriggerBinding.CreateListenerAsync</code> selects <strong>either</strong> <code>ConnectorListener</code> (Webhook) <strong>or</strong> <code>ConnectorPollingListener</code> (Poll). There is no single mode-switching listener. Each mode owns its lifecycle and its failure modes, and the Webhook path did not change when Poll was added.</p>
+<p>The binding also implements <code>ITriggerBinding</code> directly instead of relying on obsolete WebJobs binding-strategy APIs, which keeps the trigger compatible with the modern deferred-binding pipeline.</p>
+<hr />
+<h2 id="4-the-webhook-path-small-strict-and-predictable">4. The Webhook path: small, strict, and predictable<a class="headerlink" href="#4-the-webhook-path-small-strict-and-predictable" title="Permanent link">#</a></h2>
+<p>Webhook delivery is implemented as an <code>IAsyncConverter&lt;HttpRequestMessage, HttpResponseMessage&gt;</code> registered by <code>ConnectorExtensionConfigProvider</code>. The request processor is intentionally boring: it validates the request in a fixed order and maps each failure to a precise HTTP status before user code ever runs.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Failure response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Method is <code>POST</code> or <code>PUT</code></td>
+<td><code>405 Method Not Allowed</code></td>
+</tr>
+<tr>
+<td><code>Content-Type</code> is <code>application/json</code></td>
+<td><code>415 Unsupported Media Type</code></td>
+</tr>
+<tr>
+<td>Body fits the host request limit</td>
+<td><code>413 Payload Too Large</code></td>
+</tr>
+<tr>
+<td>Body is well-formed JSON</td>
+<td><code>400 Bad Request</code></td>
+</tr>
+<tr>
+<td>Request is not cancelled</td>
+<td><code>408 Request Timeout</code></td>
+</tr>
+<tr>
+<td>Function invocation succeeds</td>
+<td>Otherwise <code>500 Internal Server Error</code></td>
+</tr>
+</tbody>
+</table>
+<p>Two details are worth calling out:</p>
+<ul>
+<li><strong>Size errors are found by walking the exception chain.</strong> ASP.NET Core surfaces an oversized body as a <code>BadHttpRequestException</code> with status 413, sometimes wrapped. The processor walks <code>InnerException</code> until it finds that case, so the caller receives an accurate 413 rather than a generic 500.</li>
+<li><strong>Logging records shape, not content.</strong> Debug logs include the function name, body length, and header <em>names</em>, never header values or the body.</li>
+</ul>
+<p>Callback authentication uses the Functions system key passed as a <code>QueryString</code> parameter in the Trigger Config's <code>notificationDetails.authentication</code>, rather than embedding the key in the callback URL.</p>
+<hr />
+<h2 id="5-why-build-poll-at-all">5. Why build Poll at all?<a class="headerlink" href="#5-why-build-poll-at-all" title="Permanent link">#</a></h2>
+<p>Webhooks are fast, but they have operational costs:</p>
+<ul>
+<li>Local development requires a public, authenticated dev tunnel.</li>
+<li>The Function App must expose an internet-reachable endpoint.</li>
+<li>Retry and delivery semantics are owned by the sender and are difficult to reason about from the receiving side.</li>
+</ul>
+<p>Poll inverts the relationship. Connector Namespace enqueues trigger outputs and the Functions host <em>pulls</em> them using leased messages. That enables local development without a tunnel, private apps, explicit at-least-once semantics, and scaling driven by queue depth. It also made Poll the recommended starting point in the README, while Webhook remains the binding default for compatibility.</p>
+<p>Poll is not a new event source. It is another delivery mode for the same trigger.</p>
+<hr />
+<h2 id="6-design-before-code">6. Design before code<a class="headerlink" href="#6-design-before-code" title="Permanent link">#</a></h2>
+<p>Before the Poll implementation began, the team wrote a design document (<code>docs/connector-trigger-poll-delivery-design.md</code>) structured in three layers:</p>
+<ol>
+<li><strong>Connector Namespace runtime contract</strong>: the observed service protocol, documented exactly as it behaves.</li>
+<li><strong>Proposed user contract</strong>: what developers configure and what their functions receive.</li>
+<li><strong>Internal architecture</strong>: how the extension implements it.</li>
+</ol>
+<p>Separating "what the service does" from "what we promise users" made it easy to spot where the extension would otherwise have invented semantics the service never offered. The document is explicit about non-goals: no exactly-once delivery, no client-configurable lock duration, no inferred lock expiration, and no URL construction from regional hostnames or resource identifiers.</p>
+<p>The implementation then landed as stacked pull requests: protocol foundation, target-based scalers, and finally the listener and isolated-worker binding with cross-stack validation.</p>
+<hr />
+<h2 id="7-the-poll-protocol">7. The Poll protocol<a class="headerlink" href="#7-the-poll-protocol" title="Permanent link">#</a></h2>
+<p>A Poll Trigger Config exposes opaque, server-generated endpoints. The extension uses three of them:</p>
+<pre><code class="language-http">GET  {pollingEndpoint}/api/triggerconfigs/{name}/receive?maxEvents=32
+POST {pollingEndpoint}/api/triggerconfigs/{name}/acknowledge
+GET  {pollingEndpoint}/api/triggerconfigs/{name}/approximateQueueDepth
+</code></pre>
+<p>All runtime calls authenticate with a <code>TokenCredential</code> token for <code>https://apihub.azure.com/.default</code>, and authorization comes from a connection-level access policy.</p>
+<h3 id="configuration-that-cannot-be-misused">Configuration that cannot be misused<a class="headerlink" href="#configuration-that-cannot-be-misused" title="Permanent link">#</a></h3>
+<p>Users configure a gateway-level <code>&lt;Connection&gt;__pollingEndpoint</code> and the binding supplies a <code>TriggerConfigName</code>. One shared endpoint builder accepts exactly two shapes: an HTTPS hostname-only endpoint, or a legacy base ending in <code>/api/connectorGateways/&lt;gateway-id&gt;</code>. It rejects query strings, user information, fragments, repeated trailing slashes, a standalone <code>/api</code>, or a path that already contains a Trigger Config or operation. The Trigger Config name is validated as exactly one path segment.</p>
+<p>Invalid configuration fails at startup, <strong>before</strong> any token is acquired or request is sent. The host and gateway identifier are treated as opaque values and are never parsed, rewritten, or discovered.</p>
+<h3 id="wire-dtos-versus-protocol-models">Wire DTOs versus protocol models<a class="headerlink" href="#wire-dtos-versus-protocol-models" title="Permanent link">#</a></h3>
+<p>Every response is deserialized with <code>System.Text.Json</code> source generation (<code>ConnectorPollingJsonContext</code>) into <strong>nullable wire DTOs</strong>, then validated once into <strong>immutable protocol models</strong> such as <code>ConnectorPollMessage</code>, <code>ConnectorReceiveResult</code>, and <code>ConnectorAcknowledgeResult</code>. Nothing downstream ever sees an unvalidated message.</p>
+<p>One invariant is enforced at this boundary: each message must contain <strong>exactly one</strong> of <code>outputs</code> or <code>outputsLink</code>.</p>
+<table>
+<thead>
+<tr>
+<th><code>outputs</code></th>
+<th><code>outputsLink</code></th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Present</td>
+<td>Absent</td>
+<td>Inline message</td>
+</tr>
+<tr>
+<td>Absent</td>
+<td>Present</td>
+<td>Linked message</td>
+</tr>
+<tr>
+<td>Present</td>
+<td>Present</td>
+<td>Protocol error</td>
+</tr>
+<tr>
+<td>Absent</td>
+<td>Absent</td>
+<td>Protocol error</td>
+</tr>
+</tbody>
+</table>
+<p>Inline outputs are retained as owned <code>BinaryData</code> rather than a borrowed <code>JsonElement</code>, so a message's lifetime is never tied to the response buffer that produced it.</p>
+<p>Unknown acknowledgement statuses are preserved as unsuccessful extensible string values. A future service status cannot break parsing of an entire acknowledgement response.</p>
+<h3 id="no-blind-retries">No blind retries<a class="headerlink" href="#no-blind-retries" title="Permanent link">#</a></h3>
+<p>Receive and Acknowledge are <strong>not</strong> transparently retried after ambiguous failures:</p>
+<ul>
+<li>A lost Receive response might already have leased messages.</li>
+<li>A lost Acknowledge response might already have deleted messages.</li>
+</ul>
+<p>Retrying either operation could hide state changes and make the system harder to reason about. Unacknowledged messages simply become visible again after their lease expires. Runtime calls use a shared 30-second timeout, and linked-output downloads use a 2-minute timeout. Credential acquisition happens before the HTTP timeout starts.</p>
+<h3 id="bounded-reads-everywhere">Bounded reads everywhere<a class="headerlink" href="#bounded-reads-everywhere" title="Permanent link">#</a></h3>
+<p>Every response body is read with an <em>actual-bytes-read</em> limit rather than trusting <code>Content-Length</code>: 100 MiB for Receive and Acknowledge, 64 KiB for the queue-depth response, and the configurable linked-output limit for downloads.</p>
+<hr />
+<h2 id="8-inside-the-message-pump">8. Inside the message pump<a class="headerlink" href="#8-inside-the-message-pump" title="Permanent link">#</a></h2>
+<p><code>ConnectorPollingListener</code> owns exactly one message-pump task per listener instance. The core loop is <em>capacity-driven</em>: it never asks the service for more work than it can start immediately.</p>
+<pre class="mermaid">flowchart TD
+    A[Prune completed tasks] --&gt; B{Capacity available?}
+    B -- No --&gt; W[Wait for a task to finish] --&gt; A
+    B -- Yes --&gt; R[Receive maxEvents = available capacity, up to 32]
+    R --&gt; E{Messages?}
+    E -- None --&gt; D[Idle delay + jitter] --&gt; A
+    E -- Some --&gt; P[Partition into chunks of MaxBatchSize]
+    P --&gt; S[Start processing tasks]
+    S --&gt; M{x-ms-more-messages-available?}
+    M -- Yes --&gt; A
+    M -- No --&gt; D
+</pre>
+<p>For a single-event listener, the capacity calculation is:</p>
+<pre><code class="language-csharp">int availableProcessingCapacity = effectiveMaxConcurrentCalls - activeProcessingTasks;
+int maxEvents = Math.Min(32, availableProcessingCapacity);
+</code></pre>
+<p>A batched listener requests at most <code>MaxBatchSize</code> events and performs no further Receive until its current chunk is fully prepared, invoked, and acknowledged. This matters because <strong>every received message is already leased</strong>. Over-fetching would consume lease time on messages that are just waiting in memory.</p>
+<h3 id="three-independent-knobs">Three independent knobs<a class="headerlink" href="#three-independent-knobs" title="Permanent link">#</a></h3>
+<p>The public contract intentionally separates three settings that are often conflated:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Controls</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MaxBatchSize</code></td>
+<td>Maximum events per invocation (1 to 32)</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>MaxConcurrentCalls</code></td>
+<td>Active single-event tasks per listener per instance</td>
+<td>16</td>
+</tr>
+<tr>
+<td><code>TargetPendingEventThreshold</code></td>
+<td>Desired pending events per instance, used <strong>only</strong> for scaling</td>
+<td>16</td>
+</tr>
+</tbody>
+</table>
+<p><code>MaxConcurrentCalls</code> applies only to single-event delivery, matching the Service Bus extension's single-message-only setting. A positive value on a batched binding is ignored and produces a startup warning rather than silently changing behavior. Effective values are validated against cardinality: a scalar parameter with an effective <code>MaxBatchSize</code> greater than 1 is rejected.</p>
+<h3 id="backoff-that-is-gentle-with-the-service">Backoff that is gentle with the service<a class="headerlink" href="#backoff-that-is-gentle-with-the-service" title="Permanent link">#</a></h3>
+<ul>
+<li>An empty queue waits 1 second, plus up to 250 ms of jitter.</li>
+<li>A failed cycle starts at 1 second and doubles up to a 30-second ceiling, also with jitter.</li>
+<li>The failure backoff resets after every successful Receive.</li>
+<li>If the service reports <code>x-ms-more-messages-available</code> and capacity remains, the loop drains immediately.</li>
+</ul>
+<p>Jitter prevents many scaled-out instances from synchronizing their polling after a shared outage.</p>
+<h3 id="lifecycle-and-shutdown">Lifecycle and shutdown<a class="headerlink" href="#lifecycle-and-shutdown" title="Permanent link">#</a></h3>
+<p>Start and Stop are serialized through a lifecycle semaphore, so a restart always waits for the previous pump to drain. Shutdown follows the host's <code>IDrainModeManager</code>:</p>
+<ul>
+<li><strong>Drain mode</strong>: stop receiving, cancel idle waits immediately, and let in-flight invocations finish and acknowledge.</li>
+<li><strong>Otherwise</strong>: cancel processing immediately and leave unfinished messages unacknowledged for redelivery.</li>
+</ul>
+<p>The listener deliberately has no private grace timer. The host remains the single authority on shutdown policy. <code>Dispose</code> is idempotent, prevents future starts, and disposes cancellation sources only after the pump completes, which avoids a common class of <code>ObjectDisposedException</code> races.</p>
+<hr />
+<h2 id="9-delivery-semantics-honest-at-least-once">9. Delivery semantics: honest at-least-once<a class="headerlink" href="#9-delivery-semantics-honest-at-least-once" title="Permanent link">#</a></h2>
+<p>The extension does not pretend to be stronger than the service.</p>
+<ul>
+<li>Delivery is <strong>at least once</strong>. Ordering is <strong>not</strong> guaranteed.</li>
+<li>A message's <code>messageId</code> is stable across redeliveries. Its <code>lockToken</code> changes with each delivery.</li>
+<li>Lock duration is service-owned and not returned to clients, so the extension <strong>never infers a client-side deadline</strong> and never invents a lock-renewal mechanism.</li>
+<li><strong>Acknowledgement is all-or-none per invocation.</strong> If a batched function fails, every message in that invocation is left for redelivery. The extension cannot know which items completed before the exception, so it does not guess.</li>
+</ul>
+<p>To make idempotency practical, users can opt into a metadata-rich envelope:</p>
+<pre><code class="language-csharp">[Function(&quot;OnNewEmail&quot;)]
+public async Task Run(
+    [ConnectorTrigger(
+        Connection = &quot;Office365&quot;,
+        TriggerConfigName = &quot;%EmailTriggerConfig%&quot;,
+        DeliveryMode = ConnectorTriggerDeliveryMode.Poll,
+        IsBatched = true,
+        MaxBatchSize = 8)]
+    ConnectorEvent&lt;Office365OnNewEmailTriggerPayload&gt;[] events)
+{
+    foreach (var e in events)
+    {
+        if (await _dedupe.TryMarkProcessedAsync(e.MessageId!))
+        {
+            await HandleAsync(e.Data);
+        }
+    }
+}
+</code></pre>
+<p><code>ConnectorEvent&lt;T&gt;</code> exposes only application-safe metadata. The <code>lockToken</code> is an acknowledgement capability and never leaves the host. Speculative fields such as <code>DeliveryAttempt</code> or <code>EnqueuedTime</code> were intentionally left out until the service defines them. The extension also never generates a replacement <code>MessageId</code> for Webhook delivery, because an invocation-local identifier would not remain stable across retries.</p>
+<p>Per-event metadata follows the Kafka and Event Hubs pattern instead of parallel <code>messageIds[]</code> arrays, which become index-sensitive and fragile in batched invocations.</p>
+<hr />
+<h2 id="10-large-payloads-and-the-linked-output-limiter">10. Large payloads and the linked-output limiter<a class="headerlink" href="#10-large-payloads-and-the-linked-output-limiter" title="Permanent link">#</a></h2>
+<p>Connector Namespace stores a trigger output inline only when the <em>entire encoded queue message</em> fits within the 64 KiB queue-storage limit. Larger outputs arrive as an <code>outputsLink</code>: a signed, time-limited HTTPS URI.</p>
+<p>The extension normalizes both forms into the same <code>outputs</code> JSON before conversion, so user code never distinguishes between them. Getting there safely required several layers of defense.</p>
+<p><strong>Treat the signed URI as a credential.</strong></p>
+<ul>
+<li>Never log, persist, or emit the full URI, and never include its query string in exceptions or telemetry.</li>
+<li>Require absolute HTTPS and reject user information and fragments.</li>
+<li>Do <strong>not</strong> attach the API Hub bearer token. The signature fully authorizes the request, and forwarding a bearer token to a content URL would leak it.</li>
+<li>Do not follow redirects.</li>
+<li>Use a dedicated, narrowly scoped linked-output client so no general-purpose client can accidentally add credentials.</li>
+</ul>
+<p><strong>Bound the memory that one message can consume.</strong></p>
+<ul>
+<li>Enforce <code>MaxLinkedOutputSizeInBytes</code> while streaming. The default is 100 MiB, and there is no unlimited mode.</li>
+<li>Count bytes actually read, because the service does not return a content size.</li>
+</ul>
+<p><strong>Bound the memory that many messages can consume.</strong> Worker conversion is JSON-based, so a hydrated payload is materialized and then amplified by envelope construction and worker decoding. To keep that bounded, every linked message is invoked on its own, and a <strong>process-wide singleton limiter</strong> allows only one linked-output invocation at a time across <em>all</em> Connector Poll listeners in the host:</p>
+<pre><code class="language-csharp">internal sealed class ConnectorLinkedOutputInvocationLimiter
+{
+    private readonly SemaphoreSlim _semaphore = new(1, 1);
+
+    internal async Task&lt;IDisposable&gt; AcquireAsync(CancellationToken cancellationToken)
+    {
+        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return new Lease(_semaphore);
+    }
+
+    private sealed class Lease(SemaphoreSlim semaphore) : IDisposable
+    {
+        private SemaphoreSlim? _semaphore = semaphore;
+
+        public void Dispose() =&gt; Interlocked.Exchange(ref _semaphore, null)?.Release();
+    }
+}
+</code></pre>
+<p>The lease is held from <strong>before download</strong> through <strong>function execution and acknowledgement</strong>, so a second large payload cannot be hydrated while the first is still live. The <code>Interlocked.Exchange</code> makes double disposal harmless.</p>
+<p>The limiter is process-local by design. Each scaled-out instance has its own slot, so the system still parallelizes across instances without distributed coordination.</p>
+<p>A smaller allocation optimization shipped in 1.0.0 as well: the deferred-binding envelope is written directly from the existing UTF-8 payload, avoiding an extra UTF-16 escaping buffer on the host.</p>
+<hr />
+<h2 id="11-scaling-from-zero">11. Scaling from zero<a class="headerlink" href="#11-scaling-from-zero" title="Permanent link">#</a></h2>
+<p>A polling listener cannot poll when no instances are running. Poll therefore includes a <strong>target-based scaler</strong> (<code>ITargetScaler</code> / <code>ITargetScalerProvider</code>) that runs in the scale controller, separate from the listener and delivery client. The scaler reads approximate queue depth and computes:</p>
+<pre><code class="language-text">effectiveTarget   = TargetScalerContext.InstanceConcurrency ?? TargetPendingEventThreshold
+targetWorkerCount = ceil(approximateQueueDepth / effectiveTarget)
+</code></pre>
+<p>This follows the same runtime-concurrency precedence used by Event Hubs and Service Bus. <code>MaxBatchSize</code> and <code>MaxConcurrentCalls</code> intentionally do not participate.</p>
+<p>Two honest caveats are documented rather than hidden:</p>
+<ul>
+<li>Approximate depth counts both visible and leased messages and can lag. It is a scaling signal, not a count of immediately receivable work.</li>
+<li>The service also exposes a <code>hasMessages</code> endpoint, but the extension does not call it. Receive already returns <code>x-ms-more-messages-available</code>, and a preflight call would add latency and a time-of-check/time-of-use race.</li>
+</ul>
+<hr />
+<h2 id="12-crossing-the-host-to-worker-boundary">12. Crossing the host-to-worker boundary<a class="headerlink" href="#12-crossing-the-host-to-worker-boundary" title="Permanent link">#</a></h2>
+<p>For .NET isolated apps, the worker package uses the modern <strong>deferred binding</strong> model. <code>ConnectorTriggerConverter</code> is marked <code>[SupportsDeferredBinding]</code> and receives either <code>ModelBindingData</code> for one event or <code>CollectionModelBindingData</code> for a batch. Each item carries the shared <code>AzureConnectorEvent</code> contract with <code>data</code>, <code>deliveryMode</code>, and, for Poll, <code>messageId</code>.</p>
+<p>The converter remains <strong>connector-agnostic</strong>. It does not map Trigger Config names to SDK types. The function parameter's closed type is the source of truth:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Conversion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>T</code></td>
+<td>Deserialize one message's <code>outputs</code> into <code>T</code>.</td>
+</tr>
+<tr>
+<td><code>T[]</code></td>
+<td>Deserialize each message's <code>outputs</code> into <code>T</code>.</td>
+</tr>
+<tr>
+<td><code>ConnectorEvent&lt;T&gt;</code></td>
+<td>Deserialize into <code>Data</code> and attach <code>MessageId</code>.</td>
+</tr>
+<tr>
+<td><code>ConnectorEvent&lt;T&gt;[]</code></td>
+<td>Create one envelope per message.</td>
+</tr>
+</tbody>
+</table>
+<p><code>T</code> can be a generated <code>Azure.Connectors.Sdk</code> payload type, <code>JsonElement</code>, <code>string</code>, or a custom POCO. Open generics such as <code>Run&lt;T&gt;(ConnectorEvent&lt;T&gt; e)</code> are unsupported because Functions must resolve concrete types at indexing time.</p>
+<p>Node.js and Python consume the same host extension through extension bundles. Batching is enabled with <code>cardinality: "many"</code> in Node.js and <code>cardinality=func.Cardinality.MANY</code> with a <code>typing.List[str]</code> parameter in Python.</p>
+<hr />
+<h2 id="13-security-principles-collected">13. Security principles, collected<a class="headerlink" href="#13-security-principles-collected" title="Permanent link">#</a></h2>
+<p>Security considerations are spread throughout this post. Here they are in one place:</p>
+<ol>
+<li><strong>Validate at the boundary, once.</strong> Configuration fails before credentials are used; wire DTOs are validated into immutable models.</li>
+<li><strong>Secrets never reach logs.</strong> This includes bearer tokens, lock tokens, payload bodies, signed URLs, and header values.</li>
+<li><strong>Credentials stay scoped to their intended audience.</strong> API Hub tokens go only to API Hub endpoints, never to signed content URLs.</li>
+<li><strong>Every input is bounded.</strong> Response sizes, batch sizes, linked-output sizes, and concurrency all have limits.</li>
+<li><strong>Do not invent semantics.</strong> The extension does not infer lock deadlines, guess partial success, generate fake identifiers, or apply retries that could hide state changes.</li>
+<li><strong>Prefer allow-lists to parsing.</strong> The extension accepts two exact endpoint shapes and treats everything inside them as opaque.</li>
+</ol>
+<hr />
+<h2 id="14-testing-strategy">14. Testing strategy<a class="headerlink" href="#14-testing-strategy" title="Permanent link">#</a></h2>
+<p>Correctness is enforced at three levels:</p>
+<ul>
+<li><strong>Unit tests</strong>: two test projects mirror the two packages, with more than 250 <code>[Fact]</code> and <code>[Theory]</code> cases. They cover protocol validation, endpoint parsing, listener concurrency and backoff, lifecycle races, acknowledgement mapping, scaler math, and worker conversion. Delays are injectable, so backoff and shutdown behavior can be tested deterministically without real sleeps.</li>
+<li><strong>Sample apps as a test matrix</strong>: <code>test/webhook</code> and <code>test/poll</code> each contain .NET, Node.js, and Python apps built against the current checkout.</li>
+<li><strong>Regression coverage from the design document</strong>: each documented invariant, such as "exactly one output source" or "acknowledge only after successful invocation", has a corresponding test.</li>
+</ul>
+<hr />
+<h2 id="15-engineering-infrastructure">15. Engineering infrastructure<a class="headerlink" href="#15-engineering-infrastructure" title="Permanent link">#</a></h2>
+<p>Some of the most valuable work happened outside the runtime code:</p>
+<ul>
+<li><strong>One version source.</strong> <code>eng/build/Version.props</code> drives both packages, and <code>get-package-version.yml</code> reads it in CI, so release metadata cannot drift.</li>
+<li><strong>Public and official pipelines.</strong> <code>public-build.yml</code> validates pull requests, while <code>official-build.yml</code>, <code>official-release-host.yml</code>, and <code>official-release-worker.yml</code> sign and publish each package independently.</li>
+<li><strong>Shared MSBuild props and targets.</strong> <code>Engineering.props</code>, <code>Release.props</code>, and <code>WebJobsReference.targets</code> keep both projects consistent.</li>
+<li><strong>Copilot skills as executable documentation.</strong> Four repository skills (<code>connection-setup</code>, <code>webhook-trigger-registration</code>, <code>poll-trigger-registration</code>, and <code>operations-doc-update</code>) encode the multi-step Azure setup that would otherwise live only in tribal knowledge. They are used both by people and by AI agents working in the repository.</li>
+<li><strong>A payload reference that can be refreshed.</strong> <code>docs/operations-functions-match.md</code> maps trigger operations to payload types across .NET, Python, and TypeScript, and the <code>operations-doc-update</code> skill keeps it current.</li>
+</ul>
+<hr />
+<h2 id="16-lessons-learned">16. Lessons learned<a class="headerlink" href="#16-lessons-learned" title="Permanent link">#</a></h2>
+<ol>
+<li><strong>Write down the service contract separately from your promise.</strong> Most design issues found during review were places where the extension would have promised more than the service guaranteed.</li>
+<li><strong>Capacity-driven receive matters more than throughput tuning.</strong> With leased messages, <em>when</em> you fetch matters as much as <em>how many</em> you fetch.</li>
+<li><strong>Separate knobs by purpose.</strong> Batch size, concurrency, and scale target answer different questions. Combining them would make every setting surprising.</li>
+<li><strong>Global limits belong at the scope of the shared resource.</strong> Memory is per process, so the linked-output limiter is per process, not per listener and not distributed.</li>
+<li><strong>Design for extraction from the start.</strong> Keeping the protocol client, listener, scaler, and endpoint configuration behind separate internal interfaces leaves a clean path to a standalone SDK.</li>
+</ol>
+<hr />
+<h2 id="17-whats-next">17. What's next<a class="headerlink" href="#17-whats-next" title="Permanent link">#</a></h2>
+<ul>
+<li><strong>Connectors Polling SDK.</strong> Extract the transport, including authentication, HTTP operations, timeout and retry policy, serialization, and secret-safe errors, into an SDK. The extension would keep binding, lifecycle, concurrency, and batching.</li>
+<li><strong>Rich client bindings.</strong> Bind directly to generated connector clients, similar to Storage client bindings.</li>
+<li><strong>Service-owned failure handling.</strong> Integrate delivery count, dead-lettering, and failed-message observability after Connector Namespace publishes those contracts, without inferring them client-side.</li>
+<li><strong>Scaler failure semantics.</strong> Distinguish "depth unavailable" from "empty queue" in the scale-controller contract (<a href="https://github.com/Azure/azure-functions-connector-extension/issues/44">#44</a>).</li>
+</ul>
+<hr />
+<h2 id="further-reading">Further reading<a class="headerlink" href="#further-reading" title="Permanent link">#</a></h2>
+<ul>
+<li><a href="https://github.com/Azure/azure-functions-connector-extension/blob/main/README.md">Repository README</a></li>
+<li><a href="https://github.com/Azure/azure-functions-connector-extension/blob/main/docs/connector-trigger-poll-delivery-design.md">Poll delivery design</a></li>
+<li><a href="https://github.com/Azure/azure-functions-connector-extension/blob/main/docs/connector-poll-concurrency-visual-guide.md">Poll concurrency visual guide</a></li>
+<li><a href="https://github.com/Azure/azure-functions-connector-extension/blob/main/docs/connector-trigger-configuration.md">Trigger configuration reference</a></li>
+<li><a href="https://github.com/Azure/azure-functions-connector-extension/blob/main/docs/operations-functions-match.md">Operations to Functions payload reference</a></li>
+<li><a href="https://learn.microsoft.com/azure/azure-functions/functions-connectors-overview">Azure Functions connectors overview on Microsoft Learn</a></li>
+</ul>
+  </article>
+</div>
+<footer>Azure Functions Connector Extension &middot; <a href="https://github.com/Azure/azure-functions-connector-extension">github.com/Azure/azure-functions-connector-extension</a></footer>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "default", securityLevel: "strict" });
+</script>
+</body>
+</html>
