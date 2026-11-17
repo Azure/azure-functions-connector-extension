@@ -43,7 +43,7 @@ public string OnNewEmail(
 }
 ```
 
-The sample references the repository-local Connector worker extension and `Azure.Connectors.Sdk` `0.14.0-preview.1`.
+The sample references the repository-local Connector worker extension and `Azure.Connectors.Sdk` `1.0.0`.
 
 ## Local callback test
 

@@ -95,7 +95,7 @@
 | `TriggeruserDeleted` | — | — | — |
 | `TriggeruserUpdated` | — | — | — |
 
-### Act!
+### Act
 
 **Connector ID:** `act`
 
@@ -267,6 +267,38 @@
 | [`GetMessageFromQueue`](https://learn.microsoft.com/connectors/amazonsqs/#when-a-message-is-received-from-the-sqs-queue) | — | — | — |
 | [`GetMessagesFromQueue`](https://learn.microsoft.com/connectors/amazonsqs/#when-messages-are-received-from-the-sqs-queue) | — | — | — |
 
+### ancoreMate Apps
+
+**Connector ID:** `ancoremateapps`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`WhenAppCreated`](https://learn.microsoft.com/connectors/ancoremateapps/#when-an-app-is-created) | — | — | — |
+| [`WhenAppDataUpdated`](https://learn.microsoft.com/connectors/ancoremateapps/#when-the-data-model-of-an-app-changes) | — | — | — |
+| [`WhenAppExported`](https://learn.microsoft.com/connectors/ancoremateapps/#when-an-app-is-exported) | — | — | — |
+| [`WhenAppPublished`](https://learn.microsoft.com/connectors/ancoremateapps/#when-an-app-is-published) | — | — | — |
+
+### ancoreMate Automations
+
+**Connector ID:** `ancoremateautomation`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`WhenAutomationCreated`](https://learn.microsoft.com/connectors/ancoremateautomation/#when-an-automation-is-created) | — | — | — |
+| [`WhenAutomationDeleted`](https://learn.microsoft.com/connectors/ancoremateautomation/#when-an-automation-is-deleted) | — | — | — |
+| [`WhenAutomationRunEnded`](https://learn.microsoft.com/connectors/ancoremateautomation/#when-an-automation-run-ends) | — | — | — |
+| [`WhenAutomationRunFailed`](https://learn.microsoft.com/connectors/ancoremateautomation/#when-an-automation-run-fails) | — | — | — |
+| [`WhenAutomationRunStarted`](https://learn.microsoft.com/connectors/ancoremateautomation/#when-an-automation-run-starts) | — | — | — |
+| [`WhenAutomationUpdated`](https://learn.microsoft.com/connectors/ancoremateautomation/#when-an-automation-is-updated) | — | — | — |
+
+### ancoreMate Reloads
+
+**Connector ID:** `ancorematereloads`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`WhenAppReloadFinished`](https://learn.microsoft.com/connectors/ancorematereloads/#when-an-app-reload-finishes) | — | — | — |
+
 ### Annature (Independent Publisher)
 
 **Connector ID:** `annatureip`
@@ -429,15 +461,7 @@
 
 ### Autenti E-Signature Workflow
 
-**Connector ID:** `autentiesignature`
-
-| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
-| --- | --- | --- | --- |
-| `Document_change` | — | — | — |
-
-### Autenti E-Signature Workflow
-
-**Connector ID:** `autentiesignaturewor`
+**Connector IDs:** `autentiesignature`, `autentiesignaturewor`
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
@@ -479,13 +503,13 @@
 
 **Connector ID:** `azureblob`
 
-**Type imports:** .NET `Azure.Connectors.Sdk.AzureBlob.Models`; TypeScript `@azure/connectors/generated/AzureblobExtensions`
+**Type imports:** .NET `Azure.Connectors.Sdk.AzureBlob.Models`; TypeScript `@azure/connectors/generated/AzureBlobExtensions`
 
-[.NET sample](https://github.com/Azure-Samples/functions-connectors-net/blob/main/azureblobApp/polling/BlobFunctions.cs) · [Python sample](https://github.com/Azure-Samples/functions-connectors-python/blob/main/azureblobApp/polling/function_app.py) · [TypeScript sample](https://github.com/Azure-Samples/functions-connectors-typescript/blob/main/azureblobApp/src/functions/onAzureBlobUpdatedFile.ts)
+[.NET sample](https://github.com/Azure-Samples/functions-connectors-net/blob/main/azureblobApp/polling/BlobFunctions.cs) · [Python sample](https://github.com/Azure-Samples/functions-connectors-python/blob/main/azureblobApp/polling/function_app.py) · [TypeScript sample](https://github.com/Azure-Samples/functions-connectors-typescript/blob/main/azureblobApp/polling/src/functions/onAzureBlobUpdatedFile.ts)
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`OnUpdatedFiles_V2`](https://learn.microsoft.com/connectors/azureblob/#when-a-blob-is-added-or-modified-%28properties-only%29-%28v2%29) | `AzureBlobOnUpdatedFilesTriggerPayload` (item: `BlobMetadata`) | — | `AzureblobOnUpdatedFilesTriggerPayload` (item: `BlobMetadata`) |
+| [`OnUpdatedFiles_V2`](https://learn.microsoft.com/connectors/azureblob/#when-a-blob-is-added-or-modified-%28properties-only%29-%28v2%29) | `AzureBlobOnUpdatedFilesTriggerPayload` (item: `BlobMetadata`) | — | `AzureBlobOnUpdatedFilesTriggerPayload` (item: `BlobMetadata`) |
 
 ### Azure Communication Services SMS Events
 
@@ -508,9 +532,11 @@
 
 **Connector ID:** `azureeventgrid`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.AzureEventGrid.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`CreateSubscription`](https://learn.microsoft.com/connectors/azureeventgrid/#when-a-resource-event-occurs) | — | — | — |
+| [`CreateSubscription`](https://learn.microsoft.com/connectors/azureeventgrid/#when-a-resource-event-occurs) | `AzureEventGridOnCreateSubscriptionTriggerPayload` (item: `EventSchemaNotificationItem`) | — | — |
 
 ### Azure IoT Central V2
 
@@ -524,9 +550,11 @@
 
 **Connector ID:** `azureiotcentral`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.AzureIoTCentral.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`Workflow_CreateTrigger`](https://learn.microsoft.com/connectors/azureiotcentral/#when-a-rule-is-fired) | — | — | — |
+| [`Workflow_CreateTrigger`](https://learn.microsoft.com/connectors/azureiotcentral/#when-a-rule-is-fired) | `AzureIoTCentralOnWorkflowCreateTriggerPayload` (item: `WebhookActionBodyNotification`) | — | — |
 
 ### Azure Queues
 
@@ -639,8 +667,9 @@
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
+| [`OnNewFile`](https://learn.microsoft.com/connectors/box/#when-a-file-is-created-%5Bdeprecated%5D) | — | — | — |
 | [`OnNewFilesV2`](https://learn.microsoft.com/connectors/box/#when-a-file-is-created-%28properties-only%29-%28v2%29) | `BoxOnNewFilesTriggerPayload` (item: `BlobMetadata`) | — | `BoxOnNewFilesTriggerPayload` (item: `BlobMetadata`) |
-| [`OnUpdatedFiles`](https://learn.microsoft.com/connectors/box/#when-a-file-is-modified-%28properties-only%29) | — | — | — |
+| [`OnUpdatedFile`](https://learn.microsoft.com/connectors/box/#when-a-file-is-modified-%5Bdeprecated%5D) | — | — | — |
 | [`OnUpdatedFilesV2`](https://learn.microsoft.com/connectors/box/#when-a-file-is-modified-%28properties-only%29-%28v2%29-%28preview%29) | `BoxOnUpdatedFilesTriggerPayload` (item: `BlobMetadata`) | — | `BoxOnUpdatedFilesTriggerPayload` (item: `BlobMetadata`) |
 
 ### bttn
@@ -667,6 +696,14 @@
 | --- | --- | --- | --- |
 | [`TrigPendingUpdates`](https://learn.microsoft.com/connectors/buffer/#when-an-update-is-pending) | — | — | — |
 | [`TrigSentUpdates`](https://learn.microsoft.com/connectors/buffer/#when-an-update-is-shared) | — | — | — |
+
+### Business Box
+
+**Connector ID:** `businessbox`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`OnBookingEvent`](https://learn.microsoft.com/connectors/businessbox/#when-a-booking-event-occurs) | — | — | — |
 
 ### Businessmap
 
@@ -722,7 +759,6 @@
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
 | [`OnNewOpportunity`](https://learn.microsoft.com/connectors/capsulecrm/#when-an-opportunity-is-created) | — | — | — |
-| [`OnNewParty`](https://learn.microsoft.com/connectors/capsulecrm/#when-a-party-is-created) | — | — | — |
 | [`OnNewPartyV2`](https://learn.microsoft.com/connectors/capsulecrm/#when-a-party-is-created-%28v2%29-%28preview%29) | — | — | — |
 | [`OnNewTask`](https://learn.microsoft.com/connectors/capsulecrm/#when-a-task-is-created) | — | — | — |
 | [`OnUpdateOpportunity`](https://learn.microsoft.com/connectors/capsulecrm/#when-an-opportunity-is-updated) | — | — | — |
@@ -762,21 +798,12 @@
 
 ### Cireson Service Manager Portal
 
-**Connector ID:** `ciresonservicemanage`
+**Connector IDs:** `ciresonservicemanage`, `ciresonservicemanagerportal`
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
 | [`CreateActionLogWebhook`](https://learn.microsoft.com/connectors/ciresonservicemanage/#when-a-new-comment-is-added) | — | — | — |
 | [`CreateWebhook`](https://learn.microsoft.com/connectors/ciresonservicemanage/#when-a-new-work-item-is-created) | — | — | — |
-
-### Cireson Service Manager Portal
-
-**Connector ID:** `ciresonservicemanagerportal`
-
-| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
-| --- | --- | --- | --- |
-| `CreateActionLogWebhook` | — | — | — |
-| `CreateWebhook` | — | — | — |
 
 ### CivicPlus Transform
 
@@ -805,9 +832,11 @@
 
 **Connector ID:** `clicksendsms`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.ClickSendSms.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`sms_inbound_automation`](https://learn.microsoft.com/connectors/clicksendsms/#sms-inbound-automation) | — | — | — |
+| [`sms_inbound_automation`](https://learn.microsoft.com/connectors/clicksendsms/#sms-inbound-automation) | `ClickSendSmsOnSmsInboundAutomationTriggerPayload` (item: `SmsInboundAutomationNotification`) | — | — |
 
 ### Cloud BOT
 
@@ -988,9 +1017,11 @@
 
 **Connector ID:** `dataflowssms`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.DataFlowsSms.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`RegisterWebhook`](https://learn.microsoft.com/connectors/dataflowssms/#when-sms-received) | — | — | — |
+| [`RegisterWebhook`](https://learn.microsoft.com/connectors/dataflowssms/#when-sms-received) | `DataFlowsSmsOnRegisterWebhookTriggerPayload` (item: `RegisterWebhookNotification`) | — | — |
 
 ### DataScope Forms
 
@@ -1090,11 +1121,13 @@
 
 **Connector ID:** `docusign`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.Docusign.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
 | [`CreateHookEnvelopeV3`](https://learn.microsoft.com/connectors/docusign/#when-an-envelope-status-changes-%28connect%29-%28v3%29) | — | — | — |
-| [`CreateHookEnvelopeV4`](https://learn.microsoft.com/connectors/docusign/#when-a-docusign-connect-event-occurs-%28account-level%29) | — | — | — |
-| [`CreateOrgHookEnvelope`](https://learn.microsoft.com/connectors/docusign/#when-a-docusign-connect-event-occurs-%28organization-level%29) | — | — | — |
+| [`CreateHookEnvelopeV4`](https://learn.microsoft.com/connectors/docusign/#when-a-docusign-connect-event-occurs-%28account-level%29) | `DocusignOnCreateHookEnvelopeTriggerPayload` (item: `WebhookEnvelopeResponseNotification`) | — | — |
+| [`CreateOrgHookEnvelope`](https://learn.microsoft.com/connectors/docusign/#when-a-docusign-connect-event-occurs-%28organization-level%29) | `DocusignOnCreateOrgHookEnvelopeTriggerPayload` (item: `WebhookOrganizationResponseNotification`) | — | — |
 
 ### Docusign Demo
 
@@ -1138,6 +1171,15 @@
 | [`CreateSalesDocumentApprovalWebHookV3`](https://learn.microsoft.com/connectors/dynamicssmbsaas/#when-a-sales-document-approval-is-requested-%28v3%29) | — | — | — |
 | [`CreateVendorApprovalWebHookV3`](https://learn.microsoft.com/connectors/dynamicssmbsaas/#when-a-vendor-approval-is-requested-%28v3%29) | — | — | — |
 
+### Dynamics 365 Connector for Service Bus
+
+**Connector ID:** `crmservicebus`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| `GetCrmMessageFromQueue` | — | — | — |
+| `GetCrmMessageFromTopic` | — | — | — |
+
 ### Dynamics 365 Customer Insights
 
 **Connector ID:** `customerinsights`
@@ -1150,6 +1192,16 @@
 | [`GetOnFullDagRefreshCompleted`](https://learn.microsoft.com/connectors/customerinsights/#triggers-a-flow-when-a-full-refresh-of-customer-insights-is-completed) | — | — | — |
 | [`GetOnProcessCompleted`](https://learn.microsoft.com/connectors/customerinsights/#triggers-a-flow-when-a-process-in-customer-insights-is-completed) | — | — | — |
 | [`GetOnSegmentUpdated`](https://learn.microsoft.com/connectors/customerinsights/#triggers-a-flow-when-a-segment-threshold-is-crossed) | — | — | — |
+
+### Dynamics NAV
+
+**Connector ID:** `dynamicsnavision`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`GetOnDeletedItems`](https://learn.microsoft.com/connectors/dynamicsnavision/#when-a-record-is-deleted-%5Bdeprecated%5D) | — | — | — |
+| [`GetOnNewItems`](https://learn.microsoft.com/connectors/dynamicsnavision/#when-a-record-is-created-%5Bdeprecated%5D) | — | — | — |
+| [`GetOnUpdatedItems`](https://learn.microsoft.com/connectors/dynamicsnavision/#when-a-record-is-modified-%5Bdeprecated%5D) | — | — | — |
 
 ## E
 
@@ -1244,9 +1296,11 @@
 
 **Connector ID:** `elfsquaddata`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.ElfsquadData.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`create_trigger`](https://learn.microsoft.com/connectors/elfsquaddata/#custom-trigger) | — | — | — |
+| [`create_trigger`](https://learn.microsoft.com/connectors/elfsquaddata/#custom-trigger) | `ElfsquadDataOnCreateTriggerPayload` (item: `CreateTriggerNotification`) | — | — |
 
 ### Elfsquad Product Configurator
 
@@ -1287,6 +1341,14 @@
 | --- | --- | --- | --- |
 | [`Trigr_ManageWebHook`](https://learn.microsoft.com/connectors/encodiangeneral/#when-a-user-runs-a-trigr) | — | — | — |
 
+### Encodian - Sign
+
+**Connector ID:** `encodiantrigr`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`Sign_SignManageWebHookAsync`](https://learn.microsoft.com/connectors/encodiantrigr/#envelope---on-event) | — | — | — |
+
 ### Entegrations.io
 
 **Connector ID:** `entegrations`
@@ -1323,15 +1385,23 @@
 | --- | --- | --- | --- |
 | [`InviteCreated`](https://learn.microsoft.com/connectors/envoy/#invite-created-trigger) | — | — | — |
 
+### Ethereum Blockchain
+
+**Connector ID:** `blockchainethereum`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`OnNewEvent`](https://learn.microsoft.com/connectors/blockchainethereum/#when-a-smart-contract-event-occurs-%5Bdeprecated%5D) | — | — | — |
+
 ### Event Hubs
 
 **Connector ID:** `eventhubs`
 
-**Type imports:** .NET `Azure.Connectors.Sdk.Eventhubs.Models`; TypeScript `@azure/connectors/generated/EventhubsExtensions`
+**Type imports:** .NET `Azure.Connectors.Sdk.EventHubs.Models`; TypeScript `@azure/connectors/generated/EventHubsExtensions`
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`OnNewEvents`](https://learn.microsoft.com/connectors/eventhubs/#when-events-are-available-in-event-hub) | `EventHubsOnNewEventsTriggerPayload` (item: `Event`) | — | `EventhubsOnNewEventsTriggerPayload` (item: `Event`) |
+| [`OnNewEvents`](https://learn.microsoft.com/connectors/eventhubs/#when-events-are-available-in-event-hub) | `EventHubsOnNewEventsTriggerPayload` (item: `Event`) | — | `EventHubsOnNewEventsTriggerPayload` (item: `Event`) |
 
 ### Event Tickets
 
@@ -1353,7 +1423,9 @@
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
+| [`OnNewEvent`](https://learn.microsoft.com/connectors/eventbrite/#when-an-event-is-created-%5Bdeprecated%5D) | — | — | — |
 | [`OnNewEventV2`](https://learn.microsoft.com/connectors/eventbrite/#when-an-event-is-created-%28v2%29) | `EventbriteOnNewEventTriggerPayload` (item: `JsonElement?`) | — | `EventbriteOnNewEventTriggerPayload` (item: `Record<string, unknown>`) |
+| [`OnOrderChanged`](https://learn.microsoft.com/connectors/eventbrite/#when-an-order-changes-%5Bdeprecated%5D) | — | — | — |
 | [`OnOrderChangedV2`](https://learn.microsoft.com/connectors/eventbrite/#when-an-order-changes-%28v2%29) | `EventbriteOnOrderChangedTriggerPayload` (item: `JsonElement?`) | — | `EventbriteOnOrderChangedTriggerPayload` (item: `Record<string, unknown>`) |
 
 ### Evocom
@@ -1382,6 +1454,17 @@
 | [`NewOrUpdatedProjects`](https://learn.microsoft.com/connectors/ewaycrm/#new-or-updated-projects) | — | — | — |
 | [`NewOrUpdatedTasks`](https://learn.microsoft.com/connectors/ewaycrm/#new-or-updated-tasks) | — | — | — |
 
+### Exact Online Premium
+
+**Connector ID:** `exactonlinepremium`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`SubscribeAccountChanged`](https://learn.microsoft.com/connectors/exactonlinepremium/#when-an-account-is-created-or-changed-%5Bdeprecated%5D) | — | — | — |
+| [`SubscribeOpportunityChanged`](https://learn.microsoft.com/connectors/exactonlinepremium/#when-an-opportunity-is-created-or-changed-%5Bdeprecated%5D) | — | — | — |
+| [`SubscribeProjectChanged`](https://learn.microsoft.com/connectors/exactonlinepremium/#when-a-project-is-created-or-changed-%5Bdeprecated%5D) | — | — | — |
+| [`SubscribeSalesOrderChanged`](https://learn.microsoft.com/connectors/exactonlinepremium/#when-a-sales-order-is-created-or-changed-%5Bdeprecated%5D) | — | — | — |
+
 ## F
 
 ### Feathery Forms
@@ -1407,9 +1490,11 @@
 
 **Connector ID:** `dynamicsax`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.DynamicsAX.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`SubscribeOnABusinessEvent`](https://learn.microsoft.com/connectors/dynamicsax/#when-a-business-event-occurs) | — | — | — |
+| [`SubscribeOnABusinessEvent`](https://learn.microsoft.com/connectors/dynamicsax/#when-a-business-event-occurs) | `DynamicsAXOnSubscribeOnABusinessEventTriggerPayload` (item: `ObjectNotification`) | — | — |
 
 ### Finalcad One Connect 4.0
 
@@ -1484,6 +1569,14 @@
 | [`UpdateOpportunityWebhook`](https://learn.microsoft.com/connectors/forcemanagercrm/#when-an-opportunity-is-updated) | — | — | — |
 | [`UpdateSalesOrderWebhook`](https://learn.microsoft.com/connectors/forcemanagercrm/#when-an-sales-order-is-updated) | — | — | — |
 
+### Formfeed
+
+**Connector ID:** `formfeed`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`WhenARenderFinishes`](https://learn.microsoft.com/connectors/formfeed/#when-a-render-or-batch-finishes) | — | — | — |
+
 ### Formspace
 
 **Connector ID:** `formspace`
@@ -1497,9 +1590,11 @@
 
 **Connector ID:** `formstackforms`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.FormstackForms.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`FormstackFormSubmitted`](https://learn.microsoft.com/connectors/formstackforms/#triggers-when-a-form-is-submitted) | — | — | — |
+| [`FormstackFormSubmitted`](https://learn.microsoft.com/connectors/formstackforms/#triggers-when-a-form-is-submitted) | `FormstackFormsOnFormstackFormSubmittedTriggerPayload` (item: `FormstackFormSubmittedNotification`) | — | — |
 
 ### Foxit eSign
 
@@ -1541,11 +1636,12 @@
 
 **Connector ID:** `freshservice`
 
-**Type imports:** .NET `Azure.Connectors.Sdk.FreshService.Models`; TypeScript `@azure/connectors/generated/FreshserviceExtensions`
+**Type imports:** .NET `Azure.Connectors.Sdk.Freshservice.Models`; TypeScript `@azure/connectors/generated/FreshserviceExtensions`
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`OnTicketCreatedV2`](https://learn.microsoft.com/connectors/freshservice/#when-a-ticket-is-created-%28v2%29) | `FreshServiceOnTicketCreatedTriggerPayload` (item: `ListTicketResponse`) | — | `FreshserviceOnTicketCreatedTriggerPayload` (item: `ListTicketResponse`) |
+| [`OnTicketCreated`](https://learn.microsoft.com/connectors/freshservice/#when-a-ticket-is-created-%5Bdeprecated%5D) | — | — | — |
+| [`OnTicketCreatedV2`](https://learn.microsoft.com/connectors/freshservice/#when-a-ticket-is-created-%28v2%29) | `FreshserviceOnTicketCreatedTriggerPayload` (item: `ListTicketResponse`) | — | `FreshserviceOnTicketCreatedTriggerPayload` (item: `ListTicketResponse`) |
 
 ### FTP
 
@@ -1555,6 +1651,7 @@
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
+| [`OnUpdatedFile`](https://learn.microsoft.com/connectors/ftp/#when-a-file-is-added-or-modified-%5Bdeprecated%5D) | — | — | — |
 | [`OnUpdatedFiles`](https://learn.microsoft.com/connectors/ftp/#when-a-file-is-added-or-modified-%28properties-only%29) | `FtpOnUpdatedFilesTriggerPayload` (item: `BlobMetadata`) | — | `FtpOnUpdatedFilesTriggerPayload` (item: `BlobMetadata`) |
 
 ### Fulcrum

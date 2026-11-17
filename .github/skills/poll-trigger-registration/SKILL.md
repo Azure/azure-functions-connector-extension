@@ -208,7 +208,7 @@ The resulting binding is:
     TriggerConfigName = "%OnNewEmailTriggerConfigName%")]
 ```
 
-For Python 3.13+ with `azure-functions>=2.4.0b1`, use the native decorator:
+For Python 3.13+ with `azure-functions>=2.4.0`, use the native decorator:
 
 ```python
 from typing import List
@@ -225,7 +225,7 @@ def on_new_email_poll(payloads: List[str]) -> None:
     ...
 ```
 
-Here `app` is a `func.FunctionApp()` and `func` is `azure.functions`. Use `typing.List[str]`: the 2.4.0b1 SDK type check does not accept the built-in `list[str]` annotation. Each list element is one Poll event's JSON, not one email from an event's body. For single-event delivery, use `func.Cardinality.ONE`, a `str` parameter, and `max_batch_size=1`. Omit `max_concurrent_calls` for batched delivery.
+Here `app` is a `func.FunctionApp()` and `func` is `azure.functions`. Use `typing.List[str]`: the 2.4.0 SDK type check does not accept the built-in `list[str]` annotation. Each list element is one Poll event's JSON, not one email from an event's body. For single-event delivery, use `func.Cardinality.ONE`, a `str` parameter, and `max_batch_size=1`. Omit `max_concurrent_calls` for batched delivery.
 
 ## Step 4: Configure Identity and Access
 

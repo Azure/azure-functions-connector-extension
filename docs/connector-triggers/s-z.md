@@ -60,18 +60,18 @@
 
 **Connector ID:** `servicebus`
 
-**Type imports:** .NET `Azure.Connectors.Sdk.Servicebus.Models`; TypeScript `@azure/connectors/generated/ServicebusExtensions`
+**Type imports:** .NET `Azure.Connectors.Sdk.ServiceBus.Models`; TypeScript `@azure/connectors/generated/ServiceBusExtensions`
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
 | [`GetMessageFromQueue`](https://learn.microsoft.com/connectors/servicebus/#when-a-message-is-received-in-a-queue-%28auto-complete%29) | — | — | — |
 | [`GetMessageFromTopic`](https://learn.microsoft.com/connectors/servicebus/#when-a-message-is-received-in-a-topic-subscription-%28auto-complete%29) | — | — | — |
-| [`GetMessagesFromQueue`](https://learn.microsoft.com/connectors/servicebus/#when-one-or-more-messages-arrive-in-a-queue-%28auto-complete%29) | `ServicebusOnGetMessagesFromQueueTriggerPayload` (item: `ServiceBusMessage`) | — | `ServicebusOnGetMessagesFromQueueTriggerPayload` (item: `ServiceBusMessage`) |
-| [`GetMessagesFromTopic`](https://learn.microsoft.com/connectors/servicebus/#when-one-or-more-messages-arrive-in-a-topic-%28auto-complete%29) | `ServicebusOnGetMessagesFromTopicTriggerPayload` (item: `ServiceBusMessage`) | — | `ServicebusOnGetMessagesFromTopicTriggerPayload` (item: `ServiceBusMessage`) |
+| [`GetMessagesFromQueue`](https://learn.microsoft.com/connectors/servicebus/#when-one-or-more-messages-arrive-in-a-queue-%28auto-complete%29) | `ServiceBusOnGetMessagesFromQueueTriggerPayload` (item: `ServiceBusMessage`) | — | `ServiceBusOnGetMessagesFromQueueTriggerPayload` (item: `ServiceBusMessage`) |
+| [`GetMessagesFromTopic`](https://learn.microsoft.com/connectors/servicebus/#when-one-or-more-messages-arrive-in-a-topic-%28auto-complete%29) | `ServiceBusOnGetMessagesFromTopicTriggerPayload` (item: `ServiceBusMessage`) | — | `ServiceBusOnGetMessagesFromTopicTriggerPayload` (item: `ServiceBusMessage`) |
 | [`GetNewMessageFromQueueWithPeekLock`](https://learn.microsoft.com/connectors/servicebus/#when-a-message-is-received-in-a-queue-%28peek-lock%29) | — | — | — |
 | [`GetNewMessageFromTopicWithPeekLock`](https://learn.microsoft.com/connectors/servicebus/#when-a-message-is-received-in-a-topic-subscription-%28peek-lock%29) | — | — | — |
-| [`GetNewMessagesFromQueueWithPeekLock`](https://learn.microsoft.com/connectors/servicebus/#when-one-or-more-messages-arrive-in-a-queue-%28peek-lock%29) | `ServicebusOnGetNewMessagesFromQueueWithPeekLockTriggerPayload` (item: `ServiceBusMessage`) | — | `ServicebusOnGetNewMessagesFromQueueWithPeekLockTriggerPayload` (item: `ServiceBusMessage`) |
-| [`GetNewMessagesFromTopicWithPeekLock`](https://learn.microsoft.com/connectors/servicebus/#when-one-or-more-messages-arrive-in-a-topic-%28peek-lock%29) | `ServicebusOnGetNewMessagesFromTopicWithPeekLockTriggerPayload` (item: `ServiceBusMessage`) | — | `ServicebusOnGetNewMessagesFromTopicWithPeekLockTriggerPayload` (item: `ServiceBusMessage`) |
+| [`GetNewMessagesFromQueueWithPeekLock`](https://learn.microsoft.com/connectors/servicebus/#when-one-or-more-messages-arrive-in-a-queue-%28peek-lock%29) | `ServiceBusOnGetNewMessagesFromQueueWithPeekLockTriggerPayload` (item: `ServiceBusMessage`) | — | `ServiceBusOnGetNewMessagesFromQueueWithPeekLockTriggerPayload` (item: `ServiceBusMessage`) |
+| [`GetNewMessagesFromTopicWithPeekLock`](https://learn.microsoft.com/connectors/servicebus/#when-one-or-more-messages-arrive-in-a-topic-%28peek-lock%29) | `ServiceBusOnGetNewMessagesFromTopicWithPeekLockTriggerPayload` (item: `ServiceBusMessage`) | — | `ServiceBusOnGetNewMessagesFromTopicWithPeekLockTriggerPayload` (item: `ServiceBusMessage`) |
 
 ### SerwerSMS
 
@@ -80,6 +80,15 @@
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
 | [`new_answer`](https://learn.microsoft.com/connectors/serwersms/#when-new-sms-message-is-received) | — | — | — |
+
+### SFTP
+
+**Connector ID:** `sftp`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`OnUpdatedFile`](https://learn.microsoft.com/connectors/sftp/#when-a-file-is-added-or-modified-%5Bdeprecated%5D) | — | — | — |
+| [`OnUpdatedFiles`](https://learn.microsoft.com/connectors/sftp/#when-a-file-is-added-or-modified-%28properties-only%29-%5Bdeprecated%5D) | — | — | — |
 
 ### SFTP - SSH
 
@@ -102,13 +111,15 @@
 
 **Connector ID:** `shifts`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.Shifts.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`TriggerForOfferShiftRequests`](https://learn.microsoft.com/connectors/shifts/#when-an-offer-shift-request-is-created%2C-updated-or-deleted) | — | — | — |
-| [`TriggerForOpenShiftChangeRequests`](https://learn.microsoft.com/connectors/shifts/#when-an-open-shift-request-is-created%2C-updated-or-deleted) | — | — | — |
-| [`TriggerForShifts`](https://learn.microsoft.com/connectors/shifts/#when-a-shift-is-created%2C-updated-or-deleted) | — | — | — |
-| [`TriggerForSwapShiftsChangeRequests`](https://learn.microsoft.com/connectors/shifts/#when-a-swap-shifts-request-is-created%2C-updated-or-deleted) | — | — | — |
-| [`TriggerForTimeOffRequests`](https://learn.microsoft.com/connectors/shifts/#when-a-time-off-request-is-created%2C-updated-or-deleted) | — | — | — |
+| [`TriggerForOfferShiftRequests`](https://learn.microsoft.com/connectors/shifts/#when-an-offer-shift-request-is-created%2C-updated-or-deleted) | `ShiftsOnTriggerForOfferShiftRequestsTriggerPayload` (item: `WebhookNotificationEntityNotification`) | — | — |
+| [`TriggerForOpenShiftChangeRequests`](https://learn.microsoft.com/connectors/shifts/#when-an-open-shift-request-is-created%2C-updated-or-deleted) | `ShiftsOnTriggerForOpenShiftChangeRequestsTriggerPayload` (item: `WebhookNotificationEntityNotification`) | — | — |
+| [`TriggerForShifts`](https://learn.microsoft.com/connectors/shifts/#when-a-shift-is-created%2C-updated-or-deleted) | `ShiftsOnTriggerForShiftsTriggerPayload` (item: `WebhookNotificationEntityNotification`) | — | — |
+| [`TriggerForSwapShiftsChangeRequests`](https://learn.microsoft.com/connectors/shifts/#when-a-swap-shifts-request-is-created%2C-updated-or-deleted) | `ShiftsOnTriggerForSwapShiftsChangeRequestsTriggerPayload` (item: `WebhookNotificationEntityNotification`) | — | — |
+| [`TriggerForTimeOffRequests`](https://learn.microsoft.com/connectors/shifts/#when-a-time-off-request-is-created%2C-updated-or-deleted) | `ShiftsOnTriggerForTimeOffRequestsTriggerPayload` (item: `WebhookNotificationEntityNotification`) | — | — |
 
 ### Shopranos
 
@@ -560,9 +571,11 @@
 
 **Connector ID:** `textrequest`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.TextRequest.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`TextingWebhook`](https://learn.microsoft.com/connectors/textrequest/#triggers-when-a-text-is-sent-or-received) | — | — | — |
+| [`TextingWebhook`](https://learn.microsoft.com/connectors/textrequest/#triggers-when-a-text-is-sent-or-received) | `TextRequestOnTextingWebhookTriggerPayload` (item: `TextingWebhookNotification`) | — | — |
 
 ### The Events Calendar
 
@@ -694,9 +707,7 @@
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`OnNewCardInBoardV2`](https://learn.microsoft.com/connectors/trello/#when-a-new-card-is-added-to-a-board-%28v2%29) | — | — | — |
 | [`OnNewCardInBoardV3`](https://learn.microsoft.com/connectors/trello/#when-a-new-card-is-added-to-a-board-%28v3%29-%28preview%29) | `TrelloOnNewCardInBoardTriggerPayload` (item: `CardInAction`) | — | `TrelloOnNewCardInBoardTriggerPayload` (item: `CardInAction`) |
-| [`OnNewCardInListV2`](https://learn.microsoft.com/connectors/trello/#when-a-new-card-is-added-to-a-list-%28v2%29) | — | — | — |
 | [`OnNewCardInListV3`](https://learn.microsoft.com/connectors/trello/#when-a-new-card-is-added-to-a-list-%28v3%29-%28preview%29) | `TrelloOnNewCardInListTriggerPayload` (item: `CardInAction`) | — | `TrelloOnNewCardInListTriggerPayload` (item: `CardInAction`) |
 
 ### Tribal - Maytas
@@ -788,10 +799,12 @@
 
 **Connector ID:** `typeform`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.Typeform.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`NewResponseWebhook`](https://learn.microsoft.com/connectors/typeform/#when-a-response-is-submitted-%28preview%29) | — | — | — |
-| [`NewResponseWebhook_V2`](https://learn.microsoft.com/connectors/typeform/#when-a-response-is-submitted-%28preview%29) | — | — | — |
+| [`NewResponseWebhook_V2`](https://learn.microsoft.com/connectors/typeform/#when-a-response-is-submitted-%28preview%29) | `TypeformOnNewResponseWebhookTriggerPayload` (item: `WebhookPayloadNotification`) | — | — |
+| [`TrigNewResponse`](https://learn.microsoft.com/connectors/typeform/#when-a-response-is-submitted-%5Bdeprecated%5D) | — | — | — |
 
 ## U
 
@@ -916,28 +929,32 @@
 
 **Connector ID:** `waywedo`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.WayWeDo.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`Checklist_Create_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-checklist-instance-is-started) | — | — | — |
-| [`Checklist_Step_Completed_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-checklist-step-is-completed) | — | — | — |
-| [`Finish_Checklist_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-checklist-is-finished) | — | — | — |
-| [`Generate_Acceptance_PDF_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-procedure-is-accepted) | — | — | — |
-| [`Invite_Supervisor_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-supervisor-is-invited) | — | — | — |
-| [`New_Comment_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-comment-is-added-to-a-checklist) | — | — | — |
+| [`Checklist_Create_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-checklist-instance-is-started) | `WayWeDoOnChecklistCreateWebHookTriggerPayload` (item: `ChecklistInstanceNotification`) | — | — |
+| [`Checklist_Step_Completed_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-checklist-step-is-completed) | `WayWeDoOnChecklistStepCompletedWebHookTriggerPayload` (item: `CompletedStepNotification`) | — | — |
+| [`Finish_Checklist_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-checklist-is-finished) | `WayWeDoOnFinishChecklistWebHookTriggerPayload` (item: `ChecklistInstanceNotification`) | — | — |
+| [`Generate_Acceptance_PDF_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-procedure-is-accepted) | `WayWeDoOnGenerateAcceptancePdfWebHookTriggerPayload` (item: `ProcedureAcceptanceNotification`) | — | — |
+| [`Invite_Supervisor_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-supervisor-is-invited) | `WayWeDoOnInviteSupervisorWebHookTriggerPayload` (item: `InviteSupervisorWebHookNotification`) | — | — |
+| [`New_Comment_WebHook`](https://learn.microsoft.com/connectors/waywedo/#when-a-comment-is-added-to-a-checklist) | `WayWeDoOnNewCommentWebHookTriggerPayload` (item: `ChecklistCommentNotification`) | — | — |
 
 ### Webex
 
 **Connector ID:** `webex`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.Webex.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`MembershipsCreated`](https://learn.microsoft.com/connectors/webex/#when-a-membership-is-created) | — | — | — |
-| [`MembershipsDeleted`](https://learn.microsoft.com/connectors/webex/#when-a-membership-is-deleted) | — | — | — |
-| [`MembershipsUpdated`](https://learn.microsoft.com/connectors/webex/#when-a-membership-is-updated) | — | — | — |
-| [`MessagesCreated`](https://learn.microsoft.com/connectors/webex/#when-a-message-is-created) | — | — | — |
-| [`MessagesDeleted`](https://learn.microsoft.com/connectors/webex/#when-a-message-is-deleted) | — | — | — |
-| [`SpaceCreated`](https://learn.microsoft.com/connectors/webex/#when-a-space-is-created) | — | — | — |
-| [`SpaceUpdated`](https://learn.microsoft.com/connectors/webex/#when-a-space-is-updated) | — | — | — |
+| [`MembershipsCreated`](https://learn.microsoft.com/connectors/webex/#when-a-membership-is-created) | `WebexOnMembershipsCreatedTriggerPayload` (item: `MembershipsCreatedNotification`) | — | — |
+| [`MembershipsDeleted`](https://learn.microsoft.com/connectors/webex/#when-a-membership-is-deleted) | `WebexOnMembershipsDeletedTriggerPayload` (item: `MembershipsDeletedNotification`) | — | — |
+| [`MembershipsUpdated`](https://learn.microsoft.com/connectors/webex/#when-a-membership-is-updated) | `WebexOnMembershipsUpdatedTriggerPayload` (item: `MembershipsUpdatedNotification`) | — | — |
+| [`MessagesCreated`](https://learn.microsoft.com/connectors/webex/#when-a-message-is-created) | `WebexOnMessagesCreatedTriggerPayload` (item: `MessagesCreatedNotification`) | — | — |
+| [`MessagesDeleted`](https://learn.microsoft.com/connectors/webex/#when-a-message-is-deleted) | `WebexOnMessagesDeletedTriggerPayload` (item: `MessagesDeletedNotification`) | — | — |
+| [`SpaceCreated`](https://learn.microsoft.com/connectors/webex/#when-a-space-is-created) | `WebexOnSpaceCreatedTriggerPayload` (item: `SpaceCreatedNotification`) | — | — |
+| [`SpaceUpdated`](https://learn.microsoft.com/connectors/webex/#when-a-space-is-updated) | `WebexOnSpaceUpdatedTriggerPayload` (item: `SpaceUpdatedNotification`) | — | — |
 
 ### Windows 365
 
@@ -1079,9 +1096,7 @@
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
 | [`BidirectionalMessage`](https://learn.microsoft.com/connectors/yakchat/#when-a-message-is-sent-or-received-%28preview%29) | — | — | — |
-| [`InboundMessage`](https://learn.microsoft.com/connectors/yakchat/#when-a-message-is-received) | — | — | — |
 | [`InboundMessage_V2`](https://learn.microsoft.com/connectors/yakchat/#when-a-message-is-received-%28v2%29-%28preview%29) | — | — | — |
-| [`OutboundMessage`](https://learn.microsoft.com/connectors/yakchat/#when-a-message-is-sent) | — | — | — |
 | [`OutboundMessage_V2`](https://learn.microsoft.com/connectors/yakchat/#when-a-message-is-sent-%28v2%29-%28preview%29) | — | — | — |
 
 ### Yeeflow
@@ -1186,9 +1201,11 @@
 
 **Connector ID:** `zohosign`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.ZohoSign.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`zoho-sign-triggers`](https://learn.microsoft.com/connectors/zohosign/#zoho-sign-triggers) | — | — | — |
+| [`zoho-sign-triggers`](https://learn.microsoft.com/connectors/zohosign/#zoho-sign-triggers) | `ZohoSignOnZohoSignTriggersTriggerPayload` (item: `ZohoSignTriggersNotification`) | — | — |
 
 ### zReports
 

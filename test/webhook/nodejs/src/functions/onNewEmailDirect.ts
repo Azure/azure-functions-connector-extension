@@ -1,7 +1,8 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the MIT License.
 
-import { app, InvocationContext, output } from '@azure/functions';
+import { InvocationContext, output } from '@azure/functions';
+import { connectorTrigger, ConnectorTriggerContext, GraphClientReceiveMessage } from '@azure/functions-extensions-connectors';
 
 const blobOutput = output.storageBlob({
     path: 'connector-messages/{rand-guid}.json',
@@ -9,24 +10,20 @@ const blobOutput = output.storageBlob({
 });
 
 /**
- * Sample: Direct app.connectorTrigger() usage without the extensions package.
- *
- * This demonstrates using the first-class connectorTrigger binding
- * from the core @azure/functions library. The raw trigger payload is
- * passed directly to the handler as-is (string or object).
+ * Sample: Generic registration with the connector extension.
  */
-app.connectorTrigger('OnNewEmailDirect', {
+connectorTrigger<GraphClientReceiveMessage>('OnNewEmailDirect', {
     extraOutputs: [blobOutput],
-    handler: async (triggerInput: unknown, invocationContext: InvocationContext) => {
-        invocationContext.log('OnNewEmailDirect trigger received via app.connectorTrigger().');
+    handler: async (context: ConnectorTriggerContext<GraphClientReceiveMessage>, invocationContext: InvocationContext) => {
+        invocationContext.log('OnNewEmailDirect trigger received via connectorTrigger().');
 
-        const parsed = typeof triggerInput === 'string'
-            ? JSON.parse(triggerInput) as Record<string, unknown>
-            : (triggerInput ?? {}) as Record<string, unknown>;
+        if (typeof context.rawPayload !== 'object' || context.rawPayload === null) {
+            throw new TypeError('Expected a JSON connector trigger payload object or array.');
+        }
 
-        invocationContext.log(`Raw payload: '${JSON.stringify(parsed)}'.`);
+        invocationContext.log(`Raw payload: '${JSON.stringify(context.rawPayload)}'.`);
 
         // Persist the raw payload to blob storage for auditing/replay
-        invocationContext.extraOutputs.set(blobOutput, parsed);
+        invocationContext.extraOutputs.set(blobOutput, context.rawPayload);
     },
 });

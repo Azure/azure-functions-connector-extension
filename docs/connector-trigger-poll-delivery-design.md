@@ -474,7 +474,7 @@ Batching must be explicitly enabled:
 
 - .NET isolated sets `IsBatched = true`.
 - Node.js and TypeScript set `cardinality: "many"`.
-- Python 3.13+ uses `@app.connector_trigger(cardinality=func.Cardinality.MANY, ...)` with `azure-functions>=2.4.0b1`; annotate its parameter as `typing.List[str]`, with one JSON string per Poll event.
+- Python 3.13+ uses `@app.connector_trigger(cardinality=func.Cardinality.MANY, ...)` with `azure-functions>=2.4.0`; annotate its parameter as `typing.List[str]`, with one JSON string per Poll event.
 - Generic `function.json` bindings, including PowerShell, set `"cardinality": "many"`.
 
 The effective max batch size must be compatible with the declared cardinality and resulting function parameter:

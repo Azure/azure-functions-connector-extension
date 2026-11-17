@@ -21,7 +21,7 @@ app = func.FunctionApp()
     path="connector-messages/{rand-guid}.json",
     connection="BlobStoreConnection",
 )
-def on_new_email(emails: List[office365.ClientReceiveMessage], outputblob: func.Out[str]) -> None:
+def on_new_email(emails: List[office365.GraphClientReceiveMessage], outputblob: func.Out[str]) -> None:
     """Triggered when a new email arrives in Office 365."""
     logging.info("OnNewEmail trigger received.")
 

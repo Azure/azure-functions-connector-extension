@@ -5,12 +5,12 @@ These are repository test apps; their SDK and batching requirements do not manda
 Poll is the simplest local starting point: the Function host connects outbound to the real Connector Namespace, so no public callback or dev tunnel is needed. These apps validate the same trigger from each supported language worker:
 
 - `dotnet` - .NET isolated with a typed Office 365 payload and Poll `MessageId`.
-- `nodejs` - TypeScript batched binding with Office 365 payload types from `@azure/connectors`.
+- `nodejs` - TypeScript batched binding with the Office 365 helper from `@azure/functions-extensions-connectors`.
 - `python` - Python 3.13+ with `@app.connector_trigger`, batched Poll delivery, and Office 365 models from `azure-connectors`.
 
 ## Required setup
 
-Create an authorized connector connection and an enabled Poll Trigger Config using the [Poll registration skill](../../.github/skills/poll-trigger-registration/SKILL.md). Authorize both the namespace identity and the Function/developer identity with connection-level access policies.
+Create an authorized connector connection and an enabled Poll Trigger Config using the [Poll registration skill](../../.github/skills/poll-trigger-registration/SKILL.md). Grant the Function or developer identity a connection-level access policy. The namespace identity's access is handled automatically.
 
 Each sample requires the same binding settings:
 
@@ -28,9 +28,9 @@ All three samples enable batched invocation with a maximum of 4 events and a sca
 
 `MaxConcurrentCalls` applies only to single-event delivery. Its built-in default is 16 per listener on one instance, with no CPU-core multiplier. Processing capacity remains occupied through preparation, invocation, and acknowledgement. Scaling uses `ceil(approximateQueueDepth / effectiveTarget)`, preferring a supplied runtime `InstanceConcurrency` over the configured threshold; neither batch size nor `MaxConcurrentCalls` changes the scaling formula or is changed by the runtime scaling override.
 
-An Office 365 Poll event contains an `outputs.body` that can be a single email or a `{ "value": [...] }` collection, independently of Functions invocation cardinality. The Node.js sample types both shapes using SDK models; these TypeScript types do not add runtime validation. Python uses a `typing.List[str]` parameter with one JSON string per Poll event, then uses `TriggerCallbackPayload.from_dict` to parse each event into typed `GraphClientReceiveMessage` objects, including nested attachments and sensitivity labels. One invocation can contain several Poll events, and each event can contain several emails.
+An Office 365 Poll event contains an `outputs.body` that can be a single email or a `{ "value": [...] }` collection, independently of Functions invocation cardinality. The Node.js extension normalizes both shapes across the batch into `EmailTriggerContext.emails`; TypeScript types do not add runtime validation. Python uses a `typing.List[str]` parameter with one JSON string per Poll event, then uses `TriggerCallbackPayload.from_dict` to parse each event into typed `GraphClientReceiveMessage` objects, including nested attachments and sensitivity labels. One invocation can contain several Poll events, and each event can contain several emails.
 
-The Python test app requires `azure-functions>=2.4.0b1`, which supports the Poll decorator arguments and decoding of batched `collection_string` input:
+The Python test app requires `azure-functions>=2.4.0`, which supports the Poll decorator arguments and decoding of batched `collection_string` input:
 
 ```python
 from typing import List
@@ -51,7 +51,7 @@ def on_new_email_poll(payloads: List[str]) -> None:
 
 Use snake_case decorator arguments; the SDK emits the host's camelCase binding metadata.
 
-Use `typing.List[str]` rather than the built-in `list[str]` annotation: the 2.4.0b1 binding type check accepts the former.
+Use `typing.List[str]` rather than the built-in `list[str]` annotation: the 2.4.0 binding type check accepts the former.
 
 Linked-output events are delivered one per invocation and serialized host-wide to bound memory. Their configurable download limit defaults to 100 MiB; it is not a supported payload-size or process-memory guarantee. See the [linked-output configuration](../../docs/connector-trigger-configuration.md#linked-output-download-limit) for overrides and memory considerations.
 
@@ -85,7 +85,7 @@ For local development, `Connection = ConnectorNamespace` uses the signed-in deve
 
 Use .NET SDK 10.0.100 or later, Azure Functions Core Tools v4, and Azurite. The NuGet feed is configured in the repository's `NuGet.config`.
 
-The Python Poll test app requires Python 3.13 or newer because `azure-functions` 2.4.0b1 declares that minimum Python version.
+The Node.js Poll test app requires Node.js 24 or newer for `@azure/functions-extensions-connectors` 1.0.0. The Python Poll test app requires Python 3.13 or newer because `azure-functions` 2.4.0 declares that minimum Python version.
 
 Install Python SDK and model dependencies separately with pip using the sample's `requirements.txt`. Neither an extension bundle nor the repository-local host extension build installs `azure-functions` or `azure-connectors`; bundles distribute the host extension NuGet, not Python packages. See [worker dependency and bundle configuration](../../docs/connector-trigger-configuration.md#non-net-workers).
 
@@ -132,7 +132,7 @@ Validate the typed sample code without connecting to Azure:
 
 ```powershell
 Push-Location .\test\poll\nodejs
-npm run build
+npm test
 Pop-Location
 .\test\poll\python\.venv\Scripts\python.exe -m unittest discover -s .\test\poll\python -p test_function_app.py
 ```

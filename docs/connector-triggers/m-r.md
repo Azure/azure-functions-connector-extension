@@ -65,11 +65,13 @@
 
 **Connector ID:** `microsoftbookings`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.MicrosoftBookings.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`CancelAppointment`](https://learn.microsoft.com/connectors/microsoftbookings/#when-an-appointment-is-cancelled) | — | — | — |
-| [`CreateAppointment`](https://learn.microsoft.com/connectors/microsoftbookings/#when-a-appointment-is-created) | — | — | — |
-| [`UpdateAppointment`](https://learn.microsoft.com/connectors/microsoftbookings/#when-an-appointment-is-updated) | — | — | — |
+| [`CancelAppointment`](https://learn.microsoft.com/connectors/microsoftbookings/#when-an-appointment-is-cancelled) | `MicrosoftBookingsOnCancelAppointmentTriggerPayload` (item: `AppointmentDataNotification`) | — | — |
+| [`CreateAppointment`](https://learn.microsoft.com/connectors/microsoftbookings/#when-a-appointment-is-created) | `MicrosoftBookingsOnCreateAppointmentTriggerPayload` (item: `AppointmentDataNotification`) | — | — |
+| [`UpdateAppointment`](https://learn.microsoft.com/connectors/microsoftbookings/#when-an-appointment-is-updated) | `MicrosoftBookingsOnUpdateAppointmentTriggerPayload` (item: `AppointmentDataNotification`) | — | — |
 
 ### Microsoft Defender ATP
 
@@ -80,7 +82,7 @@
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
 | [`OnNewRemediationActivity`](https://learn.microsoft.com/connectors/wdatp/#triggers-when-a-new-remediation-activity-is-created-%28preview%29) | `WdatpOnNewRemediationActivityTriggerPayload` (item: `RemediationActivity`) | — | `WdatpOnNewRemediationActivityTriggerPayload` (item: `RemediationActivity`) |
-| [`WebHooks_CreateWebHook`](https://learn.microsoft.com/connectors/wdatp/#triggers---trigger-when-new-wdatp-alert-occurs) | — | — | — |
+| [`WebHooks_CreateWebHook`](https://learn.microsoft.com/connectors/wdatp/#triggers---trigger-when-new-wdatp-alert-occurs) | `WdatpOnWebHooksCreateWebHookTriggerPayload` (item: `WebHookNotificationNotification`) | — | — |
 
 ### Microsoft Defender for Cloud Alert
 
@@ -119,9 +121,12 @@
 
 **Connector ID:** `microsoftforms`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.MicrosoftForms.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`CreateFormWebhook`](https://learn.microsoft.com/connectors/microsoftforms/#when-a-new-response-is-submitted) | — | — | — |
+| [`CreateFormWebhook`](https://learn.microsoft.com/connectors/microsoftforms/#when-a-new-response-is-submitted) | `MicrosoftFormsOnCreateFormWebhookTriggerPayload` (item: `WebhookPayloadNotificationValueItem`) | — | — |
+| [`GetFormResponses`](https://learn.microsoft.com/connectors/microsoftforms/#when-a-new-response-is-submitted-%5Bdeprecated%5D) | — | — | — |
 
 ### Microsoft Kaizala
 
@@ -160,7 +165,9 @@
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
+| [`OnNewToDo`](https://learn.microsoft.com/connectors/todo/#when-a-new-to-do-is-created-%5Bdeprecated%5D) | — | — | — |
 | [`OnNewToDoInFolderV2`](https://learn.microsoft.com/connectors/todo/#when-a-new-to-do-in-a-specific-folder-is-created-%28v2%29) | `TodoOnNewToDoInFolderTriggerPayload` (item: `ToDo`) | — | `TodoOnNewToDoInFolderTriggerPayload` (item: `ToDo`) |
+| [`OnUpdateToDo`](https://learn.microsoft.com/connectors/todo/#when-a-to-do-is-updated-%5Bdeprecated%5D) | — | — | — |
 | [`OnUpdateToDoInFolderV2`](https://learn.microsoft.com/connectors/todo/#when-a-to-do-in-a-specific-folder-is-updated-%28v2%29) | `TodoOnUpdateToDoInFolderTriggerPayload` (item: `ToDo`) | — | `TodoOnUpdateToDoInFolderTriggerPayload` (item: `ToDo`) |
 
 ### Microsoft To-Do (Consumer)
@@ -201,16 +208,18 @@
 
 **Connector ID:** `monday`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.Monday.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`WebhookAnyColumnChanges`](https://learn.microsoft.com/connectors/monday/#when-any-column-changes) | — | — | — |
-| [`WebhookChangeName`](https://learn.microsoft.com/connectors/monday/#when-an-item%27s-name-changes) | — | — | — |
-| [`WebhookChangeSubitemName`](https://learn.microsoft.com/connectors/monday/#when-a-subitem%27s-name-changes) | — | — | — |
-| [`WebhookColumnChanges`](https://learn.microsoft.com/connectors/monday/#when-a-column-changes) | — | — | — |
-| [`WebhookCreateItem`](https://learn.microsoft.com/connectors/monday/#when-an-item-is-created) | — | — | — |
-| [`WebhookCreateSubitem`](https://learn.microsoft.com/connectors/monday/#when-a-subitem-is-created) | — | — | — |
-| [`WebhookCreateUpdate`](https://learn.microsoft.com/connectors/monday/#when-a-new-update-is-posted) | — | — | — |
-| [`WebhookSubitemColumnChanges`](https://learn.microsoft.com/connectors/monday/#when-any-subitem-column-changes) | — | — | — |
+| [`WebhookAnyColumnChanges`](https://learn.microsoft.com/connectors/monday/#when-any-column-changes) | `MondayOnWebhookAnyColumnChangesTriggerPayload` (item: `WebhookAnyColumnChangesNotification`) | — | — |
+| [`WebhookChangeName`](https://learn.microsoft.com/connectors/monday/#when-an-item%27s-name-changes) | `MondayOnWebhookChangeNameTriggerPayload` (item: `WebhookChangeNameNotification`) | — | — |
+| [`WebhookChangeSubitemName`](https://learn.microsoft.com/connectors/monday/#when-a-subitem%27s-name-changes) | `MondayOnWebhookChangeSubitemNameTriggerPayload` (item: `WebhookChangeSubitemNameNotification`) | — | — |
+| [`WebhookColumnChanges`](https://learn.microsoft.com/connectors/monday/#when-a-column-changes) | `MondayOnWebhookColumnChangesTriggerPayload` (item: `WebhookColumnChangesNotification`) | — | — |
+| [`WebhookCreateItem`](https://learn.microsoft.com/connectors/monday/#when-an-item-is-created) | `MondayOnWebhookCreateItemTriggerPayload` (item: `WebhookCreateItemNotification`) | — | — |
+| [`WebhookCreateSubitem`](https://learn.microsoft.com/connectors/monday/#when-a-subitem-is-created) | `MondayOnWebhookCreateSubitemTriggerPayload` (item: `WebhookCreateSubitemNotification`) | — | — |
+| [`WebhookCreateUpdate`](https://learn.microsoft.com/connectors/monday/#when-a-new-update-is-posted) | `MondayOnWebhookCreateUpdateTriggerPayload` (item: `DynamicGetColumnNamesForUpdateWebhookNotification`) | — | — |
+| [`WebhookSubitemColumnChanges`](https://learn.microsoft.com/connectors/monday/#when-any-subitem-column-changes) | `MondayOnWebhookSubitemColumnChangesTriggerPayload` (item: `DynamicGetSubitemColumnNamesForWebhookNotification`) | — | — |
 
 ### MoreApp Forms
 
@@ -326,6 +335,7 @@
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
 | [`webhookDocumentSignedTriggerV2`](https://learn.microsoft.com/connectors/nitro/#when-a-signature-request-is-completed) | — | — | — |
+| [`webhookDocumentSignedTriggetr`](https://learn.microsoft.com/connectors/nitro/#triggers-when-a-document-is-signed-%5Bdeprecated%5D) | — | — | — |
 
 ### Nitro Sign
 
@@ -385,22 +395,22 @@
 
 **Connector ID:** `office365groups`
 
-**Type imports:** .NET `Azure.Connectors.Sdk.Office365Groups.Models`; TypeScript `@azure/connectors/generated/Office365groupsExtensions`
+**Type imports:** .NET `Azure.Connectors.Sdk.Office365Groups.Models`; TypeScript `@azure/connectors/generated/Office365GroupsExtensions`
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`OnGroupMembershipChange`](https://learn.microsoft.com/connectors/office365groups/#when-a-group-member-is-added-or-removed) | `Office365GroupsOnGroupMembershipChangeTriggerPayload` (item: `JsonElement?`) | — | `Office365groupsOnGroupMembershipChangeTriggerPayload` (item: `Record<string, unknown>`) |
-| [`OnNewEvent`](https://learn.microsoft.com/connectors/office365groups/#when-there-is-a-new-event) | `Office365GroupsOnNewEventTriggerPayload` (item: `JsonElement?`) | — | `Office365groupsOnNewEventTriggerPayload` (item: `Record<string, unknown>`) |
+| [`OnGroupMembershipChange`](https://learn.microsoft.com/connectors/office365groups/#when-a-group-member-is-added-or-removed) | `Office365GroupsOnGroupMembershipChangeTriggerPayload` (item: `JsonElement?`) | — | `Office365GroupsOnGroupMembershipChangeTriggerPayload` (item: `Record<string, unknown>`) |
+| [`OnNewEvent`](https://learn.microsoft.com/connectors/office365groups/#when-there-is-a-new-event) | `Office365GroupsOnNewEventTriggerPayload` (item: `JsonElement?`) | — | `Office365GroupsOnNewEventTriggerPayload` (item: `Record<string, unknown>`) |
 
 ### Office 365 Groups Mail
 
 **Connector ID:** `office365groupsmail`
 
-**Type imports:** .NET `Azure.Connectors.Sdk.Office365GroupsMail.Models`; TypeScript `@azure/connectors/generated/Office365groupsmailExtensions`
+**Type imports:** .NET `Azure.Connectors.Sdk.Office365GroupsMail.Models`; TypeScript `@azure/connectors/generated/Office365GroupsMailExtensions`
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`OnNewEmailInGroup`](https://learn.microsoft.com/connectors/office365groupsmail/#when-a-new-email-arrives-to-a-group) | `Office365GroupsMailOnNewEmailInGroupTriggerPayload` (item: `ConversationTriggerResponse`) | — | `Office365groupsmailOnNewEmailInGroupTriggerPayload` (item: `ConversationTriggerResponse`) |
+| [`OnNewEmailInGroup`](https://learn.microsoft.com/connectors/office365groupsmail/#when-a-new-email-arrives-to-a-group) | `Office365GroupsMailOnNewEmailInGroupTriggerPayload` (item: `ConversationTriggerResponse`) | — | `Office365GroupsMailOnNewEmailInGroupTriggerPayload` (item: `ConversationTriggerResponse`) |
 
 ### OK dokument (Independent Publisher)
 
@@ -430,13 +440,13 @@
 
 **Connector ID:** `onenote`
 
-**Type imports:** .NET `Azure.Connectors.Sdk.Onenote.Models`; TypeScript `@azure/connectors/generated/OnenoteExtensions`
+**Type imports:** .NET `Azure.Connectors.Sdk.OneNote.Models`; TypeScript `@azure/connectors/generated/OneNoteExtensions`
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`OnNewPageInSection`](https://learn.microsoft.com/connectors/onenote/#when-a-new-page-is-created-in-a-section) | `OnenoteOnNewPageInSectionTriggerPayload` (item: `Page`) | — | `OnenoteOnNewPageInSectionTriggerPayload` (item: `Page`) |
-| [`OnNewSectionGroupInNotebook`](https://learn.microsoft.com/connectors/onenote/#when-a-new-section-group-is-created) | `OnenoteOnNewSectionGroupInNotebookTriggerPayload` (item: `SectionGroupResponse`) | — | `OnenoteOnNewSectionGroupInNotebookTriggerPayload` (item: `SectionGroupResponse`) |
-| [`OnNewSectionInNotebook`](https://learn.microsoft.com/connectors/onenote/#when-a-new-section-is-created) | `OnenoteOnNewSectionInNotebookTriggerPayload` (item: `SectionResponse`) | — | `OnenoteOnNewSectionInNotebookTriggerPayload` (item: `SectionResponse`) |
+| [`OnNewPageInSection`](https://learn.microsoft.com/connectors/onenote/#when-a-new-page-is-created-in-a-section) | `OneNoteOnNewPageInSectionTriggerPayload` (item: `Page`) | — | `OneNoteOnNewPageInSectionTriggerPayload` (item: `Page`) |
+| [`OnNewSectionGroupInNotebook`](https://learn.microsoft.com/connectors/onenote/#when-a-new-section-group-is-created) | `OneNoteOnNewSectionGroupInNotebookTriggerPayload` (item: `SectionGroupResponse`) | — | `OneNoteOnNewSectionGroupInNotebookTriggerPayload` (item: `SectionGroupResponse`) |
+| [`OnNewSectionInNotebook`](https://learn.microsoft.com/connectors/onenote/#when-a-new-section-is-created) | `OneNoteOnNewSectionInNotebookTriggerPayload` (item: `SectionResponse`) | — | `OneNoteOnNewSectionInNotebookTriggerPayload` (item: `SectionResponse`) |
 
 ### OnePlan
 
@@ -507,6 +517,15 @@
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
 | [`Post_Webhooks`](https://learn.microsoft.com/connectors/orbusinfinity/#when-an-event-occurs) | — | — | — |
+
+### Outlook Tasks
+
+**Connector ID:** `outlooktasks`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`Trigger_OnCompletedTask`](https://learn.microsoft.com/connectors/outlooktasks/#when-a-task-is-completed-%5Bdeprecated%5D) | — | — | — |
+| [`Trigger_OnNewTask`](https://learn.microsoft.com/connectors/outlooktasks/#when-a-task-is-added-%5Bdeprecated%5D) | — | — | — |
 
 ### Outlook.com
 
@@ -651,11 +670,11 @@
 
 **Connector ID:** `plumsail`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.Plumsail.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`FlowV1ProcessesFlowTriggersPost`](https://learn.microsoft.com/connectors/plumsail/#process-finished-%28deprecated%29-%5Bdeprecated%5D) | — | — | — |
-
-`FlowV1ProcessesFlowTriggersPost` is marked deprecated in Microsoft Learn but not in the API snapshot.
+| [`FlowV1ProcessesFlowTriggersV2Post`](https://learn.microsoft.com/connectors/plumsail/#process-finished) | `PlumsailOnFlowV1ProcessesFlowTriggersV2PostTriggerPayload` (item: `ProcessSchemaDynamicTypeNotification`) | — | — |
 
 ### Plumsail Forms
 
@@ -680,6 +699,14 @@
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
 | [`WebhookSubscriptionsRestAPI`](https://learn.microsoft.com/connectors/polarispsa/#subscribe-to-event-triggers) | — | — | — |
+
+### PoliteMail
+
+**Connector ID:** `politemail`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`OnNewContact`](https://learn.microsoft.com/connectors/politemail/#when-there-is-a-new-contact) | — | — | — |
 
 ### Power BI
 
@@ -770,24 +797,38 @@
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`OnNewProject`](https://learn.microsoft.com/connectors/projectonline/#when-a-new-project-is-created) | — | — | — |
 | [`OnNewProjectV2`](https://learn.microsoft.com/connectors/projectonline/#when-a-new-project-is-created-%28v2%29-%28preview%29) | — | — | — |
-| [`OnNewResource`](https://learn.microsoft.com/connectors/projectonline/#when-a-new-resource-is-created) | — | — | — |
 | [`OnNewResourceV2`](https://learn.microsoft.com/connectors/projectonline/#when-a-new-resource-is-created-%28v2%29-%28preview%29) | — | — | — |
-| [`OnNewTask`](https://learn.microsoft.com/connectors/projectonline/#when-a-new-task-is-created) | — | — | — |
 | [`OnNewTaskV2`](https://learn.microsoft.com/connectors/projectonline/#when-a-new-task-is-created-%28v2%29-%28preview%29) | — | — | — |
-| [`OnProjectPublished`](https://learn.microsoft.com/connectors/projectonline/#when-a-project-is-published) | — | — | — |
 | [`OnProjectPublishedV2`](https://learn.microsoft.com/connectors/projectonline/#when-a-project-is-published-%28v2%29-%28preview%29) | — | — | — |
 
 ### ProjectPlace
 
 **Connector ID:** `projectplace`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.ProjectPlace.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`set_webhook_card_create`](https://learn.microsoft.com/connectors/projectplace/#when-a-card-is-created) | — | — | — |
-| [`set_webhook_card_due_date`](https://learn.microsoft.com/connectors/projectplace/#when-a-card-is-due) | — | — | — |
-| [`set_webhook_properties_change`](https://learn.microsoft.com/connectors/projectplace/#when-a-card%27s-properties-are-changed) | — | — | — |
+| [`set_webhook_card_create`](https://learn.microsoft.com/connectors/projectplace/#when-a-card-is-created) | `ProjectPlaceOnSetWebhookCardCreateTriggerPayload` (item: `SetWebhookCardCreateNotification`) | — | — |
+| [`set_webhook_card_due_date`](https://learn.microsoft.com/connectors/projectplace/#when-a-card-is-due) | `ProjectPlaceOnSetWebhookCardDueDateTriggerPayload` (item: `SetWebhookCardDueDateNotification`) | — | — |
+| [`set_webhook_properties_change`](https://learn.microsoft.com/connectors/projectplace/#when-a-card%27s-properties-are-changed) | `ProjectPlaceOnSetWebhookPropertiesChangeTriggerPayload` (item: `SetWebhookPropertiesChangeNotification`) | — | — |
+
+### Projectwise Share
+
+**Connector ID:** `projectwiseshare`
+
+| Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
+| --- | --- | --- | --- |
+| [`TriggerWhenFileIsCreated`](https://learn.microsoft.com/connectors/projectwiseshare/#when-a-file-is-created-%5Bdeprecated%5D) | — | — | — |
+| [`TriggerWhenFileIsHardDeleted`](https://learn.microsoft.com/connectors/projectwiseshare/#when-a-file-is-deleted-from-recycle-bin-%5Bdeprecated%5D) | — | — | — |
+| [`TriggerWhenFileIsModified`](https://learn.microsoft.com/connectors/projectwiseshare/#when-a-file-is-modified-%5Bdeprecated%5D) | — | — | — |
+| [`TriggerWhenFileIsMoved`](https://learn.microsoft.com/connectors/projectwiseshare/#when-a-file-is-moved-%5Bdeprecated%5D) | — | — | — |
+| [`TriggerWhenFileMovedToRecycleBin`](https://learn.microsoft.com/connectors/projectwiseshare/#when-a-file-is-moved-to-recycle-bin-%5Bdeprecated%5D) | — | — | — |
+| [`TriggerWhenFileRestored`](https://learn.microsoft.com/connectors/projectwiseshare/#when-a-file-is-restored-from-recycle-bin-%5Bdeprecated%5D) | — | — | — |
+| [`TriggerWhenFolderCreated`](https://learn.microsoft.com/connectors/projectwiseshare/#when-a-folder-is-created-%5Bdeprecated%5D) | — | — | — |
+| [`TriggerWhenFolderHardDeleted`](https://learn.microsoft.com/connectors/projectwiseshare/#when-a-folder-is-deleted-from-recycle-bin-%5Bdeprecated%5D) | — | — | — |
+| [`TriggerWhenFolderMovedToRecycleBin`](https://learn.microsoft.com/connectors/projectwiseshare/#when-a-folder-is-moved-to-recycle-bin-%5Bdeprecated%5D) | — | — | — |
 
 ### Pure Leads
 
@@ -872,9 +913,11 @@
 
 **Connector ID:** `replicon`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.Replicon.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`WebhookSubscriptionsRestAPI`](https://learn.microsoft.com/connectors/replicon/#subscribe-to-event-triggers) | — | — | — |
+| [`WebhookSubscriptionsRestAPI`](https://learn.microsoft.com/connectors/replicon/#subscribe-to-event-triggers) | `RepliconOnWebhookSubscriptionsRestApiTriggerPayload` (item: `WebhookSubscriptionsRestApiNotification`) | — | — |
 
 ### Requestor
 
