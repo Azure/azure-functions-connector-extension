@@ -13,7 +13,9 @@
     </ItemGroup>
     
     <!-- Copy extensions output to bin/ where func expects it for non-.NET languages -->
-    <Target Name="CopyExtensionsToBin" AfterTargets="Build">
+    <Target Name="CopyExtensionsToBin"
+            AfterTargets="_GenerateFunctionsExtensionsMetadataPostBuild"
+            DependsOnTargets="_FunctionsBuildCleanOutput">
         <ItemGroup>
             <ExtensionFiles Include="$(OutputPath)bin\**\*.*" />
         </ItemGroup>

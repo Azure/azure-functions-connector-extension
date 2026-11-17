@@ -6,14 +6,15 @@
   "main": "dist/functions/*.js",
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test",
     "start": "npm run build && func start"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=24.0.0"
   },
   "dependencies": {
-    "@azure/functions": "4.15.1-preview",
-    "@azure/connectors": "0.2.0-preview"
+    "@azure/functions": "4.17.1",
+    "@azure/functions-extensions-connectors": "1.0.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

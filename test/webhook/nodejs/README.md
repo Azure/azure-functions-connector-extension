@@ -6,32 +6,39 @@ When Connector Namespace detects a connector event (for example, a new Office 36
 
 ## Prerequisites
 
-- [Node.js 22+](https://learn.microsoft.com/azure/azure-functions/supported-languages?pivots=programming-language-typescript#languages-by-runtime-version)
+- [Node.js 24+](https://learn.microsoft.com/azure/azure-functions/supported-languages?pivots=programming-language-typescript#languages-by-runtime-version), required by the 1.0.0 connector extension
+- .NET 10 SDK to build the local binding extensions
 - Azure Functions Core Tools v4+
 - Azure Storage Emulator (Azurite) or Azure Storage account
 
 ## Setup
 
-1. **Install dependencies:**
+1. **Build the local binding extensions:**
 
    ```bash
    cd test/webhook/nodejs
+   dotnet build extensions.csproj
+   ```
+
+2. **Install dependencies:**
+
+   ```bash
    npm install
    ```
 
-2. **Build TypeScript:**
+3. **Build TypeScript:**
 
    ```bash
    npm run build
    ```
 
-3. **Start Azurite** in another terminal if it is not already running:
+4. **Start Azurite** in another terminal if it is not already running:
 
    ```bash
    azurite --silent
    ```
 
-4. **Run the function app:**
+5. **Run the function app:**
 
    ```bash
    npm start
@@ -42,9 +49,11 @@ When Connector Namespace detects a connector event (for example, a new Office 36
 | Function | Approach | Description |
 | ---------- | ---------- | ------------- |
 | `OnNewEmail` | `connectors.office365.onNewEmail()` | Typed email trigger with `EmailTriggerContext` and blob output |
-| `OnNewEmailDirect` | `app.connectorTrigger()` | Raw trigger with manual payload parsing and blob output |
+| `OnNewEmailDirect` | `connectorTrigger()` | Generic typed trigger with raw payload and blob output |
 
 ## Testing
+
+Run `npm test` from this sample directory to validate typed callback normalization and blob output handling without connecting to Azure.
 
 ```bash
 curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnNewEmail" \
@@ -87,23 +96,25 @@ connectors.office365.onNewEmail('OnNewEmail', {
 });
 ```
 
-### Using `app.connectorTrigger()` directly (for comparison)
+### Using the extension's generic `connectorTrigger()`
 
 ```typescript
-import { app, InvocationContext, output } from '@azure/functions';
+import { InvocationContext, output } from '@azure/functions';
+import { connectorTrigger, ConnectorTriggerContext, GraphClientReceiveMessage } from '@azure/functions-extensions-connectors';
 
 const blobOutput = output.storageBlob({
     path: 'connector-messages/{rand-guid}.json',
-    connection: 'AzureWebJobsStorage',
+    connection: 'BlobStoreConnection',
 });
 
-app.connectorTrigger('OnNewEmailDirect', {
+connectorTrigger<GraphClientReceiveMessage>('OnNewEmailDirect', {
     extraOutputs: [blobOutput],
-    handler: async (triggerInput: unknown, invocationContext: InvocationContext) => {
-        const parsed = typeof triggerInput === 'string'
-            ? JSON.parse(triggerInput) : (triggerInput ?? {});
+    handler: async (context: ConnectorTriggerContext<GraphClientReceiveMessage>, invocationContext: InvocationContext) => {
+        if (typeof context.rawPayload !== 'object' || context.rawPayload === null) {
+            throw new TypeError('Expected a JSON connector trigger payload object or array.');
+        }
 
-        invocationContext.extraOutputs.set(blobOutput, JSON.stringify(parsed));
+        invocationContext.extraOutputs.set(blobOutput, context.rawPayload);
     },
 });
 ```

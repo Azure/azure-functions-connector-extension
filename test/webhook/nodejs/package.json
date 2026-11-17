@@ -6,17 +6,17 @@
   "main": "dist/functions/*.js",
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test test/*.test.mjs",
     "watch": "tsc -w",
     "start": "npm run build && func start",
     "prestart": "npm run build"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=24.0.0"
   },
   "dependencies": {
-    "@azure/functions": "4.15.1-preview",
-    "@azure/functions-extensions-connectors": "0.0.1-preview",
-    "@azure/connectors": "0.1.1-preview"
+    "@azure/functions": "4.17.1",
+    "@azure/functions-extensions-connectors": "1.0.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

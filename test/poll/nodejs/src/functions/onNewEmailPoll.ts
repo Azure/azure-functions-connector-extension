@@ -1,22 +1,27 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import { app, InvocationContext } from '@azure/functions';
-import type { TriggerCallbackPayload } from '@azure/connectors';
-import type { GraphClientReceiveMessage } from '@azure/connectors/generated/Office365Extensions';
+import { InvocationContext } from '@azure/functions';
+import { connectors, EmailTriggerContext } from '@azure/functions-extensions-connectors';
 
-type EmailPollPayload =
-    | TriggerCallbackPayload<GraphClientReceiveMessage>
-    | { body: GraphClientReceiveMessage };
-
-app.connectorTrigger('OnNewEmailPoll', {
+connectors.office365.onNewEmail('OnNewEmailPoll', {
     deliveryMode: 'Poll',
     connection: 'ConnectorNamespace',
     triggerConfigName: '%OnNewEmailTriggerConfigName%',
     cardinality: 'many',
     maxBatchSize: 4,
     targetPendingEventThreshold: 16,
-    handler: async (inputs: EmailPollPayload[], context: InvocationContext) => {
-        context.log(`Received ${inputs.length} Poll connector payload(s).`);
+    handler: async (emails: EmailTriggerContext, context: InvocationContext) => {
+        if (!Array.isArray(emails.rawPayload)) {
+            throw new TypeError('Expected an array of Poll connector payloads.');
+        }
+        if (emails.rawPayload.some((payload: unknown) =>
+            typeof payload !== 'object' || payload === null || Array.isArray(payload) ||
+            !('body' in payload) || typeof payload.body !== 'object' || payload.body === null || Array.isArray(payload.body)
+        )) {
+            throw new TypeError('Expected each Poll connector payload to contain an email body.');
+        }
+
+        context.log(`Received ${emails.rawPayload.length} Poll connector payload(s) with ${emails.emails.length} email(s).`);
     },
 });

@@ -109,7 +109,7 @@ Add to `requirements.txt` (include packages based on your approach):
 
 ```text
 # Python 3.13+
-azure-functions>=2.4.0b1; python_version>='3.13'
+azure-functions>=2.4.0; python_version>='3.13'
 # Python 3.10-3.12 (Webhook only)
 azure-functions>=1.26.0b3; python_version<'3.13'
 

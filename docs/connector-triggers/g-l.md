@@ -19,14 +19,14 @@
 
 **Connector ID:** `github`
 
-**Type imports:** .NET `Azure.Connectors.Sdk.GitHub.Models`; TypeScript `@azure/connectors/generated/GithubExtensions`
+**Type imports:** .NET `Azure.Connectors.Sdk.GitHub.Models`; TypeScript `@azure/connectors/generated/GitHubExtensions`
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`IssueAssigned`](https://learn.microsoft.com/connectors/github/#when-an-issue-is-assigned-to-me) | `GitHubOnIssueAssignedTriggerPayload` (item: `IssueDetailsModel`) | — | `GithubOnIssueAssignedTriggerPayload` (item: `IssueDetailsModel`) |
-| [`IssueClosed`](https://learn.microsoft.com/connectors/github/#when-an-issue-assigned-to-me-is-closed) | `GitHubOnIssueClosedTriggerPayload` (item: `IssueDetailsModel`) | — | `GithubOnIssueClosedTriggerPayload` (item: `IssueDetailsModel`) |
-| [`IssueOpened`](https://learn.microsoft.com/connectors/github/#when-a-new-issue-is-opened-and-assigned-to-me) | `GitHubOnIssueOpenedTriggerPayload` (item: `IssueDetailsModel`) | — | `GithubOnIssueOpenedTriggerPayload` (item: `IssueDetailsModel`) |
-| [`WebhookPullRequestTrigger`](https://learn.microsoft.com/connectors/github/#when-a-pull-request-is-created-or-modified-%28preview%29) | — | — | — |
+| [`IssueAssigned`](https://learn.microsoft.com/connectors/github/#when-an-issue-is-assigned-to-me) | `GitHubOnIssueAssignedTriggerPayload` (item: `IssueDetailsModel`) | — | `GitHubOnIssueAssignedTriggerPayload` (item: `IssueDetailsModel`) |
+| [`IssueClosed`](https://learn.microsoft.com/connectors/github/#when-an-issue-assigned-to-me-is-closed) | `GitHubOnIssueClosedTriggerPayload` (item: `IssueDetailsModel`) | — | `GitHubOnIssueClosedTriggerPayload` (item: `IssueDetailsModel`) |
+| [`IssueOpened`](https://learn.microsoft.com/connectors/github/#when-a-new-issue-is-opened-and-assigned-to-me) | `GitHubOnIssueOpenedTriggerPayload` (item: `IssueDetailsModel`) | — | `GitHubOnIssueOpenedTriggerPayload` (item: `IssueDetailsModel`) |
+| [`WebhookPullRequestTrigger`](https://learn.microsoft.com/connectors/github/#when-a-pull-request-is-created-or-modified-%28preview%29) | `GitHubOnWebhookPullRequestTriggerPayload` (item: `WebhookPullRequestResponseNotification`) | — | — |
 
 ### Glaass Pro
 
@@ -82,6 +82,7 @@
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
+| [`OnContactUpdated`](https://learn.microsoft.com/connectors/googlecontacts/#when-a-contact-changes-%5Bdeprecated%5D) | — | — | — |
 | [`PeopleApiOnContactUpdatedV3`](https://learn.microsoft.com/connectors/googlecontacts/#when-a-contact-changes-v3) | — | — | — |
 
 ### Google Tasks
@@ -90,7 +91,6 @@
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`OnCompletedTaskInList`](https://learn.microsoft.com/connectors/googletasks/#when-a-task-is-completed-in-a-task-list) | — | — | — |
 | [`OnCompletedTaskInListV2`](https://learn.microsoft.com/connectors/googletasks/#when-a-task-is-completed-in-a-task-list-%28v2%29-%28preview%29) | — | — | — |
 | [`OnDueTaskInList`](https://learn.microsoft.com/connectors/googletasks/#when-a-task-is-due-in-a-task-list) | — | — | — |
 | [`OnNewTaskInList`](https://learn.microsoft.com/connectors/googletasks/#when-a-task-is-added-to-a-task-list) | — | — | — |
@@ -311,24 +311,26 @@
 
 **Connector ID:** `impexium`
 
+**Type imports:** .NET `Azure.Connectors.Sdk.Impexium.Models`
+
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
-| [`When-Committee-Member-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-committee-member-is-updated) | — | — | — |
-| [`When-Customer-Address-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-address-is-updated) | — | — | — |
-| [`When-Customer-Custom-Field-Value-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-custom-field-value-is-updated) | — | — | — |
-| [`When-Customer-Is-Merged`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-is-merged) | — | — | — |
-| [`When-Customer-Phone-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-phone-is-updated) | — | — | — |
-| [`When-Customer-Relationship-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-relationship-is-updated) | — | — | — |
-| [`When-Email-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-email-is-updated) | — | — | — |
-| [`When-Event-Registration-Substituted`](https://learn.microsoft.com/connectors/impexium/#when-an-event-registration-is-substituted) | — | — | — |
-| [`When-Individual-Created`](https://learn.microsoft.com/connectors/impexium/#when-an-individual-is-created) | — | — | — |
-| [`When-Individual-Deleted`](https://learn.microsoft.com/connectors/impexium/#when-an-individual-is-deleted) | — | — | — |
-| [`When-Individual-Request-Forgotten`](https://learn.microsoft.com/connectors/impexium/#when-an-individual-requests-to-be-forgotten) | — | — | — |
-| [`When-Membership-Terminated`](https://learn.microsoft.com/connectors/impexium/#when-a-membership-is-terminated) | — | — | — |
-| [`When-product-purchased`](https://learn.microsoft.com/connectors/impexium/#when-a-product-is-purchased) | — | — | — |
-| [`When-purchase-cancelled`](https://learn.microsoft.com/connectors/impexium/#when-a-purchase-is-canceled) | — | — | — |
-| [`When-Purchase-Paid`](https://learn.microsoft.com/connectors/impexium/#when-a-purchase-is-paid) | — | — | — |
-| [`When-Request-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-request-is-updated) | — | — | — |
+| [`When-Committee-Member-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-committee-member-is-updated) | `ImpexiumOnWhenCommitteeMemberUpdatedTriggerPayload` (item: `CommitteeMemberPayloadNotification`) | — | — |
+| [`When-Customer-Address-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-address-is-updated) | `ImpexiumOnWhenCustomerAddressUpdatedTriggerPayload` (item: `CustomerAddressUpdatedPayloadNotification`) | — | — |
+| [`When-Customer-Custom-Field-Value-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-custom-field-value-is-updated) | `ImpexiumOnWhenCustomerCustomFieldValueUpdatedTriggerPayload` (item: `CustomerCustomFieldValuePayloadNotification`) | — | — |
+| [`When-Customer-Is-Merged`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-is-merged) | `ImpexiumOnWhenCustomerIsMergedTriggerPayload` (item: `CustomerMergedPayloadNotification`) | — | — |
+| [`When-Customer-Phone-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-phone-is-updated) | `ImpexiumOnWhenCustomerPhoneUpdatedTriggerPayload` (item: `CustomerPhoneUpdatedPayloadNotification`) | — | — |
+| [`When-Customer-Relationship-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-relationship-is-updated) | `ImpexiumOnWhenCustomerRelationshipUpdatedTriggerPayload` (item: `CustomerRelationshipUpdatedPayloadNotification`) | — | — |
+| [`When-Email-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-email-is-updated) | `ImpexiumOnWhenEmailUpdatedTriggerPayload` (item: `EmailPayloadNotification`) | — | — |
+| [`When-Event-Registration-Substituted`](https://learn.microsoft.com/connectors/impexium/#when-an-event-registration-is-substituted) | `ImpexiumOnWhenEventRegistrationSubstitutedTriggerPayload` (item: `EventRegistrationSubstitutedPayloadNotification`) | — | — |
+| [`When-Individual-Created`](https://learn.microsoft.com/connectors/impexium/#when-an-individual-is-created) | `ImpexiumOnWhenIndividualCreatedTriggerPayload` (item: `IndividualPayloadNotification`) | — | — |
+| [`When-Individual-Deleted`](https://learn.microsoft.com/connectors/impexium/#when-an-individual-is-deleted) | `ImpexiumOnWhenIndividualDeletedTriggerPayload` (item: `IndividualPayloadNotification`) | — | — |
+| [`When-Individual-Request-Forgotten`](https://learn.microsoft.com/connectors/impexium/#when-an-individual-requests-to-be-forgotten) | `ImpexiumOnWhenIndividualRequestForgottenTriggerPayload` (item: `IndividualRequestToBeForgottenPayloadNotification`) | — | — |
+| [`When-Membership-Terminated`](https://learn.microsoft.com/connectors/impexium/#when-a-membership-is-terminated) | `ImpexiumOnWhenMembershipTerminatedTriggerPayload` (item: `MembershipTypeTerminatedPayloadNotification`) | — | — |
+| [`When-product-purchased`](https://learn.microsoft.com/connectors/impexium/#when-a-product-is-purchased) | `ImpexiumOnWhenProductPurchasedTriggerPayload` (item: `ProductPurchasePayloadNotification`) | — | — |
+| [`When-purchase-cancelled`](https://learn.microsoft.com/connectors/impexium/#when-a-purchase-is-canceled) | `ImpexiumOnWhenPurchaseCancelledTriggerPayload` (item: `PurchaseCancelledPayloadNotification`) | — | — |
+| [`When-Purchase-Paid`](https://learn.microsoft.com/connectors/impexium/#when-a-purchase-is-paid) | `ImpexiumOnWhenPurchasePaidTriggerPayload` (item: `ProductPurchasePayloadNotification`) | — | — |
+| [`When-Request-Updated`](https://learn.microsoft.com/connectors/impexium/#when-a-customer-request-is-updated) | `ImpexiumOnWhenRequestUpdatedTriggerPayload` (item: `CustomerRequestPayloadNotification`) | — | — |
 
 ### Impower ERP
 
@@ -466,12 +468,15 @@
 
 | Trigger operation ID | .NET payload | Python binding | TypeScript helper / payload |
 | --- | --- | --- | --- |
+| [`OnCloseIssue`](https://learn.microsoft.com/connectors/jira/#when-an-issue-is-closed) | — | — | — |
 | [`OnCloseIssue_Datacenter`](https://learn.microsoft.com/connectors/jira/#when-an-issue-is-closed-%28datacenter%29) | `JiraOnCloseIssueDatacenterTriggerPayload` (item: `FullIssue`) | — | `JiraOnCloseIssueDatacenterTriggerPayload` (item: `FullIssue`) |
 | [`OnCloseIssue_V2`](https://learn.microsoft.com/connectors/jira/#when-an-issue-is-closed-%28v2%29) | `JiraOnCloseIssueTriggerPayload` (item: `FullIssue`) | — | `JiraOnCloseIssueTriggerPayload` (item: `FullIssue`) |
+| [`OnNewIssue`](https://learn.microsoft.com/connectors/jira/#when-a-new-issue-is-created) | — | — | — |
 | [`OnNewIssue_Datacenter`](https://learn.microsoft.com/connectors/jira/#when-a-new-issue-is-created-%28datacenter%29) | `JiraOnNewIssueDatacenterTriggerPayload` (item: `FullIssue`) | — | `JiraOnNewIssueDatacenterTriggerPayload` (item: `FullIssue`) |
 | [`OnNewIssue_V2`](https://learn.microsoft.com/connectors/jira/#when-a-new-issue-is-created-%28v2%29) | `JiraOnNewIssueTriggerPayload` (item: `FullIssue`) | — | `JiraOnNewIssueTriggerPayload` (item: `FullIssue`) |
-| [`OnNewIssueJQL_Datacenter`](https://learn.microsoft.com/connectors/jira/#when-a-new-issue-is-returned-by-a-jql-query-%28datacenter%29) | `JiraOnNewIssueJQLDatacenterTriggerPayload` (item: `FullIssue`) | — | `JiraOnNewIssueJQLDatacenterTriggerPayload` (item: `FullIssue`) |
-| [`OnNewIssueJQL_V2`](https://learn.microsoft.com/connectors/jira/#when-a-new-issue-is-returned-by-a-jql-query-%28v2%29) | `JiraOnNewIssueJQLTriggerPayload` (item: `FullIssue`) | — | `JiraOnNewIssueJQLTriggerPayload` (item: `FullIssue`) |
+| [`OnNewIssueJQL`](https://learn.microsoft.com/connectors/jira/#when-a-new-issue-is-returned-by-a-jql-query) | — | — | — |
+| [`OnNewIssueJQL_Datacenter`](https://learn.microsoft.com/connectors/jira/#when-a-new-issue-is-returned-by-a-jql-query-%28datacenter%29) | `JiraOnNewIssueJqlDatacenterTriggerPayload` (item: `FullIssue`) | — | `JiraOnNewIssueJqlDatacenterTriggerPayload` (item: `FullIssue`) |
+| [`OnNewIssueJQL_V2`](https://learn.microsoft.com/connectors/jira/#when-a-new-issue-is-returned-by-a-jql-query-%28v2%29) | `JiraOnNewIssueJqlTriggerPayload` (item: `FullIssue`) | — | `JiraOnNewIssueJqlTriggerPayload` (item: `FullIssue`) |
 
 ### JotForm
 
