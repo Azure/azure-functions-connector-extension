@@ -10,7 +10,7 @@
   },
   "engines": { "node": ">=24.0.0" },
   "dependencies": {
-    "@azure/functions": "4.17.1",
-    "@azure/functions-extensions-connectors": "1.0.0"
+    "@azure/functions": "^4.17.1",
+    "@azure/functions-extensions-connectors": "^1.0.0"
   }
 }
