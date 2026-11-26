@@ -167,7 +167,7 @@ To configure the Functions host limit, set the app-wide `FUNCTIONS_REQUEST_BODY_
 
 Restart the Function App or local host after changing it. This is not a Connector option or a `host.json` property. It applies to HTTP/Webhook request bodies, not Poll linked-output downloads, and cannot bypass hosting-platform or source-service limits. See the [Functions app-setting reference](https://learn.microsoft.com/azure/azure-functions/functions-app-settings#functions_request_body_size_limit).
 
-Use the [Webhook registration skill](../.github/skills/webhook-trigger-registration/SKILL.md) for callback authentication, destination metadata, and dev tunnels, or the [Webhook samples](../test/webhook/README.md) for code.
+Use the [Webhook registration skill](../.github/skills/webhook-trigger-registration/SKILL.md) for callback authentication, destination metadata, and dev tunnels, or the [Webhook test apps](../test/webhook/README.md) for code.
 
 ## Payload types and SDKs
 
@@ -201,4 +201,4 @@ For Node.js and Python deployments using extension bundles, select a preview bun
 
 The example version range is not a minimum-version or feature-availability guarantee; verify the contents of the selected published bundle. Published bundles may lag the current checkout. The [local Poll test apps](../test/poll/README.md) build the host extension directly instead of relying on a published bundle.
 
-The Python Poll test app requires Python 3.13+ and `azure-functions>=2.4.0`. The Webhook sample uses the same minimum on Python 3.13+, while retaining `azure-functions>=1.26.0b3` and `PYTHON_ISOLATE_WORKER_DEPENDENCIES=1` for Python 3.10-3.12. Typed Webhook integration additionally uses `azurefunctions-extensions-connectors`.
+The Python Poll test app requires Python 3.13+ and `azure-functions>=2.4.0`. The Webhook Python test app uses the same minimum on Python 3.13+, while retaining `azure-functions>=1.26.0b3` and `PYTHON_ISOLATE_WORKER_DEPENDENCIES=1` for Python 3.10-3.12. Typed Webhook integration additionally uses `azurefunctions-extensions-connectors`.

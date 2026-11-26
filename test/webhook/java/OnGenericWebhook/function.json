@@ -1,0 +1,12 @@
+{
+  "scriptFile": "../target/connector-test.jar",
+  "entryPoint": "com.microsoft.azure.functions.connector.tests.GenericFunction.run",
+  "bindings": [
+    {
+      "type": "connectorTrigger",
+      "direction": "in",
+      "name": "payload",
+      "dataType": "string"
+    }
+  ]
+}

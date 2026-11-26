@@ -82,6 +82,10 @@ __pycache__/
 venv/
 .python_packages/
 
+# Java and Go sample build output
+test/**/java/target/
+test/**/go/handler.exe
+
 # Azurite
 __azurite_db_*.json
 __blobstorage__/

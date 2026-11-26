@@ -1,6 +1,6 @@
-# .NET Isolated Webhook Sample
+# .NET Isolated Webhook Test App
 
-This sample validates Connector Namespace Webhook delivery with the .NET isolated worker. `OnNewEmail` binds the callback payload to `Office365OnNewEmailTriggerPayload` and writes the serialized payload to Blob Storage.
+This test app validates Connector Namespace Webhook delivery with the .NET isolated worker. `OnNewEmail` binds the callback payload to `Office365OnNewEmailTriggerPayload` and writes it to Blob Storage.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ This sample validates Connector Namespace Webhook delivery with the .NET isolate
 
 ## Setup
 
-1. Build the sample from the repository root:
+1. Build the test app from the repository root:
 
    ```powershell
    dotnet build .\test\webhook\dotnet\SampleApp.csproj
@@ -43,7 +43,7 @@ public string OnNewEmail(
 }
 ```
 
-The sample references the repository-local Connector worker extension and `Azure.Connectors.Sdk` `1.0.0`.
+The test app references the repository-local Connector worker extension and `Azure.Connectors.Sdk` `1.0.0`.
 
 ## Local callback test
 
