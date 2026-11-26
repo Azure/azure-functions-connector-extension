@@ -1,8 +1,8 @@
-# Python Sample App
+# Python Webhook Test App
 
-This sample demonstrates how to use the Connector Extension with the Python v2 programming model.
+This test app uses the Connector Extension with the Python v2 programming model.
 
-When Connector Namespace detects a connector event (for example, a new Office 365 email), it sends a Webhook callback to the function. The Connector binding converts the callback into typed `GraphClientReceiveMessage` values for `OnNewEmailV3`. The sample logs key fields and persists the serialized batch to Azure Blob Storage.
+When Connector Namespace detects an event, it sends a Webhook callback to the function. The binding converts it into typed `GraphClientReceiveMessage` values for `OnNewEmailV3`; the app logs key fields and writes the batch to Blob Storage.
 
 ## Prerequisites
 
@@ -48,7 +48,7 @@ When Connector Namespace detects a connector event (for example, a new Office 36
 
 ## Testing
 
-Run `python -m unittest discover -s . -p test_function_app.py` from this sample directory after installing `requirements.txt` to validate released SDK conversion and output handling without connecting to Azure.
+Run `python -m unittest discover -s . -p test_function_app.py` from this test app directory after installing `requirements.txt`.
 
 ```bash
 curl -X POST "http://localhost:7071/runtime/webhooks/connector?functionName=OnNewEmail" \

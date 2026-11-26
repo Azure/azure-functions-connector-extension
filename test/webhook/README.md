@@ -1,17 +1,18 @@
-# Connector Webhook Sample Apps
+# Connector Webhook Test Apps
 
-For local development without a public callback, start with the [Poll samples](../poll/README.md).
+For local development without a public callback, start with the [Poll test apps](../poll/README.md).
 
-These apps validate Connector Webhook delivery from each supported language
-worker:
+These test apps validate Connector Webhook delivery across language workers:
 
 - [`dotnet`](./dotnet) - .NET isolated worker with typed payloads.
-- [`nodejs`](./nodejs) - Node.js v4 with a blob output binding.
+- [`typescript`](./typescript/README.md) - Node.js v4 TypeScript SDK app with a blob output binding.
+- [`javascript`](./javascript/README.md) - Node.js v4 JavaScript SDK app with a blob output binding.
 - [`python`](./python) - Python v2 with a blob output binding.
+- [`java`](./java/README.md) - Java `@CustomBinding` with a raw JSON string and no connector SDK.
+- [`powershell`](./powershell/README.md) - PowerShell `function.json` with JSON input and no connector SDK.
+- [`go`](./go/README.md) - native Go worker with `GenericTrigger` and a raw binding; no Connector SDK.
 
-Each sample references the repository-local Connector extension for
-development. Follow the language-specific README for build and run
-instructions.
+Each test app references the repository-local Connector extension. Follow its README for build and run instructions. Java, PowerShell, and Go use `OnGenericWebhook` without connector-specific payload models.
 
 ## Required and optional configuration
 

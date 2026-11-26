@@ -1,0 +1,13 @@
+{
+  "bindings": [
+    {
+      "type": "connectorTrigger",
+      "direction": "in",
+      "name": "Payload",
+      "dataType": "string",
+      "deliveryMode": "Poll",
+      "connection": "ConnectorNamespace",
+      "triggerConfigName": "%GenericTriggerConfigName%"
+    }
+  ]
+}

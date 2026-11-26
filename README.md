@@ -26,7 +26,7 @@ dotnet add package Microsoft.Azure.Functions.Worker.Extensions.Connector
 
 SDK model packages are optional; a trigger can bind to `string` or JSON without them. See [payload types and SDKs](./docs/connector-trigger-configuration.md#payload-types-and-sdks).
 
-For Node.js or Python, see [non-.NET worker setup](./docs/connector-trigger-configuration.md#non-net-workers). The [repository test samples](#test-samples) build the current checkout; published packages and bundles can lag changes in this checkout.
+For Node.js or Python, see [non-.NET worker setup](./docs/connector-trigger-configuration.md#non-net-workers). The [repository test apps](#test-apps) build the current checkout; published packages and bundles can lag changes in this checkout.
 
 ## Usage
 
@@ -75,7 +75,7 @@ Supply the trigger name separately. Do not configure a complete Receive URL or a
 
 Locally, omit the credential selector to use your developer identity. For a deployed app using managed identity, set `ConnectorNamespace__credential=managedidentity`. Never commit real endpoints or credentials.
 
-Start Azurite, then start the Function host with Core Tools. No inbound port forwarding is needed. Follow the [Poll samples](./test/poll/README.md) for complete build and run commands.
+Start Azurite, then start the Function host with Core Tools. No inbound port forwarding is needed. Follow the [Poll test apps](./test/poll/README.md) for build and run commands.
 
 Poll delivery is at least once: failed invocations are not acknowledged and may be redelivered. Use `ConnectorEvent<T>.MessageId` for application-level deduplication.
 
@@ -96,7 +96,7 @@ https://<function-app-host>/runtime/webhooks/connector?functionName=<FunctionNam
 
 `functionName` must match the function name. Deployed callbacks require the automatically generated `connector_extension` system key. Configure it separately in `notificationDetails.authentication` as a `QueryString` value named `code`, rather than embedding it in the stored callback URL.
 
-Webhook-only functions do not need `pollingEndpoint`, `Connection`, or `TriggerConfigName`. For local service callbacks, use a public dev tunnel and start Core Tools with `func start --enableAuth`. See the [Webhook registration skill](./.github/skills/webhook-trigger-registration/SKILL.md) and [Webhook samples](./test/webhook/README.md).
+Webhook-only functions do not need `pollingEndpoint`, `Connection`, or `TriggerConfigName`. For local service callbacks, use a public dev tunnel and start Core Tools with `func start --enableAuth`. See the [Webhook registration skill](./.github/skills/webhook-trigger-registration/SKILL.md) and [Webhook test apps](./test/webhook/README.md).
 
 ### Required settings and optional tuning
 
@@ -130,12 +130,14 @@ See the [configuration reference](./docs/connector-trigger-configuration.md) for
 | [poll-trigger-registration](./.github/skills/poll-trigger-registration/SKILL.md) | Register host-pull Poll delivery and derive Function settings. |
 | [webhook-trigger-registration](./.github/skills/webhook-trigger-registration/SKILL.md) | Register callback delivery and system-key authentication. |
 
-## Test Samples
+## Test Apps
 
-These samples reference the repository-local extension for development:
+These test apps reference the repository-local extension for development:
 
-- [Poll delivery](./test/poll/README.md): .NET isolated, TypeScript, and Python.
-- [Webhook delivery](./test/webhook/README.md): .NET isolated, Node.js, and Python.
+- [Poll delivery](./test/poll/README.md): .NET isolated, TypeScript, JavaScript, Python, Java, PowerShell, and Go.
+- [Webhook delivery](./test/webhook/README.md): .NET isolated, TypeScript, JavaScript, Python, Java, PowerShell, and Go.
+
+TypeScript and JavaScript have separate Node.js SDK apps. Java and PowerShell use raw generic `connectorTrigger` bindings; Go uses the native Go worker's `GenericTrigger` API with the same host binding. These generic apps do not require a connector SDK.
 
 ## Building
 
@@ -146,7 +148,7 @@ dotnet build
 dotnet test
 ```
 
-NuGet uses the public Azure Artifacts feed configured in `NuGet.config`. For Node.js sample feed setup and authentication, see the [sample build prerequisites](./test/poll/README.md#build-prerequisites). Keep credentials in user-level or CI configuration, never in checked-in files.
+NuGet uses the public Azure Artifacts feed configured in `NuGet.config`. For Node.js test app feed setup and authentication, see the [build prerequisites](./test/poll/README.md#build-prerequisites). Keep credentials in user-level or CI configuration, never in checked-in files.
 
 ## Roadmap
 
